@@ -1,12 +1,5 @@
-
 import psycopg2
-from config import DB_HOST, DB_NAME, DB_USER, DB_PASS, DB_PORT
+import streamlit as st
 
 def get_conn():
-    return psycopg2.connect(
-        host=DB_HOST,
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASS,
-        port=DB_PORT
-    )
+    return psycopg2.connect(st.secrets["DATABASE_URL"])
