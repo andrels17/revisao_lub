@@ -5,6 +5,9 @@ def criar_execucao(dados):
     conn = get_conn()
     cur = conn.cursor()
     try:
+        km_execucao = dados.get("km_execucao")
+        horas_execucao = dados.get("horas_execucao")
+
         cur.execute(
             """
             insert into execucoes_manutencao (
@@ -25,33 +28,38 @@ def criar_execucao(dados):
                 dados.get("responsavel_id"),
                 dados["tipo"],
                 dados["data_execucao"],
-                dados.get("km_execucao", 0),
-                dados.get("horas_execucao", 0),
+                km_execucao,
+                horas_execucao,
                 dados.get("observacoes"),
                 dados.get("status", "concluida"),
             ),
         )
         execucao_id = cur.fetchone()[0]
 
-        cur.execute(
-            """
-            update equipamentos
-               set km_atual = %s,
-                   horas_atual = %s
-             where id = %s
-            """,
-            (
-                dados.get("km_execucao", 0),
-                dados.get("horas_execucao", 0),
-                dados["equipamento_id"],
-            ),
-        )
+        if dados["tipo"] == "revisao":
+            if km_execucao is not None:
+                cur.execute(
+                    """
+                    update equipamentos
+                       set km_atual = %s
+                     where id = %s
+                    """,
+                    (km_execucao, dados["equipamento_id"]),
+                )
+            if horas_execucao is not None:
+                cur.execute(
+                    """
+                    update equipamentos
+                       set horas_atual = %s
+                     where id = %s
+                    """,
+                    (horas_execucao, dados["equipamento_id"]),
+                )
 
         conn.commit()
         return execucao_id
     finally:
         conn.close()
-
 
 
 def listar():
@@ -94,7 +102,6 @@ def listar():
         ]
     finally:
         conn.close()
-
 
 
 def listar_por_equipamento(equipamento_id):
