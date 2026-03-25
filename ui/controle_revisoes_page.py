@@ -10,6 +10,11 @@ from services import (
 
 
 STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2}
+STATUS_LABEL = {
+    "VENCIDO": "🔴 Vencido",
+    "PROXIMO": "🟡 Próximo",
+    "EM DIA": "🟢 Em dia",
+}
 
 
 def _carregar_pendencias(equipamentos):
@@ -23,6 +28,7 @@ def _carregar_pendencias(equipamentos):
             dados.append(
                 {
                     "equipamento_id": eqp["id"],
+                    "setor": eqp.get("setor_nome") or "-",
                     "Equipamento": f'{eqp["codigo"]} - {eqp["nome"]}',
                     "Etapa": rev["etapa"],
                     "Controle": rev.get("tipo_controle", eqp["tipo"] or "-"),
@@ -48,6 +54,35 @@ def _formatar_equipamento(equipamento):
 
 def _formatar_responsavel(responsavel):
     return responsavel["nome"]
+
+
+def _render_pendencias(pendencias_df, equipamentos):
+    st.subheader("Próximas revisões")
+
+    if pendencias_df.empty:
+        st.info("Nenhum dado encontrado.")
+        return
+
+    setores = sorted({eqp.get("setor_nome") or "-" for eqp in equipamentos})
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        setores_selecionados = st.multiselect("Filtrar por setor", setores, key="pendencias_setor")
+    with col2:
+        status_filtro = st.selectbox("Filtrar por status", ["Todos", "VENCIDO", "PROXIMO", "EM DIA"], key="pendencias_status")
+
+    df = pendencias_df.copy()
+    if setores_selecionados:
+        df = df[df["setor"].isin(setores_selecionados)]
+    if status_filtro != "Todos":
+        df = df[df["Status"] == status_filtro]
+
+    if df.empty:
+        st.info("Nenhuma pendência para os filtros selecionados.")
+        return
+
+    df = df.rename(columns={"setor": "Setor"})
+    df["Status"] = df["Status"].map(lambda x: STATUS_LABEL.get(x, x))
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 def _render_registro_execucao(equipamentos, responsaveis):
@@ -79,8 +114,18 @@ def _render_registro_execucao(equipamentos, responsaveis):
             tipo = st.selectbox("Tipo", ["revisao", "lubrificacao"])
             data_execucao = st.date_input("Data da execução")
         with col2:
-            km_execucao = st.number_input("KM atual", min_value=0.0, value=0.0, step=1.0)
-            horas_execucao = st.number_input("Horas atuais", min_value=0.0, value=0.0, step=1.0)
+            km_execucao = st.number_input(
+                "KM atual",
+                min_value=0.0,
+                value=float(equipamento.get("km_atual") or 0),
+                step=1.0,
+            )
+            horas_execucao = st.number_input(
+                "Horas atuais",
+                min_value=0.0,
+                value=float(equipamento.get("horas_atual") or 0),
+                step=1.0,
+            )
             status = st.selectbox("Status", ["concluida", "pendente"])
 
         observacoes = st.text_area("Observações")
@@ -108,7 +153,7 @@ def _render_historico(equipamentos):
 
     historico = execucoes_service.listar()
     if historico:
-        st.dataframe(pd.DataFrame(historico), use_container_width=True)
+        st.dataframe(pd.DataFrame(historico), use_container_width=True, hide_index=True)
     else:
         st.info("Nenhuma execução registrada ainda.")
 
@@ -129,7 +174,7 @@ def _render_historico(equipamentos):
 
         dados = execucoes_service.listar_por_equipamento(equipamento["id"])
         if dados:
-            st.dataframe(pd.DataFrame(dados), use_container_width=True)
+            st.dataframe(pd.DataFrame(dados), use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum histórico para este equipamento.")
 
@@ -149,11 +194,7 @@ def render():
     ])
 
     with tab1:
-        st.subheader("Próximas revisões")
-        if not pendencias_df.empty:
-            st.dataframe(pendencias_df, use_container_width=True)
-        else:
-            st.info("Nenhum dado encontrado.")
+        _render_pendencias(pendencias_df, equipamentos)
 
     with tab2:
         _render_registro_execucao(equipamentos, responsaveis)
