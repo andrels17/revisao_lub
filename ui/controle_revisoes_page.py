@@ -17,35 +17,31 @@ STATUS_LABEL = {
 }
 
 
-def _carregar_pendencias(equipamentos):
-    dados = []
-    for eqp in equipamentos:
-        revisoes = revisoes_service.calcular_proximas_revisoes(eqp["id"])
-        if not revisoes:
-            continue
-
-        for rev in revisoes:
-            dados.append(
-                {
-                    "equipamento_id": eqp["id"],
-                    "setor": eqp.get("setor_nome") or "-",
-                    "Equipamento": f'{eqp["codigo"]} - {eqp["nome"]}',
-                    "Etapa": rev["etapa"],
-                    "Controle": rev.get("tipo_controle", eqp["tipo"] or "-"),
-                    "Atual": float(rev["atual"]),
-                    "Última execução": float(rev.get("ultima_execucao", 0) or 0),
-                    "Vencimento": float(rev["vencimento"]),
-                    "Status": rev["status"],
-                    "Falta": float(rev["diferenca"]),
-                    "observacoes_sugeridas": f'Baixa rápida da pendência: {rev["etapa"]}',
-                    "_ordem": STATUS_ORDEM.get(rev["status"], 99),
-                }
-            )
-
+def _carregar_pendencias():
+    dados = revisoes_service.listar_controle_revisoes()
     if not dados:
         return pd.DataFrame()
 
-    df = pd.DataFrame(dados)
+    df = pd.DataFrame(
+        [
+            {
+                "equipamento_id": item["equipamento_id"],
+                "setor": item["setor_nome"] or "-",
+                "Equipamento": f'{item["codigo"]} - {item["equipamento_nome"]}',
+                "Etapa": item["etapa"],
+                "Controle": item["tipo_controle"] or "-",
+                "Atual": float(item["leitura_atual"] or 0),
+                "Última execução": float(item["ultima_execucao"] or 0),
+                "Vencimento": float(item["vencimento"] or 0),
+                "Status": item["status"],
+                "Falta": float(item["falta"] or 0),
+                "observacoes_sugeridas": f'Baixa rápida da pendência: {item["etapa"]}',
+                "_ordem": STATUS_ORDEM.get(item["status"], 99),
+            }
+            for item in dados
+        ]
+    )
+
     return df.sort_values(by=["_ordem", "Falta", "Equipamento"]).drop(columns=["_ordem"])
 
 
