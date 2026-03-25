@@ -69,3 +69,30 @@ def render():
     df_view["Status"] = df_view["Status"].map(lambda x: STATUS_LABEL.get(x, x))
 
     st.dataframe(df_view, use_container_width=True, hide_index=True)
+
+    st.divider()
+    st.subheader("Executar revisão")
+
+    linha = st.selectbox(
+        "Selecione a revisão",
+        df.to_dict("records"),
+        format_func=lambda x: f"{x['Equipamento']} - {x['Etapa']}",
+    )
+
+    leitura = st.number_input("Leitura executada", min_value=0.0, step=1.0)
+
+    responsavel_id = st.text_input("Responsável (UUID)")
+
+    observacao = st.text_area("Observação")
+
+    if st.button("Executar revisão"):
+        revisoes_service.registrar_execucao_revisao(
+            equipamento_id=linha["equipamento_id"],
+            responsavel_id=responsavel_id,
+            tipo_controle=linha["Controle"],
+            leitura_execucao=leitura,
+            observacao=observacao,
+        )
+
+        st.success("Revisão executada com sucesso!")
+        st.rerun()
