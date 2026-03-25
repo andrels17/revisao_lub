@@ -1,11 +1,68 @@
-import streamlit as st
 import pandas as pd
+import streamlit as st
 from services import responsaveis_service
+
+
+FUNCOES_SUGERIDAS = [
+    "Gestor",
+    "Supervisor",
+    "Mecânico",
+    "Lubrificador",
+    "Operador",
+    "Planejamento",
+]
+
 
 def render():
     st.title("Responsáveis")
-    dados = responsaveis_service.listar()
-    if dados:
-        st.dataframe(pd.DataFrame(dados), use_container_width=True)
-    else:
-        st.info("Nenhum responsável encontrado.")
+    responsaveis = responsaveis_service.listar()
+
+    c1, c2 = st.columns([1, 2])
+    c1.metric("Total de responsáveis", len(responsaveis))
+    c2.metric("Responsáveis ativos", sum(1 for item in responsaveis if item.get("ativo")))
+
+    tab1, tab2 = st.tabs(["Cadastrar responsável", "Lista de responsáveis"])
+
+    with tab1:
+        st.subheader("Novo responsável")
+        with st.form("form_responsavel", clear_on_submit=True):
+            nome = st.text_input("Nome")
+            funcao_principal = st.selectbox(
+                "Função principal",
+                options=[""] + FUNCOES_SUGERIDAS,
+                format_func=lambda x: x or "Selecione",
+            )
+            telefone = st.text_input("Telefone")
+            email = st.text_input("E-mail")
+            ativo = st.checkbox("Ativo", value=True)
+            submitted = st.form_submit_button("Salvar responsável", use_container_width=True)
+
+        if submitted:
+            if not nome.strip():
+                st.error("Informe o nome do responsável.")
+            else:
+                responsaveis_service.criar(
+                    nome=nome.strip(),
+                    funcao_principal=funcao_principal or None,
+                    telefone=telefone.strip() or None,
+                    email=email.strip() or None,
+                    ativo=ativo,
+                )
+                st.success("Responsável cadastrado com sucesso.")
+                st.rerun()
+
+    with tab2:
+        if responsaveis:
+            df = pd.DataFrame(responsaveis)
+            df = df.rename(
+                columns={
+                    "nome": "Nome",
+                    "funcao_principal": "Função",
+                    "telefone": "Telefone",
+                    "email": "E-mail",
+                    "ativo": "Ativo",
+                }
+            )
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhum responsável encontrado.")

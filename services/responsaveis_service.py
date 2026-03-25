@@ -1,5 +1,6 @@
 from database.connection import get_conn
 
+
 def listar():
     conn = get_conn()
     cur = conn.cursor()
@@ -17,5 +18,25 @@ def listar():
             }
             for r in rows
         ]
+    finally:
+        conn.close()
+
+
+
+def criar(nome, funcao_principal=None, telefone=None, email=None, ativo=True):
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            insert into responsaveis (nome, funcao_principal, telefone, email, ativo)
+            values (%s, %s, %s, %s, %s)
+            returning id
+            """,
+            (nome, funcao_principal, telefone, email, ativo),
+        )
+        responsavel_id = cur.fetchone()[0]
+        conn.commit()
+        return responsavel_id
     finally:
         conn.close()

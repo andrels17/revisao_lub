@@ -39,3 +39,41 @@ def listar():
         ]
     finally:
         conn.close()
+
+
+
+def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, ativo=True):
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            insert into equipamentos (
+                codigo,
+                nome,
+                tipo,
+                setor_id,
+                km_atual,
+                horas_atual,
+                template_revisao_id,
+                ativo
+            )
+            values (%s, %s, %s, %s, %s, %s, %s, %s)
+            returning id
+            """,
+            (
+                codigo,
+                nome,
+                tipo,
+                setor_id,
+                km_atual,
+                horas_atual,
+                template_revisao_id,
+                ativo,
+            ),
+        )
+        equipamento_id = cur.fetchone()[0]
+        conn.commit()
+        return equipamento_id
+    finally:
+        conn.close()
