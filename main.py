@@ -1,6 +1,6 @@
 
 import streamlit as st
-from ui import dashboard_page, equipamentos_page, setores_page, responsaveis_page
+from ui import dashboard_page, equipamentos_page, setores_page, responsaveis_page, controle_revisoes_page
 
 st.set_page_config(layout="wide")
 
@@ -22,3 +22,7 @@ elif menu == "Equipamentos":
 
 elif menu == "Responsáveis":
     responsaveis_page.render()
+
+elif menu == "Controle de Revisões":
+    controle_revisoes_page.render()
+
