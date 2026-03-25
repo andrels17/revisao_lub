@@ -1,4 +1,5 @@
 from database.connection import get_conn
+from datetime import date
 
 
 def listar_controle_revisoes():
@@ -65,5 +66,71 @@ def listar_controle_revisoes():
             }
             for r in rows
         ]
+    finally:
+        conn.close()
+
+
+def registrar_execucao_revisao(
+    equipamento_id,
+    responsavel_id,
+    tipo_controle,
+    leitura_execucao,
+    observacao=None,
+):
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        if tipo_controle == "km":
+            km_execucao = leitura_execucao
+            horas_execucao = None
+        else:
+            km_execucao = None
+            horas_execucao = leitura_execucao
+
+        cur.execute(
+            """
+            insert into public.execucoes_manutencao (
+                equipamento_id,
+                responsavel_id,
+                tipo,
+                data_execucao,
+                km_execucao,
+                horas_execucao,
+                status,
+                observacao
+            )
+            values (%s, %s, 'revisao', %s, %s, %s, 'concluida', %s)
+            """,
+            (
+                equipamento_id,
+                responsavel_id,
+                date.today(),
+                km_execucao,
+                horas_execucao,
+                observacao,
+            ),
+        )
+
+        if tipo_controle == "km":
+            cur.execute(
+                """
+                update public.equipamentos
+                set km_atual = %s
+                where id = %s
+                """,
+                (leitura_execucao, equipamento_id),
+            )
+        else:
+            cur.execute(
+                """
+                update public.equipamentos
+                set horas_atual = %s
+                where id = %s
+                """,
+                (leitura_execucao, equipamento_id),
+            )
+
+        conn.commit()
+
     finally:
         conn.close()
