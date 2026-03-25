@@ -12,7 +12,6 @@ from services import (
 STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2}
 
 
-
 def _carregar_pendencias(equipamentos):
     dados = []
     for eqp in equipamentos:
@@ -43,6 +42,13 @@ def _carregar_pendencias(equipamentos):
     return df.sort_values(by=["_ordem", "Falta", "Equipamento"]).drop(columns=["_ordem"])
 
 
+def _formatar_equipamento(equipamento):
+    return f'{equipamento["codigo"]} - {equipamento["nome"]}'
+
+
+def _formatar_responsavel(responsavel):
+    return responsavel["nome"]
+
 
 def _render_registro_execucao(equipamentos, responsaveis):
     st.subheader("Registrar execução")
@@ -55,14 +61,21 @@ def _render_registro_execucao(equipamentos, responsaveis):
         st.info("Cadastre responsáveis antes de registrar execuções.")
         return
 
-    equipamentos_map = {f'{e["codigo"]} - {e["nome"]}': e for e in equipamentos}
-    responsaveis_map = {r["nome"]: r for r in responsaveis}
-
     with st.form("form_execucao", clear_on_submit=True):
-        equipamento_label = st.selectbox("Equipamento", list(equipamentos_map.keys()))
+        equipamento = st.selectbox(
+            "Equipamento",
+            options=equipamentos,
+            format_func=_formatar_equipamento,
+            key="execucao_equipamento",
+        )
         col1, col2 = st.columns(2)
         with col1:
-            responsavel_label = st.selectbox("Responsável", list(responsaveis_map.keys()))
+            responsavel = st.selectbox(
+                "Responsável",
+                options=responsaveis,
+                format_func=_formatar_responsavel,
+                key="execucao_responsavel",
+            )
             tipo = st.selectbox("Tipo", ["revisao", "lubrificacao"])
             data_execucao = st.date_input("Data da execução")
         with col2:
@@ -74,9 +87,6 @@ def _render_registro_execucao(equipamentos, responsaveis):
         salvar = st.form_submit_button("Salvar execução", use_container_width=True)
 
         if salvar:
-            equipamento = equipamentos_map[equipamento_label]
-            responsavel = responsaveis_map[responsavel_label]
-
             execucoes_service.criar_execucao(
                 {
                     "equipamento_id": equipamento["id"],
@@ -93,7 +103,6 @@ def _render_registro_execucao(equipamentos, responsaveis):
             st.rerun()
 
 
-
 def _render_historico(equipamentos):
     st.subheader("Histórico de execuções")
 
@@ -104,19 +113,25 @@ def _render_historico(equipamentos):
         st.info("Nenhuma execução registrada ainda.")
 
     with st.expander("Histórico por equipamento"):
-        equipamentos_map = {f'{e["codigo"]} - {e["nome"]}': e for e in equipamentos}
-        equipamento_label = st.selectbox(
+        if not equipamentos:
+            st.info("Nenhum equipamento cadastrado.")
+            return
+
+        equipamento = st.selectbox(
             "Selecionar equipamento",
-            list(equipamentos_map.keys()),
+            options=equipamentos,
+            format_func=_formatar_equipamento,
             key="historico_equipamento",
         )
-        equipamento = equipamentos_map[equipamento_label]
+        if not equipamento:
+            st.info("Selecione um equipamento.")
+            return
+
         dados = execucoes_service.listar_por_equipamento(equipamento["id"])
         if dados:
             st.dataframe(pd.DataFrame(dados), use_container_width=True)
         else:
             st.info("Nenhum histórico para este equipamento.")
-
 
 
 def render():
