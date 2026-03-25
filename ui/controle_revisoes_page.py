@@ -32,11 +32,12 @@ def _carregar_pendencias(equipamentos):
                     "Equipamento": f'{eqp["codigo"]} - {eqp["nome"]}',
                     "Etapa": rev["etapa"],
                     "Controle": rev.get("tipo_controle", eqp["tipo"] or "-"),
-                    "Atual": rev["atual"],
-                    "Última execução": rev.get("ultima_execucao", 0),
-                    "Vencimento": rev["vencimento"],
+                    "Atual": float(rev["atual"]),
+                    "Última execução": float(rev.get("ultima_execucao", 0) or 0),
+                    "Vencimento": float(rev["vencimento"]),
                     "Status": rev["status"],
-                    "Falta": rev["diferenca"],
+                    "Falta": float(rev["diferenca"]),
+                    "observacoes_sugeridas": f'Baixa rápida da pendência: {rev["etapa"]}',
                     "_ordem": STATUS_ORDEM.get(rev["status"], 99),
                 }
             )
@@ -56,7 +57,199 @@ def _formatar_responsavel(responsavel):
     return responsavel["nome"]
 
 
-def _render_pendencias(pendencias_df, equipamentos):
+def _set_prefill(pendencia):
+    st.session_state["execucao_prefill"] = {
+        "equipamento_id": pendencia["equipamento_id"],
+        "tipo": "revisao",
+        "observacoes": pendencia.get("observacoes_sugeridas") or f'Baixa rápida da pendência: {pendencia["Etapa"]}',
+        "origem": f'{pendencia["Equipamento"]} | {pendencia["Etapa"]}',
+    }
+
+
+def _obter_prefill_equipamento(equipamentos):
+    prefill = st.session_state.get("execucao_prefill") or {}
+    equipamento_id = prefill.get("equipamento_id")
+    if not equipamento_id:
+        return equipamentos[0] if equipamentos else None
+
+    for equipamento in equipamentos:
+        if equipamento["id"] == equipamento_id:
+            return equipamento
+
+    return equipamentos[0] if equipamentos else None
+
+
+def _render_form_execucao(equipamentos, responsaveis, form_key, compacta=False):
+    if not equipamentos:
+        st.info("Cadastre equipamentos antes de registrar execuções.")
+        return
+
+    if not responsaveis:
+        st.info("Cadastre responsáveis antes de registrar execuções.")
+        return
+
+    prefill = st.session_state.get("execucao_prefill") or {}
+    equipamento_padrao = _obter_prefill_equipamento(equipamentos)
+    if equipamento_padrao is None:
+        st.info("Nenhum equipamento cadastrado.")
+        return
+
+    equipamento_index = next(
+        (i for i, item in enumerate(equipamentos) if item["id"] == equipamento_padrao["id"]),
+        0,
+    )
+
+    origem = prefill.get("origem")
+    if origem:
+        st.caption(f"Pendência selecionada: {origem}")
+
+    with st.form(form_key, clear_on_submit=False):
+        equipamento = st.selectbox(
+            "Equipamento",
+            options=equipamentos,
+            index=equipamento_index,
+            format_func=_formatar_equipamento,
+            key=f"{form_key}_equipamento",
+        )
+
+        if compacta:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                responsavel = st.selectbox(
+                    "Responsável",
+                    options=responsaveis,
+                    format_func=_formatar_responsavel,
+                    key=f"{form_key}_responsavel",
+                )
+                tipo = st.selectbox(
+                    "Tipo",
+                    ["revisao", "lubrificacao"],
+                    index=0 if prefill.get("tipo", "revisao") == "revisao" else 1,
+                    key=f"{form_key}_tipo",
+                )
+            with col2:
+                data_execucao = st.date_input("Data da execução", key=f"{form_key}_data")
+                km_execucao = st.number_input(
+                    "KM atual",
+                    min_value=0.0,
+                    value=float(equipamento.get("km_atual") or 0),
+                    step=1.0,
+                    key=f"{form_key}_km",
+                )
+            with col3:
+                horas_execucao = st.number_input(
+                    "Horas atuais",
+                    min_value=0.0,
+                    value=float(equipamento.get("horas_atual") or 0),
+                    step=1.0,
+                    key=f"{form_key}_horas",
+                )
+                status = st.selectbox(
+                    "Status",
+                    ["concluida", "pendente"],
+                    key=f"{form_key}_status",
+                )
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                responsavel = st.selectbox(
+                    "Responsável",
+                    options=responsaveis,
+                    format_func=_formatar_responsavel,
+                    key=f"{form_key}_responsavel",
+                )
+                tipo = st.selectbox(
+                    "Tipo",
+                    ["revisao", "lubrificacao"],
+                    index=0 if prefill.get("tipo", "revisao") == "revisao" else 1,
+                    key=f"{form_key}_tipo",
+                )
+                data_execucao = st.date_input("Data da execução", key=f"{form_key}_data")
+            with col2:
+                km_execucao = st.number_input(
+                    "KM atual",
+                    min_value=0.0,
+                    value=float(equipamento.get("km_atual") or 0),
+                    step=1.0,
+                    key=f"{form_key}_km",
+                )
+                horas_execucao = st.number_input(
+                    "Horas atuais",
+                    min_value=0.0,
+                    value=float(equipamento.get("horas_atual") or 0),
+                    step=1.0,
+                    key=f"{form_key}_horas",
+                )
+                status = st.selectbox(
+                    "Status",
+                    ["concluida", "pendente"],
+                    key=f"{form_key}_status",
+                )
+
+        observacoes = st.text_area(
+            "Observações",
+            value=prefill.get("observacoes", ""),
+            key=f"{form_key}_observacoes",
+        )
+        salvar = st.form_submit_button("Salvar execução", use_container_width=True)
+
+        if salvar:
+            execucoes_service.criar_execucao(
+                {
+                    "equipamento_id": equipamento["id"],
+                    "responsavel_id": responsavel["id"],
+                    "tipo": tipo,
+                    "data_execucao": data_execucao,
+                    "km_execucao": km_execucao,
+                    "horas_execucao": horas_execucao,
+                    "observacoes": observacoes,
+                    "status": status,
+                }
+            )
+            st.session_state.pop("execucao_prefill", None)
+            st.success("Execução registrada com sucesso.")
+            st.rerun()
+
+
+def _render_baixa_rapida(df, responsaveis):
+    st.subheader("Baixa operacional rápida")
+    st.caption("Selecione uma pendência e já registre a execução sem sair da tela.")
+
+    registros = df.to_dict("records")[:30]
+    if not registros:
+        st.info("Nenhuma pendência disponível para execução rápida.")
+        return
+
+    for idx, item in enumerate(registros):
+        col1, col2, col3, col4, col5 = st.columns([3.3, 1.2, 1.1, 1.1, 1.2])
+        col1.markdown(
+            f"**{item['Equipamento']}**  \n"
+            f"{item['Etapa']} · {item['Controle']}"
+        )
+        col2.markdown(f"**Setor**  \n{item['setor']}")
+        col3.markdown(f"**Atual**  \n{item['Atual']:.0f}")
+        col4.markdown(f"**Venc.**  \n{item['Vencimento']:.0f}")
+        col5.button(
+            "Executar",
+            key=f"executar_pendencia_{idx}",
+            use_container_width=True,
+            on_click=_set_prefill,
+            args=(item,),
+        )
+
+    prefill = st.session_state.get("execucao_prefill")
+    if prefill:
+        equipamento_id = prefill.get("equipamento_id")
+        equipamentos = [
+            item for item in equipamentos_service.listar() if item["id"] == equipamento_id
+        ]
+        if equipamentos:
+            with st.container(border=True):
+                st.markdown("**Executar pendência selecionada**")
+                _render_form_execucao(equipamentos, responsaveis, "form_execucao_rapida", compacta=True)
+
+
+def _render_pendencias(pendencias_df, equipamentos, responsaveis):
     st.subheader("Próximas revisões")
 
     if pendencias_df.empty:
@@ -80,72 +273,17 @@ def _render_pendencias(pendencias_df, equipamentos):
         st.info("Nenhuma pendência para os filtros selecionados.")
         return
 
-    df = df.rename(columns={"setor": "Setor"})
-    df["Status"] = df["Status"].map(lambda x: STATUS_LABEL.get(x, x))
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    df_tabela = df.rename(columns={"setor": "Setor"}).copy()
+    df_tabela["Status"] = df_tabela["Status"].map(lambda x: STATUS_LABEL.get(x, x))
+    st.dataframe(df_tabela, use_container_width=True, hide_index=True)
+
+    st.divider()
+    _render_baixa_rapida(df, responsaveis)
 
 
 def _render_registro_execucao(equipamentos, responsaveis):
     st.subheader("Registrar execução")
-
-    if not equipamentos:
-        st.info("Cadastre equipamentos antes de registrar execuções.")
-        return
-
-    if not responsaveis:
-        st.info("Cadastre responsáveis antes de registrar execuções.")
-        return
-
-    with st.form("form_execucao", clear_on_submit=True):
-        equipamento = st.selectbox(
-            "Equipamento",
-            options=equipamentos,
-            format_func=_formatar_equipamento,
-            key="execucao_equipamento",
-        )
-        col1, col2 = st.columns(2)
-        with col1:
-            responsavel = st.selectbox(
-                "Responsável",
-                options=responsaveis,
-                format_func=_formatar_responsavel,
-                key="execucao_responsavel",
-            )
-            tipo = st.selectbox("Tipo", ["revisao", "lubrificacao"])
-            data_execucao = st.date_input("Data da execução")
-        with col2:
-            km_execucao = st.number_input(
-                "KM atual",
-                min_value=0.0,
-                value=float(equipamento.get("km_atual") or 0),
-                step=1.0,
-            )
-            horas_execucao = st.number_input(
-                "Horas atuais",
-                min_value=0.0,
-                value=float(equipamento.get("horas_atual") or 0),
-                step=1.0,
-            )
-            status = st.selectbox("Status", ["concluida", "pendente"])
-
-        observacoes = st.text_area("Observações")
-        salvar = st.form_submit_button("Salvar execução", use_container_width=True)
-
-        if salvar:
-            execucoes_service.criar_execucao(
-                {
-                    "equipamento_id": equipamento["id"],
-                    "responsavel_id": responsavel["id"],
-                    "tipo": tipo,
-                    "data_execucao": data_execucao,
-                    "km_execucao": km_execucao,
-                    "horas_execucao": horas_execucao,
-                    "observacoes": observacoes,
-                    "status": status,
-                }
-            )
-            st.success("Execução registrada com sucesso.")
-            st.rerun()
+    _render_form_execucao(equipamentos, responsaveis, "form_execucao_principal")
 
 
 def _render_historico(equipamentos):
@@ -194,7 +332,7 @@ def render():
     ])
 
     with tab1:
-        _render_pendencias(pendencias_df, equipamentos)
+        _render_pendencias(pendencias_df, equipamentos, responsaveis)
 
     with tab2:
         _render_registro_execucao(equipamentos, responsaveis)
