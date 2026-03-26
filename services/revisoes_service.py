@@ -71,4 +71,40 @@ def listar_controle_revisoes():
 
 def calcular_proximas_revisoes(equipamento_id):
     dados = listar_controle_revisoes()
-    return [item for item in dados if item["equipamento_id"] == equipamento_id]
+    filtrados = [item for item in dados if item["equipamento_id"] == equipamento_id]
+
+    resultado = []
+    for item in filtrados:
+        resultado.append(
+            {
+                # formato novo
+                "equipamento_id": item["equipamento_id"],
+                "codigo": item["codigo"],
+                "equipamento_nome": item["equipamento_nome"],
+                "equipamento_tipo": item["equipamento_tipo"],
+                "setor_id": item["setor_id"],
+                "setor_nome": item["setor_nome"],
+                "template_id": item["template_id"],
+                "template_nome": item["template_nome"],
+                "etapa_id": item["etapa_id"],
+                "etapa": item["etapa"],
+                "tipo_controle": item["tipo_controle"],
+                "gatilho_valor": item["gatilho_valor"],
+                "km_atual": item["km_atual"],
+                "horas_atual": item["horas_atual"],
+                "leitura_atual": item["leitura_atual"],
+                "ultima_execucao": item["ultima_execucao"],
+                "vencimento": item["vencimento"],
+                "falta": item["falta"],
+                "status": item["status"],
+
+                # compatibilidade com código antigo
+                "nome_etapa": item["etapa"],
+                "tipo": item["tipo_controle"],
+                "gatilho": item["gatilho_valor"],
+                "atual": item["leitura_atual"],
+                "ultima_leitura_execucao": item["ultima_execucao"],
+            }
+        )
+
+    return resultado
