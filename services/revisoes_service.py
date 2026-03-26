@@ -97,11 +97,13 @@ def calcular_proximas_revisoes(equipamento_id):
                 "falta": item["falta"],
                 "status": item["status"],
 
+                # compatibilidade com código antigo
                 "nome_etapa": item["etapa"],
                 "tipo": item["tipo_controle"],
                 "gatilho": item["gatilho_valor"],
                 "atual": item["leitura_atual"],
                 "ultima_leitura_execucao": item["ultima_execucao"],
+                "diferenca": item["falta"],
             }
         )
 
