@@ -16,7 +16,8 @@ def listar():
                 e.horas_atual,
                 e.template_revisao_id,
                 e.setor_id,
-                coalesce(s.nome, '-') as setor_nome
+                coalesce(s.nome, '-') as setor_nome,
+                e.template_lubrificacao_id
             from equipamentos e
             left join setores s on s.id = e.setor_id
             order by e.codigo
@@ -34,6 +35,7 @@ def listar():
                 "template_revisao_id": r[6],
                 "setor_id": r[7],
                 "setor_nome": r[8],
+                "template_lubrificacao_id": r[9],
             }
             for r in rows
         ]
@@ -41,35 +43,35 @@ def listar():
         conn.close()
 
 
+def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0,
+          template_revisao_id=None, ativo=True):
+    """Mantido para compatibilidade com importação CSV e código existente."""
+    return criar_completo(
+        codigo=codigo, nome=nome, tipo=tipo, setor_id=setor_id,
+        km_atual=km_atual, horas_atual=horas_atual,
+        template_revisao_id=template_revisao_id, ativo=ativo,
+    )
 
-def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, ativo=True):
+
+def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0,
+                   template_revisao_id=None, template_lubrificacao_id=None, ativo=True):
     conn = get_conn()
     cur = conn.cursor()
     try:
         cur.execute(
             """
             insert into equipamentos (
-                codigo,
-                nome,
-                tipo,
-                setor_id,
-                km_atual,
-                horas_atual,
-                template_revisao_id,
-                ativo
+                codigo, nome, tipo, setor_id,
+                km_atual, horas_atual,
+                template_revisao_id, template_lubrificacao_id, ativo
             )
-            values (%s, %s, %s, %s, %s, %s, %s, %s)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             returning id
             """,
             (
-                codigo,
-                nome,
-                tipo,
-                setor_id,
-                km_atual,
-                horas_atual,
-                template_revisao_id,
-                ativo,
+                codigo, nome, tipo, setor_id,
+                km_atual, horas_atual,
+                template_revisao_id, template_lubrificacao_id, ativo,
             ),
         )
         equipamento_id = cur.fetchone()[0]
