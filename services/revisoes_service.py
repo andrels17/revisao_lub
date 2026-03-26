@@ -67,3 +67,8 @@ def listar_controle_revisoes():
         ]
     finally:
         conn.close()
+
+
+def calcular_proximas_revisoes(equipamento_id):
+    dados = listar_controle_revisoes()
+    return [item for item in dados if item["equipamento_id"] == equipamento_id]
