@@ -77,7 +77,6 @@ def calcular_proximas_revisoes(equipamento_id):
     for item in filtrados:
         resultado.append(
             {
-                # formato novo
                 "equipamento_id": item["equipamento_id"],
                 "codigo": item["codigo"],
                 "equipamento_nome": item["equipamento_nome"],
@@ -98,7 +97,6 @@ def calcular_proximas_revisoes(equipamento_id):
                 "falta": item["falta"],
                 "status": item["status"],
 
-                # compatibilidade com código antigo
                 "nome_etapa": item["etapa"],
                 "tipo": item["tipo_controle"],
                 "gatilho": item["gatilho_valor"],
