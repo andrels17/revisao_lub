@@ -1,4 +1,5 @@
 from database.connection import get_conn
+import psycopg2
 
 TOLERANCIA_PADRAO = 10
 
@@ -118,7 +119,6 @@ def registrar_execucao(dados):
         )
         execucao_id = cur.fetchone()[0]
 
-        # Atualiza leituras do equipamento (pega o maior valor)
         cur.execute(
             """
             update equipamentos
@@ -138,18 +138,37 @@ def listar_por_equipamento(equipamento_id):
     conn = get_conn()
     cur = conn.cursor()
     try:
-        cur.execute(
-            """
-            select el.id, el.data_execucao, el.nome_item, el.tipo_produto,
-                   el.km_execucao, el.horas_execucao,
-                   coalesce(r.nome, '-') as responsavel, el.observacoes
-            from execucoes_lubrificacao el
-            left join responsaveis r on r.id = el.responsavel_id
-            where el.equipamento_id = %s
-            order by el.data_execucao desc, el.created_at desc
-            """,
-            (equipamento_id,),
-        )
+        try:
+            cur.execute(
+                """
+                select el.id, el.data_execucao, el.nome_item, el.tipo_produto,
+                       el.km_execucao, el.horas_execucao,
+                       coalesce(r.nome, '-') as responsavel, el.observacoes
+                from execucoes_lubrificacao el
+                left join responsaveis r on r.id = el.responsavel_id
+                where el.equipamento_id = %s
+                order by el.data_execucao desc, el.created_at desc
+                """,
+                (equipamento_id,),
+            )
+        except psycopg2.errors.UndefinedColumn:
+            conn.rollback()
+            cur.execute(
+                """
+                select el.id, el.data_execucao, el.nome_item, el.tipo_produto,
+                       el.km_execucao, el.horas_execucao,
+                       coalesce(r.nome, '-') as responsavel, el.observacoes
+                from execucoes_lubrificacao el
+                left join responsaveis r on r.id = el.responsavel_id
+                where el.equipamento_id = %s
+                order by el.data_execucao desc, el.id desc
+                """,
+                (equipamento_id,),
+            )
+        except (psycopg2.errors.UndefinedTable, psycopg2.errors.UndefinedObject):
+            conn.rollback()
+            return []
+
         rows = cur.fetchall()
         return [
             {
@@ -172,22 +191,45 @@ def listar_todos():
     conn = get_conn()
     cur = conn.cursor()
     try:
-        cur.execute(
-            """
-            select el.id, el.data_execucao,
-                   eq.codigo || ' - ' || eq.nome as equipamento,
-                   coalesce(s.nome, '-') as setor,
-                   el.nome_item, el.tipo_produto,
-                   el.km_execucao, el.horas_execucao,
-                   coalesce(r.nome, '-') as responsavel,
-                   el.observacoes
-            from execucoes_lubrificacao el
-            join equipamentos eq on eq.id = el.equipamento_id
-            left join setores s on s.id = eq.setor_id
-            left join responsaveis r on r.id = el.responsavel_id
-            order by el.data_execucao desc, el.created_at desc
-            """
-        )
+        try:
+            cur.execute(
+                """
+                select el.id, el.data_execucao,
+                       eq.codigo || ' - ' || eq.nome as equipamento,
+                       coalesce(s.nome, '-') as setor,
+                       el.nome_item, el.tipo_produto,
+                       el.km_execucao, el.horas_execucao,
+                       coalesce(r.nome, '-') as responsavel,
+                       el.observacoes
+                from execucoes_lubrificacao el
+                join equipamentos eq on eq.id = el.equipamento_id
+                left join setores s on s.id = eq.setor_id
+                left join responsaveis r on r.id = el.responsavel_id
+                order by el.data_execucao desc, el.created_at desc
+                """
+            )
+        except psycopg2.errors.UndefinedColumn:
+            conn.rollback()
+            cur.execute(
+                """
+                select el.id, el.data_execucao,
+                       eq.codigo || ' - ' || eq.nome as equipamento,
+                       coalesce(s.nome, '-') as setor,
+                       el.nome_item, el.tipo_produto,
+                       el.km_execucao, el.horas_execucao,
+                       coalesce(r.nome, '-') as responsavel,
+                       el.observacoes
+                from execucoes_lubrificacao el
+                join equipamentos eq on eq.id = el.equipamento_id
+                left join setores s on s.id = eq.setor_id
+                left join responsaveis r on r.id = el.responsavel_id
+                order by el.data_execucao desc, el.id desc
+                """
+            )
+        except (psycopg2.errors.UndefinedTable, psycopg2.errors.UndefinedObject):
+            conn.rollback()
+            return []
+
         rows = cur.fetchall()
         return [
             {

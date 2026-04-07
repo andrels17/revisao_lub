@@ -1,4 +1,5 @@
 from database.connection import get_conn
+import psycopg2
 
 
 
@@ -42,20 +43,41 @@ def listar_por_equipamento(equipamento_id, limite=20):
     conn = get_conn()
     cur = conn.cursor()
     try:
-        cur.execute(
-            """
-            select l.id, l.data_leitura, l.tipo_leitura,
-                   l.km_valor, l.horas_valor,
-                   coalesce(r.nome, '-') as responsavel,
-                   l.observacoes
-            from leituras l
-            left join responsaveis r on r.id = l.responsavel_id
-            where l.equipamento_id = %s
-            order by l.data_leitura desc, l.created_at desc
-            limit %s
-            """,
-            (equipamento_id, limite),
-        )
+        try:
+            cur.execute(
+                """
+                select l.id, l.data_leitura, l.tipo_leitura,
+                       l.km_valor, l.horas_valor,
+                       coalesce(r.nome, '-') as responsavel,
+                       l.observacoes
+                from leituras l
+                left join responsaveis r on r.id = l.responsavel_id
+                where l.equipamento_id = %s
+                order by l.data_leitura desc, l.created_at desc
+                limit %s
+                """,
+                (equipamento_id, limite),
+            )
+        except psycopg2.errors.UndefinedColumn:
+            conn.rollback()
+            cur.execute(
+                """
+                select l.id, l.data_leitura, l.tipo_leitura,
+                       l.km_valor, l.horas_valor,
+                       coalesce(r.nome, '-') as responsavel,
+                       l.observacoes
+                from leituras l
+                left join responsaveis r on r.id = l.responsavel_id
+                where l.equipamento_id = %s
+                order by l.data_leitura desc, l.id desc
+                limit %s
+                """,
+                (equipamento_id, limite),
+            )
+        except (psycopg2.errors.UndefinedTable, psycopg2.errors.UndefinedObject):
+            conn.rollback()
+            return []
+
         rows = cur.fetchall()
         return [
             {
