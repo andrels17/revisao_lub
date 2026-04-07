@@ -2,18 +2,17 @@ from collections import Counter
 
 from services import equipamentos_service, lubrificacoes_service, revisoes_service
 
-
 STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2}
-
 
 
 def carregar_alertas():
     equipamentos = equipamentos_service.listar()
-    revisoes_indexadas = revisoes_service.listar_controle_revisoes_por_equipamento()
+    revisoes_indice = revisoes_service.indexar_por_equipamento()
     alertas = []
 
     for eqp in equipamentos:
-        for rev in revisoes_service.calcular_proximas_revisoes(eqp["id"], revisoes_indexadas):
+        revisoes = revisoes_service.calcular_proximas_revisoes(eqp["id"], indice=revisoes_indice)
+        for rev in revisoes:
             alertas.append(
                 {
                     "origem": "Revisão",
@@ -33,7 +32,8 @@ def carregar_alertas():
                 }
             )
 
-        for lub in lubrificacoes_service.calcular_proximas_lubrificacoes(eqp["id"]):
+        lubs = lubrificacoes_service.calcular_proximas_lubrificacoes(eqp["id"])
+        for lub in lubs:
             alertas.append(
                 {
                     "origem": "Lubrificação",
@@ -42,7 +42,7 @@ def carregar_alertas():
                     "equipamento": eqp["nome"],
                     "equipamento_label": f'{eqp["codigo"]} - {eqp["nome"]}',
                     "setor": eqp.get("setor_nome") or "-",
-                    "tipo": lub.get("tipo_controle", "-"),
+                    "tipo": lub.get("tipo_controle", eqp.get("tipo") or "-"),
                     "etapa": lub["item"],
                     "atual": float(lub["atual"]),
                     "ultima_execucao": float(lub.get("ultima_execucao", 0) or 0),
@@ -84,12 +84,16 @@ def ranking_setores(alertas):
     for setor, total in contagem.most_common():
         vencidos = sum(1 for item in alertas if item["setor"] == setor and item["status"] == "VENCIDO")
         proximos = sum(1 for item in alertas if item["setor"] == setor and item["status"] == "PROXIMO")
+        revisoes = sum(1 for item in alertas if item["setor"] == setor and item.get("origem") == "Revisão" and item["status"] in {"VENCIDO", "PROXIMO"})
+        lubrificacoes = sum(1 for item in alertas if item["setor"] == setor and item.get("origem") == "Lubrificação" and item["status"] in {"VENCIDO", "PROXIMO"})
         ranking.append(
             {
                 "Setor": setor,
                 "Alertas": total,
                 "Vencidos": vencidos,
                 "Próximos": proximos,
+                "Revisões": revisoes,
+                "Lubrificações": lubrificacoes,
             }
         )
     return ranking

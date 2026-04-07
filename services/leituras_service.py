@@ -1,6 +1,6 @@
-from database.connection import get_conn
-import psycopg2
+from psycopg2 import errors
 
+from database.connection import get_conn
 
 
 def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
@@ -38,47 +38,51 @@ def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
         conn.close()
 
 
-
 def listar_por_equipamento(equipamento_id, limite=20):
     conn = get_conn()
     cur = conn.cursor()
     try:
-        try:
-            cur.execute(
-                """
-                select l.id, l.data_leitura, l.tipo_leitura,
-                       l.km_valor, l.horas_valor,
-                       coalesce(r.nome, '-') as responsavel,
-                       l.observacoes
-                from leituras l
-                left join responsaveis r on r.id = l.responsavel_id
-                where l.equipamento_id = %s
-                order by l.data_leitura desc, l.created_at desc
-                limit %s
-                """,
-                (equipamento_id, limite),
-            )
-        except psycopg2.errors.UndefinedColumn:
-            conn.rollback()
-            cur.execute(
-                """
-                select l.id, l.data_leitura, l.tipo_leitura,
-                       l.km_valor, l.horas_valor,
-                       coalesce(r.nome, '-') as responsavel,
-                       l.observacoes
-                from leituras l
-                left join responsaveis r on r.id = l.responsavel_id
-                where l.equipamento_id = %s
-                order by l.data_leitura desc, l.id desc
-                limit %s
-                """,
-                (equipamento_id, limite),
-            )
-        except (psycopg2.errors.UndefinedTable, psycopg2.errors.UndefinedObject):
-            conn.rollback()
+        consultas = [
+            """
+            select l.id, l.data_leitura, l.tipo_leitura,
+                   l.km_valor, l.horas_valor,
+                   coalesce(r.nome, '-') as responsavel,
+                   l.observacoes
+            from leituras l
+            left join responsaveis r on r.id = l.responsavel_id
+            where l.equipamento_id = %s
+            order by l.data_leitura desc, l.created_at desc
+            limit %s
+            """,
+            """
+            select l.id, l.data_leitura, l.tipo_leitura,
+                   l.km_valor, l.horas_valor,
+                   coalesce(r.nome, '-') as responsavel,
+                   l.observacoes
+            from leituras l
+            left join responsaveis r on r.id = l.responsavel_id
+            where l.equipamento_id = %s
+            order by l.data_leitura desc, l.id desc
+            limit %s
+            """,
+        ]
+
+        rows = None
+        for sql in consultas:
+            try:
+                cur.execute(sql, (equipamento_id, limite))
+                rows = cur.fetchall()
+                break
+            except errors.UndefinedColumn:
+                conn.rollback()
+                continue
+            except errors.UndefinedTable:
+                conn.rollback()
+                return []
+
+        if rows is None:
             return []
 
-        rows = cur.fetchall()
         return [
             {
                 "id": r[0],

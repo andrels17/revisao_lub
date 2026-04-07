@@ -3,13 +3,11 @@ import streamlit as st
 
 from services import dashboard_service
 
-
 STATUS_LABEL = {
     "VENCIDO": "🔴 Vencido",
     "PROXIMO": "🟡 Próximo",
     "EM DIA": "🟢 Em dia",
 }
-
 
 
 def _cards(kpis):
@@ -23,7 +21,6 @@ def _cards(kpis):
     c5.metric("Equipamentos com alerta", kpis["equipamentos_com_alerta"])
     c6.metric("Equipamentos vencidos", kpis["equipamentos_vencidos"])
     c7.metric("Equipamentos próximos", kpis["equipamentos_proximos"])
-
 
 
 def _formatar_alertas_df(alertas):
@@ -47,7 +44,7 @@ def _formatar_alertas_df(alertas):
             "origem": "Origem",
             "equipamento_label": "Equipamento",
             "setor": "Setor",
-            "etapa": "Etapa / Item",
+            "etapa": "Etapa/Item",
             "tipo": "Controle",
             "atual": "Atual",
             "ultima_execucao": "Última execução",
@@ -60,17 +57,16 @@ def _formatar_alertas_df(alertas):
     return df
 
 
-
 def render():
     st.title("Dashboard")
-    st.caption("Visão executiva de alertas de revisão e lubrificação.")
+    st.caption("Visão executiva consolidada de revisões e lubrificações.")
 
     alertas = dashboard_service.carregar_alertas()
     kpis = dashboard_service.resumo_kpis(alertas)
     _cards(kpis)
 
     if not alertas:
-        st.info("Nenhum alerta encontrado. Verifique se os equipamentos possuem template de revisão ou lubrificação configurado.")
+        st.info("Nenhum alerta encontrado. Verifique se os equipamentos possuem templates configurados.")
         return
 
     setores = sorted({item["setor"] for item in alertas if item["setor"]})
@@ -88,7 +84,7 @@ def render():
     if setor_filtro:
         filtrados = [item for item in filtrados if item["setor"] in setor_filtro]
     if origem_filtro != "Todas":
-        filtrados = [item for item in filtrados if item["origem"] == origem_filtro]
+        filtrados = [item for item in filtrados if item.get("origem") == origem_filtro]
     if status_filtro != "Todos":
         filtrados = [item for item in filtrados if item["status"] == status_filtro]
 

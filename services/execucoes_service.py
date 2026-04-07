@@ -1,14 +1,12 @@
 from database.connection import get_conn
 
 
-
 def _formatar_resultado_execucao(km_execucao, horas_execucao):
     if km_execucao is not None:
         return f"Realizado com {float(km_execucao):.0f} km"
     if horas_execucao is not None:
         return f"Realizado com {float(horas_execucao):.0f} h"
     return "Realizado"
-
 
 
 def criar_execucao(dados):
