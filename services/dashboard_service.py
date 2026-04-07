@@ -1,18 +1,19 @@
-from collections import Counter
+from collections import Counter, defaultdict
 
 from services import equipamentos_service, lubrificacoes_service, revisoes_service
+
 
 STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2}
 
 
+
 def carregar_alertas():
     equipamentos = equipamentos_service.listar()
-    revisoes_indice = revisoes_service.indexar_por_equipamento()
+    revisoes_indexadas = revisoes_service.listar_controle_revisoes_por_equipamento()
     alertas = []
 
     for eqp in equipamentos:
-        revisoes = revisoes_service.calcular_proximas_revisoes(eqp["id"], indice=revisoes_indice)
-        for rev in revisoes:
+        for rev in revisoes_service.calcular_proximas_revisoes(eqp["id"], revisoes_indexadas):
             alertas.append(
                 {
                     "origem": "Revisão",
@@ -32,8 +33,7 @@ def carregar_alertas():
                 }
             )
 
-        lubs = lubrificacoes_service.calcular_proximas_lubrificacoes(eqp["id"])
-        for lub in lubs:
+        for lub in lubrificacoes_service.calcular_proximas_lubrificacoes(eqp["id"]):
             alertas.append(
                 {
                     "origem": "Lubrificação",
@@ -42,7 +42,7 @@ def carregar_alertas():
                     "equipamento": eqp["nome"],
                     "equipamento_label": f'{eqp["codigo"]} - {eqp["nome"]}',
                     "setor": eqp.get("setor_nome") or "-",
-                    "tipo": lub.get("tipo_controle", eqp.get("tipo") or "-"),
+                    "tipo": lub.get("tipo_controle", "-"),
                     "etapa": lub["item"],
                     "atual": float(lub["atual"]),
                     "ultima_execucao": float(lub.get("ultima_execucao", 0) or 0),
@@ -84,8 +84,8 @@ def ranking_setores(alertas):
     for setor, total in contagem.most_common():
         vencidos = sum(1 for item in alertas if item["setor"] == setor and item["status"] == "VENCIDO")
         proximos = sum(1 for item in alertas if item["setor"] == setor and item["status"] == "PROXIMO")
-        revisoes = sum(1 for item in alertas if item["setor"] == setor and item.get("origem") == "Revisão" and item["status"] in {"VENCIDO", "PROXIMO"})
-        lubrificacoes = sum(1 for item in alertas if item["setor"] == setor and item.get("origem") == "Lubrificação" and item["status"] in {"VENCIDO", "PROXIMO"})
+        revisoes = sum(1 for item in alertas if item["setor"] == setor and item["origem"] == "Revisão" and item["status"] in {"VENCIDO", "PROXIMO"})
+        lubrificacoes = sum(1 for item in alertas if item["setor"] == setor and item["origem"] == "Lubrificação" and item["status"] in {"VENCIDO", "PROXIMO"})
         ranking.append(
             {
                 "Setor": setor,
@@ -97,3 +97,39 @@ def ranking_setores(alertas):
             }
         )
     return ranking
+
+
+
+def ranking_equipamentos_criticos(alertas, limite=10):
+    acumulado = defaultdict(lambda: {"setor": "-", "vencidos": 0, "proximos": 0, "revisoes": 0, "lubrificacoes": 0})
+    for item in alertas:
+        if item["status"] not in {"VENCIDO", "PROXIMO"}:
+            continue
+        bucket = acumulado[item["equipamento_label"]]
+        bucket["setor"] = item.get("setor") or "-"
+        if item["status"] == "VENCIDO":
+            bucket["vencidos"] += 1
+        if item["status"] == "PROXIMO":
+            bucket["proximos"] += 1
+        if item["origem"] == "Revisão":
+            bucket["revisoes"] += 1
+        else:
+            bucket["lubrificacoes"] += 1
+
+    ranking = []
+    for equipamento, dados in acumulado.items():
+        criticidade = (dados["vencidos"] * 3) + dados["proximos"]
+        ranking.append(
+            {
+                "Equipamento": equipamento,
+                "Setor": dados["setor"],
+                "Vencidos": dados["vencidos"],
+                "Próximos": dados["proximos"],
+                "Revisões": dados["revisoes"],
+                "Lubrificações": dados["lubrificacoes"],
+                "Criticidade": criticidade,
+            }
+        )
+
+    ranking.sort(key=lambda x: (-x["Criticidade"], -x["Vencidos"], -x["Próximos"], x["Equipamento"]))
+    return ranking[:limite]

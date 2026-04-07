@@ -3,11 +3,13 @@ import streamlit as st
 
 from services import dashboard_service
 
+
 STATUS_LABEL = {
     "VENCIDO": "🔴 Vencido",
     "PROXIMO": "🟡 Próximo",
     "EM DIA": "🟢 Em dia",
 }
+
 
 
 def _cards(kpis):
@@ -21,6 +23,7 @@ def _cards(kpis):
     c5.metric("Equipamentos com alerta", kpis["equipamentos_com_alerta"])
     c6.metric("Equipamentos vencidos", kpis["equipamentos_vencidos"])
     c7.metric("Equipamentos próximos", kpis["equipamentos_proximos"])
+
 
 
 def _formatar_alertas_df(alertas):
@@ -44,7 +47,7 @@ def _formatar_alertas_df(alertas):
             "origem": "Origem",
             "equipamento_label": "Equipamento",
             "setor": "Setor",
-            "etapa": "Etapa/Item",
+            "etapa": "Etapa / Item",
             "tipo": "Controle",
             "atual": "Atual",
             "ultima_execucao": "Última execução",
@@ -57,16 +60,17 @@ def _formatar_alertas_df(alertas):
     return df
 
 
+
 def render():
     st.title("Dashboard")
-    st.caption("Visão executiva consolidada de revisões e lubrificações.")
+    st.caption("Visão executiva de alertas de revisão e lubrificação.")
 
     alertas = dashboard_service.carregar_alertas()
     kpis = dashboard_service.resumo_kpis(alertas)
     _cards(kpis)
 
     if not alertas:
-        st.info("Nenhum alerta encontrado. Verifique se os equipamentos possuem templates configurados.")
+        st.info("Nenhum alerta encontrado. Verifique se os equipamentos possuem template de revisão ou lubrificação configurado.")
         return
 
     setores = sorted({item["setor"] for item in alertas if item["setor"]})
@@ -84,7 +88,7 @@ def render():
     if setor_filtro:
         filtrados = [item for item in filtrados if item["setor"] in setor_filtro]
     if origem_filtro != "Todas":
-        filtrados = [item for item in filtrados if item.get("origem") == origem_filtro]
+        filtrados = [item for item in filtrados if item["origem"] == origem_filtro]
     if status_filtro != "Todos":
         filtrados = [item for item in filtrados if item["status"] == status_filtro]
 
@@ -95,9 +99,20 @@ def render():
     else:
         st.info("Nenhum item para os filtros selecionados.")
 
-    st.subheader("Setores com mais alertas")
-    ranking = dashboard_service.ranking_setores(filtrados)
-    if ranking:
-        st.dataframe(pd.DataFrame(ranking), use_container_width=True, hide_index=True)
-    else:
-        st.info("Nenhum alerta de vencimento ou proximidade para exibir por setor.")
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        st.subheader("Setores com mais alertas")
+        ranking = dashboard_service.ranking_setores(filtrados)
+        if ranking:
+            st.dataframe(pd.DataFrame(ranking), use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhum alerta de vencimento ou proximidade para exibir por setor.")
+
+    with col_b:
+        st.subheader("Top equipamentos críticos")
+        ranking_eq = dashboard_service.ranking_equipamentos_criticos(filtrados)
+        if ranking_eq:
+            st.dataframe(pd.DataFrame(ranking_eq), use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhum equipamento crítico para os filtros selecionados.")
