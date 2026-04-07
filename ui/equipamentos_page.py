@@ -22,21 +22,13 @@ STATUS_LABEL = {
     "VENCIDO": "🔴 Vencido",
     "PROXIMO": "🟡 Próximo",
     "EM DIA": "🟢 Em dia",
+    "REALIZADO": "✅ Realizado",
 }
 
 
 
 def _formatar_status(status):
     return STATUS_LABEL.get(status, status)
-
-
-def _extrair_etapa_observacoes(obs):
-    if not obs:
-        return "-"
-    primeira = str(obs).splitlines()[0].strip()
-    if primeira.lower().startswith("etapa:"):
-        return primeira.split(":", 1)[1].strip() or "-"
-    return "-"
 
 
 
@@ -100,19 +92,21 @@ def _tabela_revisoes(revisoes):
         return
 
     df_rev = pd.DataFrame(revisoes)[[
-        "etapa", "tipo_controle", "atual", "ultima_execucao", "vencimento", "diferenca", "status"
+        "etapa", "tipo_controle", "atual", "ultima_execucao", "vencimento_ciclo", "proximo_vencimento", "diferenca", "status"
     ]].rename(columns={
         "etapa": "Etapa",
         "tipo_controle": "Controle",
         "atual": "Atual",
         "ultima_execucao": "Executado em",
-        "vencimento": "Próximo vencimento",
+        "vencimento_ciclo": "Referência do ciclo",
+        "proximo_vencimento": "Próximo vencimento",
         "diferenca": "Falta",
         "status": "Status",
     })
     df_rev["Status"] = df_rev["Status"].map(_formatar_status)
-    st.caption("Quando uma revisão é lançada, esta grade passa a mostrar o próximo ciclo da etapa. Ex.: revisão 5.000 km executada em 10.003 km passa a ter próximo vencimento em 15.003 km.")
+    st.caption("Cada etapa mostra o status dentro do ciclo atual. Quando uma etapa já foi lançada neste ciclo, ela aparece como Realizado.")
     st.dataframe(df_rev, use_container_width=True, hide_index=True)
+
 
 
 def _tabela_lubrificacoes(lubrificacoes):
@@ -402,11 +396,9 @@ def _mostrar_painel_360(equipamento_id):
 
     with tabs[3]:
         if historico_rev:
-            df_hist_rev = pd.DataFrame(historico_rev)
-            df_hist_rev["etapa_ref"] = df_hist_rev["observacoes"].apply(_extrair_etapa_observacoes)
-            df_hist_rev = df_hist_rev.rename(columns={
+            df_hist_rev = pd.DataFrame(historico_rev).rename(columns={
                 "data": "Data",
-                "etapa_ref": "Etapa",
+                "etapa_referencia": "Etapa",
                 "km": "KM",
                 "horas": "Horas",
                 "responsavel": "Responsável",
