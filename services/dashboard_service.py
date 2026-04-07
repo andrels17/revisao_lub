@@ -6,59 +6,54 @@ from services import equipamentos_service, lubrificacoes_service, revisoes_servi
 STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2}
 
 
-def _alerta_revisao(eqp, rev):
-    return {
-        "equipamento_id": eqp["id"],
-        "codigo": eqp["codigo"],
-        "equipamento": eqp["nome"],
-        "equipamento_label": f'{eqp["codigo"]} - {eqp["nome"]}',
-        "setor": eqp.get("setor_nome") or "-",
-        "origem": "revisao",
-        "tipo": rev.get("tipo_controle", eqp.get("tipo") or "-"),
-        "etapa": rev["etapa"],
-        "atual": float(rev["atual"]),
-        "ultima_execucao": float(rev.get("ultima_execucao", 0) or 0),
-        "vencimento": float(rev["vencimento"]),
-        "falta": float(rev["diferenca"]),
-        "status": rev["status"],
-        "_ordem": STATUS_ORDEM.get(rev["status"], 99),
-    }
-
-
-
-def _alerta_lubrificacao(eqp, item):
-    return {
-        "equipamento_id": eqp["id"],
-        "codigo": eqp["codigo"],
-        "equipamento": eqp["nome"],
-        "equipamento_label": f'{eqp["codigo"]} - {eqp["nome"]}',
-        "setor": eqp.get("setor_nome") or "-",
-        "origem": "lubrificacao",
-        "tipo": item.get("tipo_controle", eqp.get("tipo") or "-"),
-        "etapa": item["item"],
-        "atual": float(item["atual"]),
-        "ultima_execucao": float(item.get("ultima_execucao", 0) or 0),
-        "vencimento": float(item["vencimento"]),
-        "falta": float(item["diferenca"]),
-        "status": item["status"],
-        "_ordem": STATUS_ORDEM.get(item["status"], 99),
-    }
-
-
 
 def carregar_alertas():
     equipamentos = equipamentos_service.listar()
+    revisoes_indexadas = revisoes_service.listar_controle_revisoes_por_equipamento()
     alertas = []
-    revisoes_por_equipamento = revisoes_service.listar_controle_revisoes_por_equipamento()
 
     for eqp in equipamentos:
-        for rev in revisoes_por_equipamento.get(eqp["id"], []):
-            alertas.append(_alerta_revisao(eqp, rev))
+        for rev in revisoes_service.calcular_proximas_revisoes(eqp["id"], revisoes_indexadas):
+            alertas.append(
+                {
+                    "origem": "Revisão",
+                    "equipamento_id": eqp["id"],
+                    "codigo": eqp["codigo"],
+                    "equipamento": eqp["nome"],
+                    "equipamento_label": f'{eqp["codigo"]} - {eqp["nome"]}',
+                    "setor": eqp.get("setor_nome") or "-",
+                    "tipo": rev.get("tipo_controle", eqp.get("tipo") or "-"),
+                    "etapa": rev["etapa"],
+                    "atual": float(rev["atual"]),
+                    "ultima_execucao": float(rev.get("ultima_execucao", 0) or 0),
+                    "vencimento": float(rev["vencimento"]),
+                    "falta": float(rev["diferenca"]),
+                    "status": rev["status"],
+                    "_ordem": STATUS_ORDEM.get(rev["status"], 99),
+                }
+            )
 
-        for item in lubrificacoes_service.calcular_proximas_lubrificacoes(eqp["id"]):
-            alertas.append(_alerta_lubrificacao(eqp, item))
+        for lub in lubrificacoes_service.calcular_proximas_lubrificacoes(eqp["id"]):
+            alertas.append(
+                {
+                    "origem": "Lubrificação",
+                    "equipamento_id": eqp["id"],
+                    "codigo": eqp["codigo"],
+                    "equipamento": eqp["nome"],
+                    "equipamento_label": f'{eqp["codigo"]} - {eqp["nome"]}',
+                    "setor": eqp.get("setor_nome") or "-",
+                    "tipo": lub.get("tipo_controle", "-"),
+                    "etapa": lub["item"],
+                    "atual": float(lub["atual"]),
+                    "ultima_execucao": float(lub.get("ultima_execucao", 0) or 0),
+                    "vencimento": float(lub["vencimento"]),
+                    "falta": float(lub["diferenca"]),
+                    "status": lub["status"],
+                    "_ordem": STATUS_ORDEM.get(lub["status"], 99),
+                }
+            )
 
-    alertas.sort(key=lambda item: (item["_ordem"], item["falta"], item["equipamento_label"], item["etapa"]))
+    alertas.sort(key=lambda item: (item["_ordem"], item["falta"], item["equipamento_label"], item["origem"]))
     return alertas
 
 

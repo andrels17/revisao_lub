@@ -20,23 +20,14 @@ def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
         )
         leitura_id = cur.fetchone()[0]
 
-        # Atualiza valores no equipamento sem permitir regressão de leitura.
         if tipo_leitura in ("km", "ambos") and km_valor is not None:
             cur.execute(
-                """
-                update equipamentos
-                   set km_atual = greatest(coalesce(km_atual, 0), %s)
-                 where id = %s
-                """,
+                "update equipamentos set km_atual = greatest(coalesce(km_atual, 0), %s) where id = %s",
                 (km_valor, equipamento_id),
             )
         if tipo_leitura in ("horas", "ambos") and horas_valor is not None:
             cur.execute(
-                """
-                update equipamentos
-                   set horas_atual = greatest(coalesce(horas_atual, 0), %s)
-                 where id = %s
-                """,
+                "update equipamentos set horas_atual = greatest(coalesce(horas_atual, 0), %s) where id = %s",
                 (horas_valor, equipamento_id),
             )
 

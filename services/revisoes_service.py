@@ -3,16 +3,10 @@ from collections import defaultdict
 from database.connection import get_conn
 
 
-_STATUS_ORDEM_SQL = """
-    case status
-        when 'VENCIDO' then 0
-        when 'PROXIMO' then 1
-        else 2
-    end
-"""
+STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2}
 
 
-def _normalizar_linha(r):
+def _map_row(r):
     return {
         "equipamento_id": r[0],
         "codigo": r[1],
@@ -36,20 +30,17 @@ def _normalizar_linha(r):
     }
 
 
-def _enriquecer_item(item):
-    resultado = dict(item)
-    resultado.update(
-        {
-            # compatibilidade com código antigo
-            "nome_etapa": item["etapa"],
-            "tipo": item["tipo_controle"],
-            "gatilho": item["gatilho_valor"],
-            "atual": item["leitura_atual"],
-            "ultima_leitura_execucao": item["ultima_execucao"],
-            "diferenca": item["falta"],
-        }
-    )
-    return resultado
+def _compatibilizar(item):
+    return {
+        **item,
+        # compatibilidade com código antigo
+        "nome_etapa": item["etapa"],
+        "tipo": item["tipo_controle"],
+        "gatilho": item["gatilho_valor"],
+        "atual": item["leitura_atual"],
+        "ultima_leitura_execucao": item["ultima_execucao"],
+        "diferenca": item["falta"],
+    }
 
 
 def listar_controle_revisoes():
@@ -57,7 +48,7 @@ def listar_controle_revisoes():
     cur = conn.cursor()
     try:
         cur.execute(
-            f"""
+            """
             select
                 equipamento_id,
                 codigo,
@@ -80,28 +71,34 @@ def listar_controle_revisoes():
                 status
             from public.vw_controle_revisoes
             order by
-                {_STATUS_ORDEM_SQL},
+                case status
+                    when 'VENCIDO' then 0
+                    when 'PROXIMO' then 1
+                    else 2
+                end,
                 falta,
                 codigo,
                 etapa
             """
         )
-        rows = cur.fetchall()
-        return [_normalizar_linha(r) for r in rows]
+        return [_map_row(r) for r in cur.fetchall()]
     finally:
         conn.close()
 
 
-
 def listar_controle_revisoes_por_equipamento():
-    dados = listar_controle_revisoes()
     agrupado = defaultdict(list)
-    for item in dados:
-        agrupado[item["equipamento_id"]].append(_enriquecer_item(item))
+    for item in listar_controle_revisoes():
+        agrupado[item["equipamento_id"]].append(_compatibilizar(item))
+
+    for equipamento_id in agrupado:
+        agrupado[equipamento_id].sort(
+            key=lambda x: (STATUS_ORDEM.get(x["status"], 99), x["diferenca"], x["etapa"])
+        )
     return dict(agrupado)
 
 
-
-def calcular_proximas_revisoes(equipamento_id):
-    agrupado = listar_controle_revisoes_por_equipamento()
-    return agrupado.get(equipamento_id, [])
+def calcular_proximas_revisoes(equipamento_id, dados_indexados=None):
+    if dados_indexados is None:
+        dados_indexados = listar_controle_revisoes_por_equipamento()
+    return list(dados_indexados.get(equipamento_id, []))
