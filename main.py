@@ -1,4 +1,5 @@
 import streamlit as st
+from ui.components import global_search
 from ui import (
     dashboard_page,
     equipamentos_page,
@@ -38,6 +39,18 @@ separadores    = [k for k, v in MENU.items() if v is None or k.startswith("─")
 
 # Sidebar com seções visuais
 st.sidebar.title("Menu")
-menu = st.sidebar.selectbox("Navegar", opcoes_validas)
+if 'main_menu' not in st.session_state or st.session_state['main_menu'] not in opcoes_validas:
+    st.session_state['main_menu'] = opcoes_validas[0]
+
+menu = st.sidebar.selectbox(
+    "Navegar",
+    opcoes_validas,
+    index=opcoes_validas.index(st.session_state['main_menu']),
+)
+st.session_state['main_menu'] = menu
+
+with st.container():
+    global_search.render()
+    st.divider()
 
 MENU[menu].render()

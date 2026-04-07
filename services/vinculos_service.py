@@ -1,5 +1,3 @@
-from psycopg2 import errors
-
 from database.connection import get_conn
 
 
@@ -32,9 +30,6 @@ def listar_por_equipamento(equipamento_id):
             }
             for r in rows
         ]
-    except (errors.UndefinedTable, errors.UndefinedColumn):
-        conn.rollback()
-        return []
     finally:
         conn.close()
 
@@ -103,9 +98,6 @@ def listar_por_setor(setor_id):
             }
             for r in rows
         ]
-    except (errors.UndefinedTable, errors.UndefinedColumn):
-        conn.rollback()
-        return []
     finally:
         conn.close()
 
@@ -165,8 +157,5 @@ def responsavel_gestao_setor(setor_id):
         )
         row = cur.fetchone()
         return {"nome": row[0], "telefone": row[1] or ""} if row else None
-    except (errors.UndefinedTable, errors.UndefinedColumn):
-        conn.rollback()
-        return None
     finally:
         conn.close()

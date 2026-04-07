@@ -1,5 +1,3 @@
-from psycopg2 import errors
-
 from database.connection import get_conn
 
 
@@ -21,14 +19,15 @@ def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
         )
         leitura_id = cur.fetchone()[0]
 
+        # Atualiza valores no equipamento
         if tipo_leitura in ("km", "ambos") and km_valor is not None:
             cur.execute(
-                "update equipamentos set km_atual = greatest(coalesce(km_atual, 0), %s) where id = %s",
+                "update equipamentos set km_atual = %s where id = %s",
                 (km_valor, equipamento_id),
             )
         if tipo_leitura in ("horas", "ambos") and horas_valor is not None:
             cur.execute(
-                "update equipamentos set horas_atual = greatest(coalesce(horas_atual, 0), %s) where id = %s",
+                "update equipamentos set horas_atual = %s where id = %s",
                 (horas_valor, equipamento_id),
             )
 
@@ -42,7 +41,7 @@ def listar_por_equipamento(equipamento_id, limite=20):
     conn = get_conn()
     cur = conn.cursor()
     try:
-        consultas = [
+        cur.execute(
             """
             select l.id, l.data_leitura, l.tipo_leitura,
                    l.km_valor, l.horas_valor,
@@ -54,35 +53,9 @@ def listar_por_equipamento(equipamento_id, limite=20):
             order by l.data_leitura desc, l.created_at desc
             limit %s
             """,
-            """
-            select l.id, l.data_leitura, l.tipo_leitura,
-                   l.km_valor, l.horas_valor,
-                   coalesce(r.nome, '-') as responsavel,
-                   l.observacoes
-            from leituras l
-            left join responsaveis r on r.id = l.responsavel_id
-            where l.equipamento_id = %s
-            order by l.data_leitura desc, l.id desc
-            limit %s
-            """,
-        ]
-
-        rows = None
-        for sql in consultas:
-            try:
-                cur.execute(sql, (equipamento_id, limite))
-                rows = cur.fetchall()
-                break
-            except errors.UndefinedColumn:
-                conn.rollback()
-                continue
-            except errors.UndefinedTable:
-                conn.rollback()
-                return []
-
-        if rows is None:
-            return []
-
+            (equipamento_id, limite),
+        )
+        rows = cur.fetchall()
         return [
             {
                 "id": r[0],
