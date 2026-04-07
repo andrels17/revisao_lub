@@ -8,8 +8,8 @@ STATUS_LABEL = {
     "VENCIDO": "🔴 Vencido",
     "PROXIMO": "🟡 Próximo",
     "EM DIA": "🟢 Em dia",
+    "REALIZADO": "✅ Realizado no ciclo",
 }
-
 
 
 def _cards(kpis):
@@ -19,10 +19,11 @@ def _cards(kpis):
     c3.metric("Alertas próximos", kpis["proximos"])
     c4.metric("Itens em dia", kpis["em_dia"])
 
-    c5, c6, c7 = st.columns(3)
-    c5.metric("Equipamentos com alerta", kpis["equipamentos_com_alerta"])
-    c6.metric("Equipamentos vencidos", kpis["equipamentos_vencidos"])
-    c7.metric("Equipamentos próximos", kpis["equipamentos_proximos"])
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("Equip. com alerta", kpis["equipamentos_com_alerta"])
+    c6.metric("Equip. vencidos", kpis["equipamentos_vencidos"])
+    c7.metric("Revisões", kpis["itens_revisao"])
+    c8.metric("Lubrificações", kpis["itens_lubrificacao"])
 
 
 
@@ -35,7 +36,7 @@ def _formatar_alertas_df(alertas):
         "origem",
         "equipamento_label",
         "setor",
-        "etapa",
+        "item",
         "tipo",
         "atual",
         "ultima_execucao",
@@ -47,11 +48,11 @@ def _formatar_alertas_df(alertas):
             "origem": "Origem",
             "equipamento_label": "Equipamento",
             "setor": "Setor",
-            "etapa": "Etapa / Item",
+            "item": "Item",
             "tipo": "Controle",
             "atual": "Atual",
-            "ultima_execucao": "Última execução",
-            "vencimento": "Vencimento",
+            "ultima_execucao": "Executado em",
+            "vencimento": "Próximo vencimento",
             "falta": "Falta",
             "status": "Status",
         }
@@ -63,19 +64,19 @@ def _formatar_alertas_df(alertas):
 
 def render():
     st.title("Dashboard")
-    st.caption("Visão executiva de alertas de revisão e lubrificação.")
+    st.caption("Visão executiva consolidada de revisões e lubrificações.")
 
     alertas = dashboard_service.carregar_alertas()
     kpis = dashboard_service.resumo_kpis(alertas)
     _cards(kpis)
 
     if not alertas:
-        st.info("Nenhum alerta encontrado. Verifique se os equipamentos possuem template de revisão ou lubrificação configurado.")
+        st.info("Nenhum item encontrado. Verifique se os equipamentos possuem templates de revisão ou lubrificação configurados.")
         return
 
     setores = sorted({item["setor"] for item in alertas if item["setor"]})
     origens = ["Todas", "Revisão", "Lubrificação"]
-    status_options = ["Todos", "VENCIDO", "PROXIMO", "EM DIA"]
+    status_options = ["Todos", "VENCIDO", "PROXIMO", "EM DIA", "REALIZADO"]
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
         setor_filtro = st.multiselect("Filtrar por setor", setores)
@@ -100,7 +101,6 @@ def render():
         st.info("Nenhum item para os filtros selecionados.")
 
     col_a, col_b = st.columns(2)
-
     with col_a:
         st.subheader("Setores com mais alertas")
         ranking = dashboard_service.ranking_setores(filtrados)
@@ -111,8 +111,8 @@ def render():
 
     with col_b:
         st.subheader("Top equipamentos críticos")
-        ranking_eq = dashboard_service.ranking_equipamentos_criticos(filtrados)
-        if ranking_eq:
-            st.dataframe(pd.DataFrame(ranking_eq), use_container_width=True, hide_index=True)
+        criticos = dashboard_service.ranking_equipamentos(filtrados, limite=10)
+        if criticos:
+            st.dataframe(pd.DataFrame(criticos), use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum equipamento crítico para os filtros selecionados.")
