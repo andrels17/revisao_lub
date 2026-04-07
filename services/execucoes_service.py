@@ -1,12 +1,14 @@
 from database.connection import get_conn
 
 
+
 def _formatar_resultado_execucao(km_execucao, horas_execucao):
     if km_execucao is not None:
         return f"Realizado com {float(km_execucao):.0f} km"
     if horas_execucao is not None:
         return f"Realizado com {float(horas_execucao):.0f} h"
     return "Realizado"
+
 
 
 def criar_execucao(dados):
@@ -49,7 +51,7 @@ def criar_execucao(dados):
                 cur.execute(
                     """
                     update equipamentos
-                       set km_atual = %s
+                       set km_atual = greatest(coalesce(km_atual, 0), %s)
                      where id = %s
                     """,
                     (km_execucao, dados["equipamento_id"]),
@@ -58,7 +60,7 @@ def criar_execucao(dados):
                 cur.execute(
                     """
                     update equipamentos
-                       set horas_atual = %s
+                       set horas_atual = greatest(coalesce(horas_atual, 0), %s)
                      where id = %s
                     """,
                     (horas_execucao, dados["equipamento_id"]),

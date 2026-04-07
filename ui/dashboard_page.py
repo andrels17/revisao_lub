@@ -10,6 +10,12 @@ STATUS_LABEL = {
     "EM DIA": "🟢 Em dia",
 }
 
+ORIGEM_LABEL = {
+    "revisao": "Revisão",
+    "lubrificacao": "Lubrificação",
+}
+
+
 
 def _cards(kpis):
     c1, c2, c3, c4 = st.columns(4)
@@ -24,6 +30,7 @@ def _cards(kpis):
     c7.metric("Equipamentos próximos", kpis["equipamentos_proximos"])
 
 
+
 def _formatar_alertas_df(alertas):
     if not alertas:
         return pd.DataFrame()
@@ -32,6 +39,7 @@ def _formatar_alertas_df(alertas):
     df = df[[
         "equipamento_label",
         "setor",
+        "origem",
         "etapa",
         "tipo",
         "atual",
@@ -43,7 +51,8 @@ def _formatar_alertas_df(alertas):
         columns={
             "equipamento_label": "Equipamento",
             "setor": "Setor",
-            "etapa": "Etapa",
+            "origem": "Origem",
+            "etapa": "Item",
             "tipo": "Controle",
             "atual": "Atual",
             "ultima_execucao": "Última execução",
@@ -52,35 +61,42 @@ def _formatar_alertas_df(alertas):
             "status": "Status",
         }
     )
+    df["Origem"] = df["Origem"].map(lambda x: ORIGEM_LABEL.get(x, x))
     df["Status"] = df["Status"].map(lambda x: STATUS_LABEL.get(x, x))
     return df
 
 
+
 def render():
     st.title("Dashboard")
-    st.caption("Visão executiva de alertas de revisão e lubrificação.")
+    st.caption("Visão executiva consolidada de alertas de revisão e lubrificação.")
 
     alertas = dashboard_service.carregar_alertas()
     kpis = dashboard_service.resumo_kpis(alertas)
     _cards(kpis)
 
     if not alertas:
-        st.info("Nenhum alerta encontrado. Verifique se os equipamentos possuem template de revisão configurado.")
+        st.info("Nenhum alerta encontrado. Verifique se os equipamentos possuem templates de revisão ou lubrificação configurados.")
         return
 
     setores = sorted({item["setor"] for item in alertas if item["setor"]})
     status_options = ["Todos", "VENCIDO", "PROXIMO", "EM DIA"]
-    col1, col2 = st.columns([2, 1])
+    origem_options = ["Todas", "revisao", "lubrificacao"]
+    col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
         setor_filtro = st.multiselect("Filtrar por setor", setores)
     with col2:
         status_filtro = st.selectbox("Status", status_options)
+    with col3:
+        origem_filtro = st.selectbox("Origem", origem_options, format_func=lambda x: ORIGEM_LABEL.get(x, x))
 
     filtrados = alertas
     if setor_filtro:
         filtrados = [item for item in filtrados if item["setor"] in setor_filtro]
     if status_filtro != "Todos":
         filtrados = [item for item in filtrados if item["status"] == status_filtro]
+    if origem_filtro != "Todas":
+        filtrados = [item for item in filtrados if item["origem"] == origem_filtro]
 
     st.subheader("Pendências e próximos vencimentos")
     df_alertas = _formatar_alertas_df(filtrados)
