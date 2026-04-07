@@ -210,20 +210,30 @@ def _render_acoes_rapidas(equipamento, revisoes, lubrificacoes, vinculos):
                 key=f'etapa_rev_{equipamento["id"]}',
                 format_func=lambda r: "Nenhuma revisão disponível" if r is None else f'{r["etapa"]} · {_formatar_status(r["status"])}',
             )
+            km_sugerido = float(equipamento.get("km_atual") or 0)
+            horas_sugeridas = float(equipamento.get("horas_atual") or 0)
+            if etapa is not None:
+                if (etapa.get("tipo_controle") or "").lower() == "km":
+                    km_sugerido = float(etapa.get("vencimento") or km_sugerido)
+                elif (etapa.get("tipo_controle") or "").lower() == "horas":
+                    horas_sugeridas = float(etapa.get("vencimento") or horas_sugeridas)
+
             km_execucao = st.number_input(
                 "KM execução",
                 min_value=0.0,
-                value=float(equipamento.get("km_atual") or 0),
+                value=km_sugerido,
                 step=1.0,
                 key=f'km_exec_{equipamento["id"]}',
             )
             horas_execucao = st.number_input(
                 "Horas execução",
                 min_value=0.0,
-                value=float(equipamento.get("horas_atual") or 0),
+                value=horas_sugeridas,
                 step=1.0,
                 key=f'horas_exec_{equipamento["id"]}',
             )
+            if etapa is not None:
+                st.caption(f"Sugestão baseada no vencimento da etapa: {float(etapa.get('vencimento') or 0):.0f} {(etapa.get('tipo_controle') or '').lower()}")
             data_execucao = st.date_input("Data da revisão", key=f'data_rev_{equipamento["id"]}')
             status_execucao = st.selectbox("Status", ["concluida", "pendente"], key=f'status_rev_{equipamento["id"]}')
             responsavel = _select_responsavel("Responsável", responsaveis, key=f'resp_rev_{equipamento["id"]}')
@@ -258,20 +268,30 @@ def _render_acoes_rapidas(equipamento, revisoes, lubrificacoes, vinculos):
                 key=f'item_lub_{equipamento["id"]}',
                 format_func=lambda l: "Nenhum item disponível" if l is None else f'{l["item"]} · {l.get("tipo_produto") or "-"} · {_formatar_status(l["status"])}',
             )
+            km_sugerido_lub = float(equipamento.get("km_atual") or 0)
+            horas_sugeridas_lub = float(equipamento.get("horas_atual") or 0)
+            if item is not None:
+                if (item.get("tipo_controle") or "").lower() == "km":
+                    km_sugerido_lub = float(item.get("vencimento") or km_sugerido_lub)
+                elif (item.get("tipo_controle") or "").lower() == "horas":
+                    horas_sugeridas_lub = float(item.get("vencimento") or horas_sugeridas_lub)
+
             km_execucao = st.number_input(
                 "KM execução ",
                 min_value=0.0,
-                value=float(equipamento.get("km_atual") or 0),
+                value=km_sugerido_lub,
                 step=1.0,
                 key=f'km_lub_{equipamento["id"]}',
             )
             horas_execucao = st.number_input(
                 "Horas execução ",
                 min_value=0.0,
-                value=float(equipamento.get("horas_atual") or 0),
+                value=horas_sugeridas_lub,
                 step=1.0,
                 key=f'horas_lub_{equipamento["id"]}',
             )
+            if item is not None:
+                st.caption(f"Sugestão baseada no vencimento do item: {float(item.get('vencimento') or 0):.0f} {(item.get('tipo_controle') or '').lower()}")
             data_execucao = st.date_input("Data da lubrificação", key=f'data_lub_{equipamento["id"]}')
             responsavel = _select_responsavel("Responsável", responsaveis, key=f'resp_lub_{equipamento["id"]}')
             observacoes = st.text_area("Observações", key=f'obs_lub_{equipamento["id"]}', height=80)
