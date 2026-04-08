@@ -3,6 +3,7 @@ import streamlit as st
 
 from services import (
     alertas_service,
+    comentarios_service,
     equipamentos_service,
     execucoes_service,
     leituras_service,
@@ -16,6 +17,7 @@ from services import (
     vinculos_service,
 )
 from ui.constants import STATUS_LABEL, TIPOS_EQUIPAMENTO
+from ui.exportacao import botao_exportar_pdf_painel360
 
 
 def _formatar_status(status):
@@ -284,6 +286,27 @@ def _render_pendencias_resumo(pendencias):
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 
+
+
+def _render_comentarios_equipamento(equipamento_id, comentarios):
+    with st.form(f"form_comentario_{equipamento_id}", clear_on_submit=True):
+        comentario = st.text_area("Registrar comentário / ocorrência", height=110, placeholder="Ex.: equipamento aguardando janela de manutenção, peça separada, equipe alinhada...")
+        enviado = st.form_submit_button("Salvar comentário", use_container_width=True)
+    if enviado:
+        ok, msg = comentarios_service.criar(equipamento_id, comentario)
+        if ok:
+            st.success(msg)
+            st.rerun()
+        else:
+            st.error(msg)
+
+    if comentarios:
+        for item in comentarios:
+            titulo = f"{item.get('autor_nome') or '-'} • {str(item.get('created_at') or '-')[:19]}"
+            with st.expander(titulo):
+                st.write(item.get('comentario') or '-')
+    else:
+        st.info("Nenhum comentário registrado para este equipamento.")
 def _mostrar_painel_360(equipamento_id):
     equipamento = equipamentos_service.obter(equipamento_id)
     if not equipamento:
@@ -303,8 +326,14 @@ def _mostrar_painel_360(equipamento_id):
     pendencias = painel_360_service.resumir_pendencias(revisoes, lubrificacoes)
     insights = painel_360_service.gerar_insights(equipamento, revisoes, lubrificacoes, leituras, vinculos)
     hist_alertas = alertas_service.listar_historico_por_equipamento(equipamento_id, limite=20)
+    comentarios = comentarios_service.listar_por_equipamento(equipamento_id, limite=30)
 
-    st.subheader(f"Painel 360° — {equipamento['codigo']} - {equipamento['nome']}")
+    top1, top2 = st.columns([5, 1])
+    with top1:
+        st.subheader(f"Painel 360° — {equipamento['codigo']} - {equipamento['nome']}")
+    with top2:
+        st.write("")
+        botao_exportar_pdf_painel360(equipamento, saude, pendencias, insights, comentarios, key=f"pdf_360_{equipamento_id}")
     _mostrar_faixa_saude(saude)
 
     c1, c2, c3, c4 = st.columns(4)
@@ -353,6 +382,7 @@ def _mostrar_painel_360(equipamento_id):
         "Histórico de lubrificações",
         "Alertas enviados",
         "Responsáveis",
+        "Comentários / log",
         "Ações rápidas",
     ])
 
@@ -410,6 +440,8 @@ def _mostrar_painel_360(equipamento_id):
         else:
             st.info("Nenhum responsável vinculado a este equipamento.")
     with tabs[10]:
+        _render_comentarios_equipamento(equipamento_id, comentarios)
+    with tabs[11]:
         _render_acoes_rapidas(equipamento, revisoes, lubrificacoes, vinculos)
 
 

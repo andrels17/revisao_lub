@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
-from services import alertas_service, execucoes_service, leituras_service, lubrificacoes_service
+from services import alertas_service, comentarios_service, execucoes_service, leituras_service, lubrificacoes_service
 
 
 def _to_float(value: Any) -> float:
@@ -61,6 +61,18 @@ def montar_timeline_equipamento(equipamento_id, limite=50):
             "responsavel": lub.get("responsavel") or "-",
             "observacoes": lub.get("observacoes") or "",
             "origem": "execucoes_lubrificacao",
+        })
+
+    comentarios = comentarios_service.listar_por_equipamento(equipamento_id, limite=limite)
+    for comentario in comentarios:
+        eventos.append({
+            "data": comentario.get("created_at"),
+            "tipo": "Comentário",
+            "titulo": f"Comentário de {comentario.get('autor_nome') or 'Usuário'}",
+            "detalhe": (comentario.get("comentario") or "")[:180],
+            "responsavel": comentario.get("autor_nome") or "-",
+            "observacoes": comentario.get("comentario") or "",
+            "origem": "comentarios_equipamento",
         })
 
     historico_alertas = alertas_service.listar_historico_por_equipamento(equipamento_id, limite=limite)
@@ -164,3 +176,36 @@ def gerar_insights(equipamento: dict, revisoes: list[dict], lubrificacoes: list[
         insights.append("Nenhuma leitura recente encontrada para este equipamento.")
 
     return insights[:5]
+
+
+def agrupar_prioridades_por_setor(alertas: list[dict], limite: int = 5) -> list[dict]:
+    acumulado = defaultdict(lambda: {"vencidos": 0, "proximos": 0, "equipamentos": set(), "revisoes": 0, "lubrificacoes": 0})
+    for alerta in alertas:
+        if alerta.get("status") not in {"VENCIDO", "PROXIMO"}:
+            continue
+        setor = alerta.get("setor") or "-"
+        item = acumulado[setor]
+        item["vencidos"] += 1 if alerta.get("status") == "VENCIDO" else 0
+        item["proximos"] += 1 if alerta.get("status") == "PROXIMO" else 0
+        item["revisoes"] += 1 if alerta.get("origem") == "Revisão" else 0
+        item["lubrificacoes"] += 1 if alerta.get("origem") == "Lubrificação" else 0
+        item["equipamentos"].add(alerta.get("equipamento_id"))
+
+    ranking = []
+    for setor, dados in acumulado.items():
+        criticidade = dados["vencidos"] * 3 + dados["proximos"]
+        ranking.append({
+            "Setor": setor,
+            "Vencidos": dados["vencidos"],
+            "Próximos": dados["proximos"],
+            "Equipamentos impactados": len(dados["equipamentos"]),
+            "Revisões": dados["revisoes"],
+            "Lubrificações": dados["lubrificacoes"],
+            "Criticidade": criticidade,
+            "Leitura gerencial": (
+                f"{dados['vencidos']} vencido(s), {dados['proximos']} próximo(s) e "
+                f"{len(dados['equipamentos'])} equipamento(s) impactado(s)."
+            ),
+        })
+    ranking.sort(key=lambda x: (-x["Criticidade"], -x["Vencidos"], -x["Próximos"], x["Setor"]))
+    return ranking[:limite]

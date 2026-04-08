@@ -215,3 +215,17 @@ CREATE INDEX IF NOT EXISTS idx_log_auditoria_data ON log_auditoria(criado_em DES
 -- Observação: em bancos já existentes, aplique somente as tabelas novas
 -- da Fase 1 e as tabelas de vínculo ajustadas para UUID. Não é necessário
 -- recriar as tabelas legadas se elas já existirem em produção.
+
+
+-- Comentários / log por equipamento
+CREATE TABLE IF NOT EXISTS public.comentarios_equipamento (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    equipamento_id UUID NOT NULL REFERENCES public.equipamentos(id) ON DELETE CASCADE,
+    usuario_id UUID NULL,
+    autor_nome TEXT,
+    comentario TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_comentarios_equipamento_eqp
+    ON public.comentarios_equipamento (equipamento_id, created_at DESC);

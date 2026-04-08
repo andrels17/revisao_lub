@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from services import dashboard_service
+from services import dashboard_service, painel_360_service
 from ui.exportacao import botao_exportar_excel
 from ui.constants  import STATUS_LABEL, STATUS_COR
 
@@ -114,6 +114,29 @@ def _formatar_alertas_df(alertas):
     return df
 
 
+
+
+def _painel_setores_prioritarios(alertas):
+    ranking = painel_360_service.agrupar_prioridades_por_setor(alertas, limite=6)
+    st.subheader("Setores prioritários")
+    st.caption("Leitura rápida para gestão: onde concentrar cobrança e programação hoje.")
+    if not ranking:
+        st.info("Nenhum setor prioritário para exibir.")
+        return
+    for item in ranking:
+        criticidade = item.get("Criticidade", 0)
+        if criticidade >= 6:
+            st.error(f"{item['Setor']} — criticidade {criticidade}")
+        elif criticidade >= 3:
+            st.warning(f"{item['Setor']} — criticidade {criticidade}")
+        else:
+            st.success(f"{item['Setor']} — criticidade {criticidade}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Vencidos", item["Vencidos"])
+        c2.metric("Próximos", item["Próximos"])
+        c3.metric("Equip. impactados", item["Equipamentos impactados"])
+        c4.metric("Revisões/Lub.", f"{item['Revisões']}/{item['Lubrificações']}")
+        st.caption(item["Leitura gerencial"])
 # ── página ────────────────────────────────────────────────────────────────────
 
 def render():
@@ -207,3 +230,6 @@ def render():
                     st.rerun()
         else:
             st.info("Nenhum equipamento crítico para os filtros selecionados.")
+
+    st.divider()
+    _painel_setores_prioritarios(filtrados)

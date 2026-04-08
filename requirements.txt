@@ -4,3 +4,4 @@ pandas
 openpyxl
 plotly
 bcrypt>=4.0
+reportlab
