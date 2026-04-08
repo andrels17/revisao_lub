@@ -16,12 +16,8 @@ def apply_global_theme() -> None:
             --muted:#64748b;
             --brand:#2563eb;
             --brand-2:#1d4ed8;
-            --ok:#16a34a;
-            --warn:#d97706;
-            --danger:#dc2626;
             --shadow:0 12px 30px rgba(15,23,42,.06);
             --shadow-strong:0 22px 60px rgba(2,6,23,.16);
-            --radius:18px;
         }
 
         .stApp {
@@ -148,19 +144,6 @@ def apply_global_theme() -> None:
             color: white !important;
             border-color: transparent !important;
             box-shadow: 0 10px 22px rgba(37,99,235,.28) !important;
-        }
-
-        .panel-card{
-            border:1px solid var(--line);
-            border-radius: 22px;
-            padding: 1rem 1rem .9rem 1rem;
-            background: rgba(255,255,255,.98);
-            box-shadow: var(--shadow);
-            margin-bottom: .9rem;
-        }
-
-        .panel-card h3, .panel-card h4{
-            margin-top:0;
         }
 
         .stButton > button,
