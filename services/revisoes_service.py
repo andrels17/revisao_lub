@@ -2,6 +2,8 @@ import math
 import re
 from collections import defaultdict
 
+import streamlit as st
+
 from database.connection import get_conn
 from services import configuracoes_service
 
@@ -261,10 +263,12 @@ def _construir_controles(modo="dashboard"):
         conn.close()
 
 
+@st.cache_data(ttl=45, show_spinner=False)
 def listar_controle_revisoes():
     return _construir_controles(modo="dashboard")
 
 
+@st.cache_data(ttl=45, show_spinner=False)
 def listar_controle_revisoes_por_equipamento():
     agrupado = defaultdict(list)
     for item in listar_controle_revisoes():
@@ -272,6 +276,7 @@ def listar_controle_revisoes_por_equipamento():
     return dict(agrupado)
 
 
+@st.cache_data(ttl=45, show_spinner=False)
 def listar_controle_revisoes_painel(equipamento_id=None):
     itens = _construir_controles(modo="painel")
     if equipamento_id is None:

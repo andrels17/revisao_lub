@@ -3,10 +3,9 @@ import datetime
 import pandas as pd
 import streamlit as st
 
-from ui.theme import render_loading_skeleton, render_page_intro
-
 from ui.constants  import STATUS_LABEL, STATUS_ORDEM
 from ui.exportacao import botao_exportar_excel
+from ui.theme import render_page_intro
 
 from services import (
     equipamentos_service,
@@ -203,8 +202,8 @@ def render():
             st.cache_data.clear()
             st.rerun()
 
-    render_loading_skeleton(4)
-    dados = revisoes_service.listar_controle_revisoes()
+    with st.spinner("Carregando revisões..."):
+        dados = revisoes_service.listar_controle_revisoes()
 
     if not dados:
         st.info("Nenhuma revisão encontrada. Verifique se os equipamentos possuem template de revisão configurado.")
@@ -242,21 +241,29 @@ def render():
 
     st.divider()
 
-    # ── Tabs por estado ───────────────────────────────────────────────────────
+    # ── Seção ativa (lazy render) ─────────────────────────────────────────────
     vencidos   = [d for d in filtrados if d["status"] == "VENCIDO"]
     proximos   = [d for d in filtrados if d["status"] == "PROXIMO"]
     em_dia     = [d for d in filtrados if d["status"] == "EM DIA"]
     realizados = [d for d in filtrados if d["status"] == "REALIZADO"]
 
-    tab_venc, tab_prox, tab_dia, tab_real, tab_tabela = st.tabs([
-        f"🔴 Vencidos ({len(vencidos)})",
-        f"🟡 Próximos ({len(proximos)})",
-        f"🟢 Em dia ({len(em_dia)})",
-        f"✅ Realizados ({len(realizados)})",
-        "📋 Tabela completa",
-    ])
+    visoes = {
+        f"🔴 Vencidos ({len(vencidos)})": "vencidos",
+        f"🟡 Próximos ({len(proximos)})": "proximos",
+        f"🟢 Em dia ({len(em_dia)})": "em_dia",
+        f"✅ Realizados ({len(realizados)})": "realizados",
+        "📋 Tabela completa": "tabela",
+    }
+    visao_label = st.radio(
+        "Visualização",
+        list(visoes.keys()),
+        horizontal=True,
+        key="rev_visao",
+        label_visibility="collapsed",
+    )
+    visao = visoes[visao_label]
 
-    with tab_venc:
+    if visao == "vencidos":
         if not vencidos:
             st.success("Nenhum item vencido para os filtros selecionados.")
         else:
@@ -264,7 +271,7 @@ def render():
             for i, item in enumerate(vencidos):
                 _card_pendencia(item, i)
 
-    with tab_prox:
+    elif visao == "proximos":
         if not proximos:
             st.success("Nenhum item próximo do vencimento.")
         else:
@@ -272,20 +279,20 @@ def render():
             for i, item in enumerate(proximos):
                 _card_pendencia(item, i)
 
-    with tab_dia:
+    elif visao == "em_dia":
         _render_tabela(
             em_dia,
             f"Programados ({len(em_dia)})",
             "Nenhum item em dia para os filtros selecionados.",
         )
 
-    with tab_real:
+    elif visao == "realizados":
         _render_tabela(
             realizados,
             f"Realizados neste ciclo ({len(realizados)})",
             "Nenhuma execução registrada neste ciclo.",
         )
 
-    with tab_tabela:
+    else:
         st.caption("Visão consolidada de todos os itens filtrados.")
         _render_tabela(filtrados, f"Todos os itens ({len(filtrados)})", "Nenhum item para exibir.")

@@ -3,8 +3,6 @@ import datetime
 import pandas as pd
 import streamlit as st
 
-from ui.theme import render_loading_skeleton, render_page_intro
-
 from ui.constants  import STATUS_LABEL, STATUS_ORDEM
 from ui.exportacao import botao_exportar_excel
 from services import (
