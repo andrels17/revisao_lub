@@ -1,3 +1,4 @@
+import re
 from database.connection import get_conn
 
 try:
@@ -6,6 +7,17 @@ except Exception:  # pragma: no cover
     psycopg2 = None
 
 
+
+
+
+ETAPA_REGEX = re.compile(r"^Etapa:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
+
+
+def _extrair_etapa(observacoes):
+    if not observacoes:
+        return None
+    m = ETAPA_REGEX.search(observacoes)
+    return m.group(1).strip() if m else None
 
 def _formatar_resultado_execucao(km_execucao, horas_execucao):
     if km_execucao is not None:
@@ -145,6 +157,7 @@ def listar_revisoes_por_equipamento(equipamento_id, limite=20):
                 "status": r[5],
                 "observacoes": r[6] or "",
                 "resultado": _formatar_resultado_execucao(r[2], r[3]),
+                "etapa_referencia": _extrair_etapa(r[6]),
             }
             for r in rows
         ]
