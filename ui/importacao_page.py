@@ -72,11 +72,24 @@ def render():
                     help="Se marcado, equipamentos com código duplicado terão nome, tipo, setor e leituras atualizados. Se desmarcado, duplicados são ignorados.",
                 )
                 if st.button("✅ Confirmar importação", use_container_width=True, type="primary"):
+                    barra      = st.progress(0, text="Iniciando importação…")
+                    status_txt = st.empty()
+
+                    def _progresso(atual, total, codigo):
+                        pct = int(atual / total * 100) if total else 100
+                        barra.progress(pct, text=f"Processando {atual}/{total} — {codigo}")
+                        status_txt.caption(f"⏳ {atual} de {total} linhas processadas")
+
                     res = importacao_service.importar(
                         resultado["df"],
                         setor_padrao_id=setor_padrao,
                         atualizar_duplicados=atualizar,
+                        progress_callback=_progresso,
                     )
+
+                    barra.progress(100, text="Concluído!")
+                    status_txt.empty()
+
                     msg = f"Importação concluída: **{res['importados']}** importado(s)"
                     if res.get("atualizados"):
                         msg += f" | **{res['atualizados']}** atualizado(s)"

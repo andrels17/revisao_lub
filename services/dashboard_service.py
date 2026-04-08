@@ -16,10 +16,11 @@ def carregar_alertas():
       - 1 query batch para todas as revisões   (revisoes_service)
       - 1 query batch para todas as lubrificações (lubrificacoes_service)
     Total: ~3 queries independente de quantos equipamentos existam.
+    Retorna (alertas, total_equipamentos) para evitar query extra em resumo_kpis.
     """
     equipamentos = equipamentos_service.listar()
     if not equipamentos:
-        return []
+        return [], 0
 
     ids = [e["id"] for e in equipamentos]
     eqp_map = {e["id"]: e for e in equipamentos}
@@ -72,24 +73,24 @@ def carregar_alertas():
             })
 
     alertas.sort(key=lambda x: (x["_ordem"], x["falta"], x["equipamento_label"], x["origem"]))
-    return alertas
+    return alertas, len(equipamentos)
 
 
-def resumo_kpis(alertas):
-    contagem  = Counter(item["status"] for item in alertas)
-    eqp_alerta  = {a["equipamento_id"] for a in alertas if a["status"] in {"VENCIDO", "PROXIMO"}}
-    eqp_vencido = {a["equipamento_id"] for a in alertas if a["status"] == "VENCIDO"}
-    eqp_proximo = {a["equipamento_id"] for a in alertas if a["status"] == "PROXIMO"}
-    total_eqp   = len(equipamentos_service.listar())
+def resumo_kpis(alertas, total_equipamentos: int):
+    """Calcula KPIs a partir da lista de alertas já carregada — sem query extra."""
+    contagem     = Counter(item["status"] for item in alertas)
+    eqp_alerta   = {a["equipamento_id"] for a in alertas if a["status"] in {"VENCIDO", "PROXIMO"}}
+    eqp_vencido  = {a["equipamento_id"] for a in alertas if a["status"] == "VENCIDO"}
+    eqp_proximo  = {a["equipamento_id"] for a in alertas if a["status"] == "PROXIMO"}
     return {
-        "total_equipamentos":     total_eqp,
-        "total_alertas":          len(alertas),
-        "vencidos":               contagem.get("VENCIDO", 0),
-        "proximos":               contagem.get("PROXIMO", 0),
-        "em_dia":                 contagem.get("EM DIA", 0),
+        "total_equipamentos":      total_equipamentos,
+        "total_alertas":           len(alertas),
+        "vencidos":                contagem.get("VENCIDO", 0),
+        "proximos":                contagem.get("PROXIMO", 0),
+        "em_dia":                  contagem.get("EM DIA", 0),
         "equipamentos_com_alerta": len(eqp_alerta),
-        "equipamentos_vencidos":  len(eqp_vencido),
-        "equipamentos_proximos":  len(eqp_proximo),
+        "equipamentos_vencidos":   len(eqp_vencido),
+        "equipamentos_proximos":   len(eqp_proximo),
     }
 
 

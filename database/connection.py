@@ -89,13 +89,17 @@ def get_conn_ctx():
 
 
 def get_conn():
-    """Compatibilidade com código legado — retorna uma conexão direta."""
-    database_url = _get_secret("DATABASE_URL") or _build_url_from_parts()
-    dsn = _normalize_database_url(database_url)
-    try:
-        return psycopg2.connect(dsn)
-    except psycopg2.OperationalError as exc:
-        raise RuntimeError(
-            "Não foi possível conectar ao banco Neon. Verifique se a DATABASE_URL está correta, "
-            "se o banco está ativo e se a URL contém sslmode=require."
-        ) from exc
+    """
+    Retorna uma conexão do pool compartilhado.
+    Mantém a assinatura legada (conn.close() devolve ao pool em vez de fechar).
+    Todo o código que usa `conn = get_conn() / conn.close()` se beneficia
+    automaticamente do pool sem precisar ser alterado.
+    """
+    pool = _get_pool()
+    conn = pool.getconn()
+
+    def _return_to_pool():
+        pool.putconn(conn)
+
+    conn.close = _return_to_pool
+    return conn

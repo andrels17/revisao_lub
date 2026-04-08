@@ -121,8 +121,8 @@ def render():
             dashboard_service.carregar_alertas.clear()
             st.rerun()
 
-    alertas = dashboard_service.carregar_alertas()
-    kpis = dashboard_service.resumo_kpis(alertas)
+    alertas, total_equipamentos = dashboard_service.carregar_alertas()
+    kpis = dashboard_service.resumo_kpis(alertas, total_equipamentos)
     _cards(kpis)
 
     if not alertas:

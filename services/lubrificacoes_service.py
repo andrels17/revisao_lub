@@ -2,8 +2,7 @@ from collections import defaultdict
 
 from database.connection import get_conn
 import psycopg2
-
-TOLERANCIA_PADRAO = 10
+from ui.constants import TOLERANCIA_PADRAO
 
 
 # ── helpers de status ────────────────────────────────────────────────────────

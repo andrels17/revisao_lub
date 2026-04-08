@@ -12,6 +12,7 @@ from ui import (
     alertas_page,
     importacao_page,
     relatorio_page,
+    configuracoes_page,
 )
 
 st.set_page_config(
@@ -42,6 +43,8 @@ SECOES = {
     },
     "🔧 Ferramentas": {
         "📥 Importar Equipamentos": importacao_page,
+        "📈 Relatório de Manutenção": relatorio_page,
+        "⚙️ Configurações": configuracoes_page,
     },
 }
 

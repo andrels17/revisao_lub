@@ -77,18 +77,30 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
     }
 
 
-def importar(df: pd.DataFrame, setor_padrao_id=None, atualizar_duplicados: bool = False) -> dict:
+def importar(
+    df: pd.DataFrame,
+    setor_padrao_id=None,
+    atualizar_duplicados: bool = False,
+    progress_callback=None,
+) -> dict:
+    """
+    Importa equipamentos do DataFrame.
+    progress_callback(current, total, codigo) — chamado a cada linha processada.
+    """
     setores_map = {s["nome"].lower(): s["id"] for s in setores_service.listar()}
     importados = 0
     atualizados = 0
     duplicados = 0
     erros = []
+    total = len(df)
 
     for idx, row in df.iterrows():
         linha = idx + 2
         codigo = str(row.get("codigo", "")).strip()
         nome = str(row.get("nome", "")).strip()
         if not codigo or not nome or codigo == "nan" or nome == "nan":
+            if progress_callback:
+                progress_callback(idx + 1, total, codigo or "—")
             continue
 
         tipo = str(row.get("tipo", "Outro")).strip()
@@ -124,6 +136,9 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, atualizar_duplicados: bool 
                     duplicados += 1
             else:
                 erros.append(f"Linha {linha} ({codigo}): {msg}")
+
+        if progress_callback:
+            progress_callback(idx + 1, total, codigo)
 
     return {
         "importados": importados,

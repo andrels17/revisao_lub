@@ -3,6 +3,7 @@ import re
 from collections import defaultdict
 
 from database.connection import get_conn
+from ui.constants import TOLERANCIA_PADRAO
 
 try:
     import psycopg2
@@ -11,7 +12,6 @@ except Exception:  # pragma: no cover
 
 
 STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2, "REALIZADO": 3}
-TOLERANCIA_PADRAO = 10
 ETAPA_REGEX = re.compile(r"^Etapa:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
 
 

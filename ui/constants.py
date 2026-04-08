@@ -1,7 +1,12 @@
 """
 Constantes compartilhadas entre as páginas da UI.
-Centraliza STATUS_LABEL, STATUS_ORDEM e STATUS_COR — antes duplicados em 6+ arquivos.
+Centraliza STATUS_LABEL, STATUS_ORDEM, STATUS_COR e TOLERANCIA_PADRAO.
 """
+
+# ── Tolerância de vencimento ───────────────────────────────────────────────────
+# Itens com diferença <= este valor são marcados como "PRÓXIMO" (revisão e lubrificação).
+# Altere aqui para afetar todo o sistema simultaneamente.
+TOLERANCIA_PADRAO = 10
 
 STATUS_LABEL = {
     "VENCIDO":   "🔴 Vencido",

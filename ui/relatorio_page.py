@@ -11,6 +11,7 @@ from database.connection import get_conn
 from ui.exportacao import botao_exportar_excel
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def _carregar_revisoes(data_ini, data_fim, setor_id=None, equipamento_id=None):
     conn = get_conn()
     cur  = conn.cursor()
@@ -52,6 +53,7 @@ def _carregar_revisoes(data_ini, data_fim, setor_id=None, equipamento_id=None):
         conn.close()
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def _carregar_lubrificacoes(data_ini, data_fim, setor_id=None, equipamento_id=None):
     conn = get_conn()
     cur  = conn.cursor()
@@ -118,8 +120,16 @@ def _carregar_equipamentos(setor_id=None):
 
 
 def render():
-    st.title("Relatório de Manutenção")
-    st.caption("Consulte e exporte o histórico de revisões e lubrificações realizadas em qualquer período.")
+    col_title, col_btn = st.columns([5, 1])
+    with col_title:
+        st.title("Relatório de Manutenção")
+        st.caption("Consulte e exporte o histórico de revisões e lubrificações realizadas em qualquer período.")
+    with col_btn:
+        st.write("")
+        if st.button("🔄 Atualizar", help="Recarrega os dados do banco"):
+            _carregar_revisoes.clear()
+            _carregar_lubrificacoes.clear()
+            st.rerun()
 
     # ── Filtros ───────────────────────────────────────────────────────────────
     hoje     = datetime.date.today()

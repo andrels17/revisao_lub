@@ -150,11 +150,59 @@ def _render_historico():
     df = pd.DataFrame(historico)
     st.caption(f"{len(df)} alerta(s) encontrado(s)")
 
+    # ── Gráfico de tendência diária ───────────────────────────────────────────
+    try:
+        import plotly.graph_objects as go  # type: ignore
+
+        df["data"] = pd.to_datetime(df["enviado_em"]).dt.date
+        tendencia = (
+            df.groupby(["data", "tipo"])
+            .size()
+            .reset_index(name="qtd")
+        )
+
+        tipos_presentes = tendencia["tipo"].unique()
+        cores = {"revisao": "#3b82f6", "lubrificacao": "#f59e0b"}
+
+        fig = go.Figure()
+        for tipo in tipos_presentes:
+            sub = tendencia[tendencia["tipo"] == tipo].sort_values("data")
+            fig.add_trace(go.Bar(
+                x=sub["data"].astype(str),
+                y=sub["qtd"],
+                name=tipo.capitalize(),
+                marker_color=cores.get(tipo, "#6b7280"),
+            ))
+
+        fig.update_layout(
+            barmode="stack",
+            height=220,
+            margin=dict(t=10, b=0, l=0, r=0),
+            legend=dict(orientation="h", y=-0.25),
+            xaxis_title=None,
+            yaxis_title="Alertas enviados",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    except ImportError:
+        # fallback sem plotly
+        df_trend = (
+            pd.to_datetime(df["enviado_em"]).dt.date
+            .value_counts()
+            .sort_index()
+            .rename("Alertas por dia")
+        )
+        st.bar_chart(df_trend)
+
+    st.divider()
+
+    # ── Tabela ────────────────────────────────────────────────────────────────
     col_df, col_exp = st.columns([5, 1])
     with col_exp:
-        botao_exportar_excel(df, "historico_alertas", label="⬇️ Excel", key="exp_hist_alertas")
+        botao_exportar_excel(df.drop(columns=["data"], errors="ignore"),
+                             "historico_alertas", label="⬇️ Excel", key="exp_hist_alertas")
 
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df.drop(columns=["data"], errors="ignore"),
+                 use_container_width=True, hide_index=True)
 
 
 def render():
