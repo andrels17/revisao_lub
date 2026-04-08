@@ -1,152 +1,210 @@
+import math
+
 import pandas as pd
 import streamlit as st
 
-from services import dashboard_service, escopo_service, painel_360_service
+from services import dashboard_service
+from ui.constants import STATUS_LABEL
 from ui.exportacao import botao_exportar_excel
-from ui.constants  import STATUS_LABEL, STATUS_COR
 
 
-# ── card colorido ─────────────────────────────────────────────────────────────
+def _inject_styles():
+    st.markdown(
+        """
+        <style>
+        .modern-hero{
+            padding: 1.15rem 1.2rem;
+            border: 1px solid rgba(148,163,184,.18);
+            border-radius: 20px;
+            background: linear-gradient(135deg, rgba(15,23,42,.96), rgba(30,41,59,.94));
+            color: #f8fafc;
+            box-shadow: 0 18px 50px rgba(2,6,23,.18);
+            margin-bottom: .8rem;
+        }
+        .modern-hero h2{margin:0;font-size:1.35rem;font-weight:700;}
+        .modern-hero p{margin:.35rem 0 0 0;color:#cbd5e1;font-size:.92rem;}
+        .mini-card{
+            border: 1px solid rgba(148,163,184,.18);
+            border-radius: 18px;
+            padding: 1rem 1rem .9rem 1rem;
+            background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
+            box-shadow: 0 10px 25px rgba(15,23,42,.06);
+            min-height: 112px;
+        }
+        .mini-card .label{font-size:.80rem;color:#64748b;margin-bottom:.35rem;}
+        .mini-card .value{font-size:1.85rem;font-weight:800;color:#0f172a;line-height:1.1;}
+        .mini-card .hint{font-size:.78rem;color:#94a3b8;margin-top:.4rem;}
+        .section-card{
+            border: 1px solid rgba(148,163,184,.18);
+            border-radius: 20px;
+            padding: 1rem 1rem .8rem 1rem;
+            background: rgba(255,255,255,.97);
+            box-shadow: 0 10px 25px rgba(15,23,42,.05);
+        }
+        .pill{
+            display:inline-block;
+            padding:.18rem .55rem;
+            border-radius:999px;
+            font-size:.72rem;
+            font-weight:700;
+            background:#eef2ff;
+            color:#4338ca;
+            margin-right:.35rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-def _metric_card(label: str, value, bg: str, icon: str = ""):
+
+def _hero(total_alertas: int):
     st.markdown(
         f"""
-        <div style="
-            background:{bg};border-radius:10px;padding:16px 20px;
-            text-align:center;margin-bottom:4px;
-        ">
-            <div style="font-size:1.6rem;line-height:1">{icon}</div>
-            <div style="font-size:2rem;font-weight:700;color:#fff;line-height:1.2">{value}</div>
-            <div style="font-size:0.78rem;color:#fff;opacity:0.88;margin-top:4px">{label}</div>
+        <div class="modern-hero">
+            <div class="pill">Dashboard executivo</div>
+            <h2>Visão rápida das pendências de manutenção</h2>
+            <p>Alertas consolidados de revisão e lubrificação. Total atual: <strong>{total_alertas}</strong> item(ns).</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 
-def _cards(kpis):
+def _metric_card(label: str, value, hint: str = ""):
+    st.markdown(
+        f"""
+        <div class="mini-card">
+            <div class="label">{label}</div>
+            <div class="value">{value}</div>
+            <div class="hint">{hint}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_cards(kpis):
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        _metric_card("Total de equipamentos", kpis["total_equipamentos"], "#1e40af", "🚜")
+        _metric_card("Total de equipamentos", kpis["total_equipamentos"], "Base monitorada")
     with c2:
-        _metric_card("Alertas vencidos",  kpis["vencidos"],
-                     "#dc2626" if kpis["vencidos"]  else "#16a34a", "🔴")
+        _metric_card("Alertas vencidos", kpis["vencidos"], "Maior urgência")
     with c3:
-        _metric_card("Alertas próximos",  kpis["proximos"],
-                     "#d97706" if kpis["proximos"]  else "#16a34a", "🟡")
+        _metric_card("Alertas próximos", kpis["proximos"], "Janela de atenção")
     with c4:
-        _metric_card("Itens em dia", kpis["em_dia"], "#16a34a", "🟢")
+        _metric_card("Itens em dia", kpis["em_dia"], "Status saudável")
 
     st.write("")
-    c5, c6, c7, _ = st.columns(4)
+    c5, c6, c7 = st.columns(3)
     with c5:
-        _metric_card("Equipamentos c/ alerta", kpis["equipamentos_com_alerta"],
-                     "#7c3aed" if kpis["equipamentos_com_alerta"] else "#16a34a", "⚠️")
+        _metric_card("Equipamentos com alerta", kpis["equipamentos_com_alerta"], "Vencidos ou próximos")
     with c6:
-        _metric_card("Equipamentos vencidos", kpis["equipamentos_vencidos"],
-                     "#dc2626" if kpis["equipamentos_vencidos"] else "#16a34a", "🔴")
+        _metric_card("Equipamentos vencidos", kpis["equipamentos_vencidos"], "Ao menos 1 item vencido")
     with c7:
-        _metric_card("Equipamentos próximos", kpis["equipamentos_proximos"],
-                     "#d97706" if kpis["equipamentos_proximos"] else "#16a34a", "🟡")
+        _metric_card("Equipamentos próximos", kpis["equipamentos_proximos"], "Ao menos 1 item próximo")
 
 
-# ── gráficos ──────────────────────────────────────────────────────────────────
-
-def _grafico_pizza(kpis):
+def _grafico_status(kpis):
     labels = ["Vencidos", "Próximos", "Em dia"]
     values = [kpis["vencidos"], kpis["proximos"], kpis["em_dia"]]
-    cores  = ["#ef4444", "#f59e0b", "#22c55e"]
     if sum(values) == 0:
-        st.info("Sem alertas para exibir.")
+        st.info("Sem distribuição para exibir.")
         return
+
     try:
         import plotly.graph_objects as go
-        fig = go.Figure(data=[go.Pie(
-            labels=labels, values=values, marker_colors=cores,
-            hole=0.45, textinfo="label+percent",
-            hovertemplate="%{label}: %{value}<extra></extra>",
-        )])
-        fig.update_layout(margin=dict(t=10, b=0, l=0, r=0), height=240, showlegend=False)
+
+        fig = go.Figure(
+            data=[
+                go.Pie(
+                    labels=labels,
+                    values=values,
+                    hole=0.56,
+                    textinfo="label+percent",
+                    hovertemplate="%{label}: %{value}<extra></extra>",
+                )
+            ]
+        )
+        fig.update_layout(height=260, margin=dict(t=10, b=0, l=0, r=0), showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
-    except ImportError:
+    except Exception:
         st.bar_chart(pd.DataFrame({"Status": labels, "Qtd": values}).set_index("Status"))
 
 
-def _grafico_barras_setores(ranking):
+def _grafico_setores(ranking):
     if not ranking:
-        st.info("Nenhum alerta por setor.")
+        st.info("Sem setores com pendências relevantes.")
         return
+    df = pd.DataFrame(ranking[:10])
+
     try:
         import plotly.graph_objects as go
-        setores  = [r["Setor"]    for r in ranking]
-        vencidos = [r["Vencidos"] for r in ranking]
-        proximos = [r["Próximos"] for r in ranking]
+
         fig = go.Figure()
-        fig.add_trace(go.Bar(name="Vencidos", x=vencidos, y=setores, orientation="h",
-                             marker_color="#ef4444",
-                             hovertemplate="%{y}: %{x} vencido(s)<extra></extra>"))
-        fig.add_trace(go.Bar(name="Próximos", x=proximos, y=setores, orientation="h",
-                             marker_color="#f59e0b",
-                             hovertemplate="%{y}: %{x} próximo(s)<extra></extra>"))
+        fig.add_trace(go.Bar(name="Vencidos", x=df["Vencidos"], y=df["Setor"], orientation="h"))
+        fig.add_trace(go.Bar(name="Próximos", x=df["Próximos"], y=df["Setor"], orientation="h"))
         fig.update_layout(
-            barmode="stack", margin=dict(t=10, b=0, l=0, r=0),
-            height=max(180, 38 * len(setores)),
-            legend=dict(orientation="h", y=-0.18), xaxis_title="Alertas",
+            barmode="stack",
+            height=max(260, 38 * len(df)),
+            margin=dict(t=10, b=0, l=0, r=0),
+            legend=dict(orientation="h", y=-0.2),
+            xaxis_title="Alertas",
         )
         st.plotly_chart(fig, use_container_width=True)
-    except ImportError:
-        st.bar_chart(pd.DataFrame(ranking).set_index("Setor")[["Vencidos", "Próximos"]])
+    except Exception:
+        st.bar_chart(df.set_index("Setor")[["Vencidos", "Próximos"]])
 
 
 def _formatar_alertas_df(alertas):
     if not alertas:
         return pd.DataFrame()
+
     df = pd.DataFrame(alertas)[[
-        "origem", "equipamento_label", "setor", "etapa",
-        "tipo", "atual", "ultima_execucao", "vencimento", "falta", "status",
-    ]].rename(columns={
-        "origem": "Origem", "equipamento_label": "Equipamento", "setor": "Setor",
-        "etapa": "Etapa / Item", "tipo": "Controle", "atual": "Atual",
-        "ultima_execucao": "Última execução", "vencimento": "Vencimento",
-        "falta": "Falta", "status": "Status",
-    })
+        "origem",
+        "equipamento_label",
+        "setor",
+        "etapa",
+        "tipo",
+        "atual",
+        "ultima_execucao",
+        "vencimento",
+        "falta",
+        "status",
+    ]].rename(
+        columns={
+            "origem": "Origem",
+            "equipamento_label": "Equipamento",
+            "setor": "Setor",
+            "etapa": "Etapa / Item",
+            "tipo": "Controle",
+            "atual": "Atual",
+            "ultima_execucao": "Última execução",
+            "vencimento": "Vencimento",
+            "falta": "Falta",
+            "status": "Status",
+        }
+    )
     df["Status"] = df["Status"].map(lambda x: STATUS_LABEL.get(x, x))
     return df
 
 
+def _slice_page(df: pd.DataFrame, page: int, page_size: int) -> pd.DataFrame:
+    if df.empty:
+        return df
+    start = max(0, (page - 1) * page_size)
+    end = start + page_size
+    return df.iloc[start:end]
 
-
-def _painel_setores_prioritarios(alertas):
-    ranking = painel_360_service.agrupar_prioridades_por_setor(alertas, limite=6)
-    st.subheader("Setores prioritários")
-    st.caption("Leitura rápida para gestão: onde concentrar cobrança e programação hoje.")
-    if not ranking:
-        st.info("Nenhum setor prioritário para exibir.")
-        return
-    for item in ranking:
-        criticidade = item.get("Criticidade", 0)
-        if criticidade >= 6:
-            st.error(f"{item['Setor']} — criticidade {criticidade}")
-        elif criticidade >= 3:
-            st.warning(f"{item['Setor']} — criticidade {criticidade}")
-        else:
-            st.success(f"{item['Setor']} — criticidade {criticidade}")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Vencidos", item["Vencidos"])
-        c2.metric("Próximos", item["Próximos"])
-        c3.metric("Equip. impactados", item["Equipamentos impactados"])
-        c4.metric("Revisões/Lub.", f"{item['Revisões']}/{item['Lubrificações']}")
-        st.caption(item["Leitura gerencial"])
-# ── página ────────────────────────────────────────────────────────────────────
 
 def render():
-    col_title, col_btn = st.columns([5, 1])
-    with col_title:
+    _inject_styles()
+
+    top_left, top_right = st.columns([5, 1])
+    with top_left:
         st.title("📊 Dashboard")
-        st.caption("Visão executiva de alertas de revisão e lubrificação.")
-    with col_btn:
+    with top_right:
         st.write("")
-        if st.button("🔄 Atualizar", help="Recarrega os dados do banco"):
+        if st.button("🔄 Atualizar", help="Recarrega dados do banco"):
             dashboard_service.carregar_alertas.clear()
             st.rerun()
 
@@ -154,92 +212,104 @@ def render():
         alertas, total_equipamentos = dashboard_service.carregar_alertas()
 
     kpis = dashboard_service.resumo_kpis(alertas, total_equipamentos)
-    _cards(kpis)
+    _hero(kpis["total_alertas"])
+    _render_cards(kpis)
 
     if not alertas:
-        st.divider()
-        st.info("Nenhum alerta encontrado. Verifique se os equipamentos possuem template de revisão ou lubrificação configurado.")
+        st.info("Nenhum alerta encontrado. Verifique se os equipamentos possuem template configurado.")
         return
 
-    st.divider()
-
-    # ── Gráficos ──────────────────────────────────────────────────────────────
     ranking_setores = dashboard_service.ranking_setores(alertas)
-    col_pizza, col_barras = st.columns([1, 2])
-    with col_pizza:
-        st.subheader("Distribuição de status")
-        _grafico_pizza(kpis)
-    with col_barras:
-        st.subheader("Alertas por setor")
-        _grafico_barras_setores(ranking_setores)
+    ranking_eq = dashboard_service.ranking_equipamentos_criticos(alertas)
 
-    st.divider()
+    col_g1, col_g2 = st.columns([1, 1.4])
+    with col_g1:
+        with st.container(border=False):
+            st.markdown('<div class="section-card">', unsafe_allow_html=True)
+            st.subheader("Distribuição")
+            _grafico_status(kpis)
+            st.markdown("</div>", unsafe_allow_html=True)
+    with col_g2:
+        with st.container(border=False):
+            st.markdown('<div class="section-card">', unsafe_allow_html=True)
+            st.subheader("Setores prioritários")
+            _grafico_setores(ranking_setores)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-    # ── Filtros ───────────────────────────────────────────────────────────────
-    setores        = sorted({item["setor"] for item in alertas if item["setor"]})
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col1:
-        setor_filtro  = st.multiselect("Filtrar por setor", setores)
-    with col2:
+    st.write("")
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    st.subheader("Filtros rápidos")
+    f1, f2, f3, f4 = st.columns([2.2, 1.1, 1.1, 1])
+    setores = sorted({item.get("setor") or "-" for item in alertas})
+
+    with f1:
+        busca = st.text_input("Buscar equipamento / etapa", placeholder="Código, nome ou item")
+    with f2:
+        setor_filtro = st.multiselect("Setor", setores)
+    with f3:
         origem_filtro = st.selectbox("Origem", ["Todas", "Revisão", "Lubrificação"])
-    with col3:
+    with f4:
         status_filtro = st.selectbox("Status", ["Todos", "VENCIDO", "PROXIMO", "EM DIA"])
 
+    termo = (busca or "").strip().lower()
     filtrados = alertas
+    if termo:
+        filtrados = [
+            a for a in filtrados
+            if termo in f'{a.get("equipamento_label","")} {a.get("etapa","")} {a.get("setor","")}'.lower()
+        ]
     if setor_filtro:
-        filtrados = [a for a in filtrados if a["setor"] in setor_filtro]
+        filtrados = [a for a in filtrados if (a.get("setor") or "-") in setor_filtro]
     if origem_filtro != "Todas":
-        filtrados = [a for a in filtrados if a["origem"] == origem_filtro]
+        filtrados = [a for a in filtrados if a.get("origem") == origem_filtro]
     if status_filtro != "Todos":
-        filtrados = [a for a in filtrados if a["status"] == status_filtro]
+        filtrados = [a for a in filtrados if a.get("status") == status_filtro]
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    # ── Tabela ────────────────────────────────────────────────────────────────
-    st.subheader(f"Pendências e próximos vencimentos ({len(filtrados)} itens)")
     df_alertas = _formatar_alertas_df(filtrados)
-    if not df_alertas.empty:
-        pcol1, pcol2, pcol3 = st.columns([3, 1, 1])
-        with pcol2:
-            por_pagina = st.selectbox("Itens por página", [25, 50, 100, 200], index=1, key="dash_alertas_pg")
-        total_paginas = max(1, ((len(df_alertas) - 1) // int(por_pagina)) + 1)
-        with pcol3:
-            pagina = st.number_input("Página", min_value=1, max_value=total_paginas, value=1, step=1, key="dash_alertas_pagina")
-        inicio = (int(pagina) - 1) * int(por_pagina)
-        fim = inicio + int(por_pagina)
-        df_visivel = df_alertas.iloc[inicio:fim]
-        col_exp = st.columns([5, 1])[1]
-        with col_exp:
-            botao_exportar_excel(df_alertas, "alertas", label="⬇️ Excel", key="exp_dash_alertas")
-        st.caption(f"Exibindo {inicio + 1}–{min(fim, len(df_alertas))} de {len(df_alertas)} item(ns).")
-        st.dataframe(df_visivel, use_container_width=True, hide_index=True)
-    else:
-        st.info("Nenhum item para os filtros selecionados.")
 
-    # ── Rankings ──────────────────────────────────────────────────────────────
+    st.write("")
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    bar1, bar2, bar3 = st.columns([3, 1.2, 1])
+    with bar1:
+        st.subheader(f"Pendências e próximos vencimentos ({len(df_alertas)})")
+    with bar2:
+        page_size = st.selectbox("Linhas por página", [20, 50, 100, 200], index=1)
+    with bar3:
+        botao_exportar_excel(df_alertas, "alertas_filtrados", label="⬇️ Excel", key="exp_dash_alertas")
+
+    if df_alertas.empty:
+        st.info("Nenhum item para os filtros selecionados.")
+    else:
+        total_pages = max(1, math.ceil(len(df_alertas) / page_size))
+        nav1, nav2, nav3 = st.columns([1, 1, 4])
+        with nav1:
+            page = st.number_input("Página", min_value=1, max_value=total_pages, value=1, step=1)
+        with nav2:
+            st.caption(f"de {total_pages}")
+        with nav3:
+            st.caption("Paginação aplicada para deixar a tela mais leve com bases grandes.")
+
+        st.dataframe(_slice_page(df_alertas, int(page), int(page_size)), use_container_width=True, hide_index=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.write("")
     col_a, col_b = st.columns(2)
     with col_a:
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Setores com mais alertas")
-        ranking = dashboard_service.ranking_setores(filtrados)
-        if ranking:
-            st.dataframe(pd.DataFrame(ranking), use_container_width=True, hide_index=True)
+        if ranking_setores:
+            st.dataframe(pd.DataFrame(ranking_setores[:15]), use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum alerta de vencimento ou proximidade para exibir.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
     with col_b:
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Top equipamentos críticos")
-        ranking_eq = dashboard_service.ranking_equipamentos_criticos(filtrados)
         if ranking_eq:
             st.dataframe(pd.DataFrame(ranking_eq), use_container_width=True, hide_index=True)
-            opcoes_360 = [item["Equipamento"] for item in ranking_eq if item.get("Equipamento")]
-            escolhido_360 = st.selectbox("Abrir Painel 360°", opcoes_360, key="dash_painel_360")
-            if st.button("Ir para equipamento", use_container_width=True, key="dash_go_360"):
-                from services import equipamentos_service
-                termo = (escolhido_360 or "").split(" - ")[0].strip()
-                resultados = equipamentos_service.buscar(termo)
-                if resultados:
-                    st.session_state["painel_360_equipamento_id"] = resultados[0]["id"]
-                    st.session_state["pagina_atual"] = "🚜 Equipamentos"
-                    st.rerun()
         else:
             st.info("Nenhum equipamento crítico para os filtros selecionados.")
-
-    st.divider()
-    _painel_setores_prioritarios(filtrados)
+        st.markdown("</div>", unsafe_allow_html=True)

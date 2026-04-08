@@ -1,4 +1,5 @@
 import datetime
+import math
 
 import pandas as pd
 import streamlit as st
@@ -6,14 +7,63 @@ import streamlit as st
 from services import (
     alertas_service,
     equipamentos_service,
-    revisoes_service,
     lubrificacoes_service,
+    revisoes_service,
     vinculos_service,
-    configuracoes_service,
-    escopo_service,
 )
 from ui.constants import STATUS_LABEL
 from ui.exportacao import botao_exportar_excel
+
+
+def _inject_styles():
+    st.markdown(
+        """
+        <style>
+        .wa-hero{
+            padding: 1.1rem 1.2rem;
+            border-radius: 20px;
+            background: linear-gradient(135deg, rgba(3,105,161,.95), rgba(15,23,42,.95));
+            color: #f8fafc;
+            border: 1px solid rgba(148,163,184,.18);
+            box-shadow: 0 18px 50px rgba(2,6,23,.16);
+            margin-bottom: .9rem;
+        }
+        .wa-hero h2{margin:0;font-size:1.28rem;font-weight:800;}
+        .wa-hero p{margin:.35rem 0 0 0;color:#dbeafe;font-size:.92rem;}
+        .lite-card{
+            border: 1px solid rgba(148,163,184,.18);
+            border-radius: 18px;
+            padding: 1rem;
+            background: rgba(255,255,255,.98);
+            box-shadow: 0 10px 25px rgba(15,23,42,.05);
+            margin-bottom: .8rem;
+        }
+        .status-badge{
+            display:inline-block;
+            padding:.2rem .55rem;
+            border-radius:999px;
+            font-size:.73rem;
+            font-weight:700;
+            background:#f8fafc;
+            border:1px solid rgba(148,163,184,.28);
+            margin-right:.35rem;
+        }
+        .meta{
+            color:#64748b;
+            font-size:.82rem;
+            margin-top:.35rem;
+        }
+        .section-card{
+            border: 1px solid rgba(148,163,184,.18);
+            border-radius: 20px;
+            padding: 1rem;
+            background: rgba(255,255,255,.98);
+            box-shadow: 0 10px 25px rgba(15,23,42,.05);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 @st.cache_data(ttl=60, show_spinner="Carregando pendências…")
@@ -24,7 +74,6 @@ def _carregar_pendencias():
 
     ids = [e["id"] for e in equipamentos]
     eqp_map = {e["id"]: e for e in equipamentos}
-
     rev_idx = revisoes_service.listar_controle_revisoes_por_equipamento()
     lub_idx = lubrificacoes_service.calcular_proximas_lubrificacoes_batch(ids)
     enviados_hoje = alertas_service.alertas_enviados_hoje_batch(ids)
@@ -34,85 +83,197 @@ def _carregar_pendencias():
 
     for eqp_id in ids:
         eqp = eqp_map[eqp_id]
-        for rev in rev_idx.get(eqp_id, []):
-            if rev["status"] in ("VENCIDO", "PROXIMO"):
-                pendencias_rev.append({
-                    "eqp": eqp,
-                    "item": rev,
-                    "enviado_hoje": enviados_hoje.get((eqp_id, "revisao"), False),
-                })
-        for lub in lub_idx.get(eqp_id, []):
-            if lub["status"] in ("VENCIDO", "PROXIMO"):
-                pendencias_lub.append({
-                    "eqp": eqp,
-                    "item": lub,
-                    "enviado_hoje": enviados_hoje.get((eqp_id, "lubrificacao"), False),
-                })
 
+        for rev in rev_idx.get(eqp_id, []):
+            if rev.get("status") in ("VENCIDO", "PROXIMO"):
+                pendencias_rev.append({"eqp": eqp, "item": rev, "enviado_hoje": enviados_hoje.get((eqp_id, "revisao"), False)})
+
+        for lub in lub_idx.get(eqp_id, []):
+            if lub.get("status") in ("VENCIDO", "PROXIMO"):
+                pendencias_lub.append({"eqp": eqp, "item": lub, "enviado_hoje": enviados_hoje.get((eqp_id, "lubrificacao"), False)})
+
+    pendencias_rev.sort(key=lambda x: (x["item"].get("status") != "VENCIDO", float(x["item"].get("diferenca", 0) or 0)))
+    pendencias_lub.sort(key=lambda x: (x["item"].get("status") != "VENCIDO", float(x["item"].get("diferenca", 0) or 0)))
     return pendencias_rev, pendencias_lub, enviados_hoje
 
 
-def _card_alerta(eqp, item, tipo, enviado_hoje: bool):
-    label_status = STATUS_LABEL.get(item["status"], item["status"])
+def _meta_cards(pendencias_rev, pendencias_lub):
+    total = len(pendencias_rev) + len(pendencias_lub)
+    vencidos = sum(1 for p in pendencias_rev + pendencias_lub if p["item"].get("status") == "VENCIDO")
+    enviados = sum(1 for p in pendencias_rev + pendencias_lub if p.get("enviado_hoje"))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Pendências totais", total)
+    c2.metric("Vencidos", vencidos)
+    c3.metric("Já enviados hoje", enviados)
+
+
+def _responsaveis_para_equipamento(eqp_id: str):
+    try:
+        return vinculos_service.listar_por_equipamento(eqp_id)
+    except Exception:
+        return []
+
+
+def _formatar_responsavel(vinculos):
+    if not vinculos:
+        return None, "-"
+    principal = next((v for v in vinculos if v.get("principal")), vinculos[0])
+    nome = principal.get("responsavel_nome") or principal.get("nome") or "-"
+    return principal, nome
+
+
+def _mensagem_alerta(tipo: str, eqp: dict, item: dict, responsavel_nome: str):
+    if tipo == "revisao":
+        return alertas_service.montar_mensagem_revisao(eqp, item, responsavel_nome)
+    return alertas_service.montar_mensagem_lubrificacao(eqp, item, responsavel_nome)
+
+
+def _render_card_alerta(item_payload: dict, tipo: str):
+    eqp = item_payload["eqp"]
+    item = item_payload["item"]
+    enviado_hoje = bool(item_payload.get("enviado_hoje"))
+    vinculos = _responsaveis_para_equipamento(eqp["id"])
+    responsavel, responsavel_nome = _formatar_responsavel(vinculos)
+
     unidade = "h" if item.get("tipo_controle") == "horas" else "km"
-    etapa_label = item.get("etapa", item.get("item", "-"))
-    falta = float(item.get("diferenca", item.get("falta", 0)))
-    sufixo = "  ✉️ enviado hoje" if enviado_hoje else ""
+    status_raw = item.get("status", "-")
+    status_label = STATUS_LABEL.get(status_raw, status_raw)
+    falta = float(item.get("diferenca", item.get("falta", 0)) or 0)
+    titulo_item = item.get("etapa") or item.get("item") or "-"
 
-    with st.expander(f"{label_status}  |  {eqp['codigo']} — {eqp['nome']}  |  {etapa_label}{sufixo}"):
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Setor", eqp.get("setor_nome", "-"))
-        col2.metric(f"Leitura atual ({unidade})", f"{float(item.get('atual', item.get('leitura_atual', 0))):.0f}")
-        col3.metric(f"Vencimento ({unidade})", f"{float(item.get('vencimento', 0)):.0f}")
+    st.markdown('<div class="lite-card">', unsafe_allow_html=True)
+    left, right = st.columns([3.6, 1.5])
 
-        if falta <= 0:
-            st.error(f"⚠️ Vencido há {abs(falta):.0f} {unidade}")
-        else:
-            st.warning(f"⏰ Faltam {falta:.0f} {unidade}")
-
+    with left:
+        badges = [f'<span class="status-badge">{status_label}</span>']
         if enviado_hoje:
-            st.info("✉️ Um alerta já foi enviado para este equipamento hoje.")
+            badges.append('<span class="status-badge">📩 Já enviado hoje</span>')
+        st.markdown("".join(badges), unsafe_allow_html=True)
+        st.markdown(f"**{eqp.get('codigo', '-') } - {eqp.get('nome', '-') }**")
+        st.caption(f"{'Revisão' if tipo == 'revisao' else 'Lubrificação'} • {titulo_item}")
+        st.markdown(
+            f"""
+            <div class="meta">
+                Setor: <strong>{eqp.get('setor_nome', '-')}</strong> &nbsp;•&nbsp;
+                Atual: <strong>{float(item.get('atual', 0) or 0):.0f} {unidade}</strong> &nbsp;•&nbsp;
+                Vencimento: <strong>{float(item.get('vencimento', item.get('vencimento_ciclo', 0)) or 0):.0f} {unidade}</strong> &nbsp;•&nbsp;
+                Diferença: <strong>{falta:.0f} {unidade}</strong>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.caption(f"Responsável principal: {responsavel_nome}")
 
-        vinculos_op = vinculos_service.listar_por_equipamento(eqp["id"])
-        resp_gestao = vinculos_service.responsavel_gestao_setor(eqp.get("setor_id")) if eqp.get("setor_id") else None
+    with right:
+        mensagem = _mensagem_alerta(tipo, eqp, item, responsavel_nome)
+        telefone = ""
+        if responsavel:
+            telefone = responsavel.get("telefone") or ""
+        link = alertas_service.gerar_link_whatsapp(telefone, mensagem) if telefone else ""
 
-        st.markdown("**Responsáveis operacionais**")
-        if vinculos_op:
-            for v in vinculos_op:
-                msg = alertas_service.montar_mensagem_revisao(eqp, item, v["responsavel_nome"]) if tipo == "revisao" else alertas_service.montar_mensagem_lubrificacao(eqp, item, v["responsavel_nome"])
-                link = alertas_service.gerar_link_whatsapp(v["responsavel_telefone"], msg)
+        if link:
+            st.link_button("📱 WhatsApp", link, use_container_width=True)
 
-                ca, cb = st.columns([4, 1])
-                ca.write(f"{v['responsavel_nome']} ({v['tipo_vinculo']})")
-                if v["responsavel_telefone"]:
-                    key_wa = f"wa_{tipo}_{eqp['id']}_{item.get('item_id', item.get('etapa_id', 0))}_{v['id']}"
-                    if cb.link_button("📱 WhatsApp", link, key=key_wa):
-                        alertas_service.registrar_alerta(eqp["id"], v["responsavel_id"], tipo, "operacional", msg)
-                        _carregar_pendencias.clear()
-                        st.rerun()
-                else:
-                    cb.caption("Sem telefone")
-        else:
-            st.caption("Nenhum responsável operacional vinculado.")
+        if st.button(
+            "✅ Registrar envio",
+            key=f"reg_{tipo}_{eqp['id']}_{titulo_item}",
+            use_container_width=True,
+        ):
+            alertas_service.registrar_alerta(
+                equipamento_id=eqp["id"],
+                responsavel_id=responsavel.get("responsavel_id") if responsavel else None,
+                tipo_alerta=tipo,
+                perfil="operacional",
+                mensagem=mensagem,
+            )
+            _carregar_pendencias.clear()
+            st.success("Envio registrado.")
+            st.rerun()
 
-        if resp_gestao:
-            st.markdown("**Responsável de gestão**")
-            msg_g = alertas_service.montar_mensagem_revisao(eqp, item, resp_gestao["nome"]) if tipo == "revisao" else alertas_service.montar_mensagem_lubrificacao(eqp, item, resp_gestao["nome"])
-            link_g = alertas_service.gerar_link_whatsapp(resp_gestao["telefone"], msg_g)
-            ca, cb = st.columns([4, 1])
-            ca.write(f"{resp_gestao['nome']} (gestor do setor)")
-            if resp_gestao["telefone"]:
-                key_g = f"wa_gest_{tipo}_{eqp['id']}_{item.get('item_id', item.get('etapa_id', 0))}"
-                if cb.link_button("📱 WhatsApp", link_g, key=key_g):
-                    alertas_service.registrar_alerta(eqp["id"], resp_gestao.get("id"), tipo, "gestao", msg_g)
-                    _carregar_pendencias.clear()
-                    st.rerun()
-            else:
-                cb.caption("Sem telefone")
+    with st.expander("Ver mensagem"):
+        st.code(mensagem)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _payloads_to_df(payloads: list, tipo: str) -> pd.DataFrame:
+    rows = []
+    for p in payloads:
+        eqp = p["eqp"]
+        item = p["item"]
+        rows.append(
+            {
+                "Tipo": "Revisão" if tipo == "revisao" else "Lubrificação",
+                "Equipamento": f'{eqp.get("codigo", "-")} - {eqp.get("nome", "-")}',
+                "Setor": eqp.get("setor_nome", "-"),
+                "Etapa / Item": item.get("etapa") or item.get("item") or "-",
+                "Controle": item.get("tipo_controle", "-"),
+                "Atual": float(item.get("atual", 0) or 0),
+                "Vencimento": float(item.get("vencimento", item.get("vencimento_ciclo", 0)) or 0),
+                "Diferença": float(item.get("diferenca", item.get("falta", 0)) or 0),
+                "Status": STATUS_LABEL.get(item.get("status"), item.get("status")),
+                "Já enviado hoje": "Sim" if p.get("enviado_hoje") else "Não",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _slice_payloads(payloads: list, page: int, page_size: int) -> list:
+    start = max(0, (page - 1) * page_size)
+    end = start + page_size
+    return payloads[start:end]
+
+
+def _render_lista(payloads: list, tipo: str):
+    filtros = st.columns([2.4, 1.2, 1.2, 1])
+    with filtros[0]:
+        busca = st.text_input("Buscar equipamento / etapa", key=f"busca_{tipo}")
+    with filtros[1]:
+        status = st.selectbox("Status", ["Todos", "VENCIDO", "PROXIMO"], key=f"status_{tipo}")
+    with filtros[2]:
+        enviados = st.selectbox("Envio", ["Todos", "Pendentes hoje", "Já enviados hoje"], key=f"enviados_{tipo}")
+    with filtros[3]:
+        page_size = st.selectbox("Por página", [5, 10, 20, 30], index=1, key=f"page_size_{tipo}")
+
+    termo = (busca or "").strip().lower()
+    filtrados = payloads
+    if termo:
+        filtrados = [
+            p for p in filtrados
+            if termo in f'{p["eqp"].get("codigo","")} {p["eqp"].get("nome","")} {p["item"].get("etapa","")} {p["item"].get("item","")}'.lower()
+        ]
+    if status != "Todos":
+        filtrados = [p for p in filtrados if p["item"].get("status") == status]
+    if enviados == "Pendentes hoje":
+        filtrados = [p for p in filtrados if not p.get("enviado_hoje")]
+    elif enviados == "Já enviados hoje":
+        filtrados = [p for p in filtrados if p.get("enviado_hoje")]
+
+    df = _payloads_to_df(filtrados, tipo)
+    top1, top2 = st.columns([3, 1])
+    with top1:
+        st.caption(f"{len(filtrados)} item(ns) após filtros")
+    with top2:
+        botao_exportar_excel(df, f"alertas_{tipo}", label="⬇️ Excel", key=f"exp_{tipo}")
+
+    if not filtrados:
+        st.info("Nenhum item para os filtros selecionados.")
+        return
+
+    total_pages = max(1, math.ceil(len(filtrados) / page_size))
+    nav1, nav2 = st.columns([1, 4])
+    with nav1:
+        page = st.number_input("Página", min_value=1, max_value=total_pages, value=1, step=1, key=f"page_{tipo}")
+    with nav2:
+        st.caption(f"{total_pages} página(s) • paginação aplicada para evitar lentidão em listas grandes.")
+
+    for payload in _slice_payloads(filtrados, int(page), int(page_size)):
+        _render_card_alerta(payload, tipo)
 
 
 def _render_historico():
-    st.subheader("Histórico de alertas enviados")
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    st.subheader("Histórico de envios")
+
     hoje = datetime.date.today()
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -131,157 +292,55 @@ def _render_historico():
         tipo=None if tipo_f == "Todos" else tipo_f,
         perfil=None if perfil_f == "Todos" else perfil_f,
     )
+
     if not historico:
         st.info("Nenhum alerta registrado para os filtros selecionados.")
+        st.markdown("</div>", unsafe_allow_html=True)
         return
+
     df = pd.DataFrame(historico)
     st.caption(f"{len(df)} alerta(s) encontrado(s)")
-    st.dataframe(df, use_container_width=True, hide_index=True)
     botao_exportar_excel(df, "historico_alertas", label="⬇️ Excel", key="exp_hist_alertas")
-
-
-def _render_cobertura(fila: dict):
-    resumo = fila.get("resumo", {})
-    cobertura = fila.get("cobertura", {})
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Total sugerido", resumo.get("total", 0))
-    c2.metric("Prontos para envio", resumo.get("prontos_envio", 0))
-    c3.metric("Cobertura operacional", f"{cobertura.get('percentual_operacional', 0)}%")
-    c4.metric("Cobertura gestão", f"{cobertura.get('percentual_gestao', 0)}%")
-    c5.metric("Bloqueados cooldown", resumo.get("bloqueados", 0))
-    setores = cobertura.get("setores", [])
-    if setores:
-        st.caption("Cobertura por setor")
-        st.dataframe(pd.DataFrame(setores), use_container_width=True, hide_index=True)
-    else:
-        st.info("Sem dados de cobertura por setor.")
-
-
-def _render_fila_sugerida(fila: dict):
-    st.subheader("Fila sugerida do dia")
-    st.caption("Organiza prioridade, bloqueio por cooldown e cobertura operacional x gestão. O envio em massa abaixo apenas registra o disparo feito fora do sistema.")
-    _render_cobertura(fila)
-    st.divider()
-
-    itens = fila.get("revisao", []) + fila.get("lubrificacao", [])
-    if not itens:
-        st.info("Nenhuma fila sugerida para hoje.")
-        return
-
-    df = pd.DataFrame(itens)
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        tipo = st.selectbox("Tipo da fila", ["Todos", "revisao", "lubrificacao"], key="fila_tipo")
-    with col2:
-        modo = st.selectbox("Mostrar", ["Todos", "Somente prontos", "Sem cobertura"], key="fila_modo")
-    with col3:
-        status = st.selectbox("Status", ["Todos", "VENCIDO", "PROXIMO"], key="fila_status")
-    with col4:
-        limite_padrao = min(max(len(df), 10), 100)
-        limite = st.number_input("Limite visual", min_value=10, max_value=500, value=limite_padrao, step=10, key="fila_limite")
-
-    dfv = df.copy()
-    if tipo != "Todos":
-        dfv = dfv[dfv["tipo_alerta"] == tipo]
-    if modo == "Somente prontos":
-        dfv = dfv[~dfv["bloqueado_cooldown"]]
-    elif modo == "Sem cobertura":
-        dfv = dfv[(~dfv["tem_operacional"]) | (~dfv["tem_gestao"])]
-    if status != "Todos":
-        dfv = dfv[dfv["status"] == status]
-
-    dfv = dfv.sort_values(["prioridade", "status", "equipamento"], ascending=[False, True, True]).head(int(limite))
-    col_exp1, col_exp2 = st.columns([5, 1])
-    with col_exp2:
-        botao_exportar_excel(dfv, "fila_alertas", label="⬇️ Excel", key="exp_fila_alertas")
-    st.dataframe(dfv, use_container_width=True, hide_index=True)
-
-    opcoes = [f"{r.equipamento} | {r.tipo_alerta} | {r.item}" for r in dfv.itertuples()]
-    mapa = {f"{r.equipamento} | {r.tipo_alerta} | {r.item}": r._asdict() for r in dfv.itertuples()}
-    selecionados = st.multiselect("Itens para registrar envio em lote", opcoes, key="fila_select")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        if st.button("✅ Registrar lote operacional", use_container_width=True, key="reg_lote_op") and selecionados:
-            payload = []
-            for chave in selecionados:
-                item = mapa[chave]
-                payload.append({
-                    "equipamento_id": item["equipamento_id"],
-                    "responsavel_id": None,
-                    "tipo_alerta": item["tipo_alerta"],
-                    "mensagem": f"registro_lote_operacional: {item['equipamento']} / {item['item']}",
-                })
-            qtd = alertas_service.registrar_alerta_lote(payload, perfil="operacional")
-            _carregar_pendencias.clear()
-            st.success(f"{qtd} alerta(s) registrados em lote para operacional.")
-            st.rerun()
-    with col_b:
-        if st.button("✅ Registrar lote gestão", use_container_width=True, key="reg_lote_gest") and selecionados:
-            payload = []
-            for chave in selecionados:
-                item = mapa[chave]
-                payload.append({
-                    "equipamento_id": item["equipamento_id"],
-                    "responsavel_id": None,
-                    "tipo_alerta": item["tipo_alerta"],
-                    "mensagem": f"registro_lote_gestao: {item['equipamento']} / {item['item']}",
-                })
-            qtd = alertas_service.registrar_alerta_lote(payload, perfil="gestao")
-            _carregar_pendencias.clear()
-            st.success(f"{qtd} alerta(s) registrados em lote para gestão.")
-            st.rerun()
+    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render():
-    col_t, col_b = st.columns([5, 1])
-    with col_t:
-        st.title("Alertas — WhatsApp")
-        st.caption(f"Escopo atual: {escopo_service.resumo_escopo()}")
-        st.caption("Clique em 📱 WhatsApp para abrir o app com a mensagem pré-preenchida.")
-    with col_b:
+    _inject_styles()
+
+    top_left, top_right = st.columns([5, 1])
+    with top_left:
+        st.title("📱 Alertas WhatsApp")
+    with top_right:
         st.write("")
         if st.button("🔄 Atualizar", help="Recarrega pendências"):
             _carregar_pendencias.clear()
             st.rerun()
 
     pendencias_rev, pendencias_lub, _ = _carregar_pendencias()
-    fila = alertas_service.gerar_fila_sugerida(max_por_tipo=configuracoes_service.get_fila_alertas_limite())
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    st.markdown(
+        """
+        <div class="wa-hero">
+            <h2>Central de alertas operacionais</h2>
+            <p>Fluxo mais leve e organizado: filtros rápidos, paginação e registro de envio sem travar a tela.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    _meta_cards(pendencias_rev, pendencias_lub)
+
+    tab1, tab2, tab3 = st.tabs([
         f"Revisão ({len(pendencias_rev)})",
         f"Lubrificação ({len(pendencias_lub)})",
-        "Fila sugerida do dia",
         "Histórico",
     ])
 
     with tab1:
-        if not pendencias_rev:
-            st.success("Nenhuma revisão vencida ou próxima do vencimento.")
-        else:
-            por_pagina = st.selectbox("Alertas por página", [10, 20, 50, 100], index=1, key="rev_alertas_pg")
-            total_paginas = max(1, ((len(pendencias_rev) - 1) // int(por_pagina)) + 1)
-            pagina = st.number_input("Página revisão", min_value=1, max_value=total_paginas, value=1, step=1, key="rev_alertas_pagina")
-            inicio = (int(pagina) - 1) * int(por_pagina)
-            fim = inicio + int(por_pagina)
-            st.caption(f"Exibindo {inicio + 1}–{min(fim, len(pendencias_rev))} de {len(pendencias_rev)} revisão(ões).")
-            for p in pendencias_rev[inicio:fim]:
-                _card_alerta(p["eqp"], p["item"], "revisao", p["enviado_hoje"])
+        _render_lista(pendencias_rev, "revisao")
 
     with tab2:
-        if not pendencias_lub:
-            st.success("Nenhuma lubrificação vencida ou próxima do vencimento.")
-        else:
-            por_pagina = st.selectbox("Alertas por página", [10, 20, 50, 100], index=1, key="lub_alertas_pg")
-            total_paginas = max(1, ((len(pendencias_lub) - 1) // int(por_pagina)) + 1)
-            pagina = st.number_input("Página lubrificação", min_value=1, max_value=total_paginas, value=1, step=1, key="lub_alertas_pagina")
-            inicio = (int(pagina) - 1) * int(por_pagina)
-            fim = inicio + int(por_pagina)
-            st.caption(f"Exibindo {inicio + 1}–{min(fim, len(pendencias_lub))} de {len(pendencias_lub)} lubrificação(ões).")
-            for p in pendencias_lub[inicio:fim]:
-                _card_alerta(p["eqp"], p["item"], "lubrificacao", p["enviado_hoje"])
+        _render_lista(pendencias_lub, "lubrificacao")
 
     with tab3:
-        _render_fila_sugerida(fila)
-
-    with tab4:
         _render_historico()
