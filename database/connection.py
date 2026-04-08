@@ -111,6 +111,10 @@ class _PooledConn:
     def close(self):
         pool = object.__getattribute__(self, "_pool")
         conn = object.__getattribute__(self, "_conn")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         pool.putconn(conn)
 
     # ── suporte a context manager (with get_conn() as conn:) ──────────────────

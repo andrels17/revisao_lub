@@ -61,7 +61,10 @@ def registrar(acao: str, entidade: str, entidade_id=None, valor_antigo=None, val
         )
         conn.commit()
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     finally:
         conn.close()
 
@@ -92,4 +95,7 @@ def registrar_no_conn(conn, acao: str, entidade: str, entidade_id=None, valor_an
             ),
         )
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass

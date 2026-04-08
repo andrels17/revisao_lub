@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- ============================================================
 -- SCHEMA COMPLETO - Sistema de Revisão e Lubrificação
 -- Execute este script no seu banco Neon para criar as tabelas novas
@@ -99,9 +101,9 @@ CREATE TABLE IF NOT EXISTS itens_template_lubrificacao (
 
 -- Vínculos Responsável × Equipamento (operacional)
 CREATE TABLE IF NOT EXISTS vinculos_equipamento (
-    id SERIAL PRIMARY KEY,
-    equipamento_id INTEGER NOT NULL REFERENCES equipamentos(id) ON DELETE CASCADE,
-    responsavel_id INTEGER NOT NULL REFERENCES responsaveis(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    equipamento_id UUID NOT NULL REFERENCES equipamentos(id) ON DELETE CASCADE,
+    responsavel_id UUID NOT NULL REFERENCES responsaveis(id) ON DELETE CASCADE,
     tipo_vinculo VARCHAR(100) DEFAULT 'lubrificador',
     principal BOOLEAN DEFAULT FALSE,
     ativo BOOLEAN DEFAULT TRUE,
@@ -111,9 +113,9 @@ CREATE TABLE IF NOT EXISTS vinculos_equipamento (
 
 -- Vínculos Responsável × Setor (gestão)
 CREATE TABLE IF NOT EXISTS vinculos_setor (
-    id SERIAL PRIMARY KEY,
-    setor_id INTEGER NOT NULL REFERENCES setores(id) ON DELETE CASCADE,
-    responsavel_id INTEGER NOT NULL REFERENCES responsaveis(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    setor_id UUID NOT NULL REFERENCES setores(id) ON DELETE CASCADE,
+    responsavel_id UUID NOT NULL REFERENCES responsaveis(id) ON DELETE CASCADE,
     tipo_responsabilidade VARCHAR(100) DEFAULT 'gestor',
     principal BOOLEAN DEFAULT FALSE,
     ativo BOOLEAN DEFAULT TRUE,
@@ -193,11 +195,11 @@ CREATE TABLE IF NOT EXISTS configuracoes_sistema (
 );
 
 CREATE TABLE IF NOT EXISTS log_auditoria (
-    id BIGSERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     usuario_id UUID NULL,
     acao VARCHAR(100) NOT NULL,
     entidade VARCHAR(100) NOT NULL,
-    entidade_id VARCHAR(100),
+    entidade_id TEXT,
     valor_antigo JSONB,
     valor_novo JSONB,
     criado_em TIMESTAMPTZ DEFAULT NOW()
@@ -205,3 +207,11 @@ CREATE TABLE IF NOT EXISTS log_auditoria (
 
 CREATE INDEX IF NOT EXISTS idx_log_auditoria_entidade ON log_auditoria(entidade, entidade_id);
 CREATE INDEX IF NOT EXISTS idx_log_auditoria_data ON log_auditoria(criado_em DESC);
+
+
+-- ============================================================
+-- Compatibilidade com bancos existentes em UUID
+-- ============================================================
+-- Observação: em bancos já existentes, aplique somente as tabelas novas
+-- da Fase 1 e as tabelas de vínculo ajustadas para UUID. Não é necessário
+-- recriar as tabelas legadas se elas já existirem em produção.

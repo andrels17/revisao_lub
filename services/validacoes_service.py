@@ -11,7 +11,7 @@ class ConfirmacaoNecessariaError(ValidacaoNegocioError):
     pass
 
 
-def obter_equipamento_contexto(equipamento_id: int) -> dict | None:
+def obter_equipamento_contexto(equipamento_id) -> dict | None:
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -49,7 +49,7 @@ def obter_equipamento_contexto(equipamento_id: int) -> dict | None:
         conn.close()
 
 
-def validar_leitura(equipamento_id: int, tipo_leitura: str, km_valor=None, horas_valor=None, permitir_regressao: bool = False):
+def validar_leitura(equipamento_id, tipo_leitura: str, km_valor=None, horas_valor=None, permitir_regressao: bool = False):
     eqp = obter_equipamento_contexto(equipamento_id)
     if not eqp:
         raise ValidacaoNegocioError("Equipamento não encontrado.")
@@ -65,7 +65,7 @@ def validar_leitura(equipamento_id: int, tipo_leitura: str, km_valor=None, horas
     return eqp
 
 
-def validar_execucao_revisao(equipamento_id: int, data_execucao, km_execucao=None, horas_execucao=None, observacoes=None, status="concluida"):
+def validar_execucao_revisao(equipamento_id, data_execucao, km_execucao=None, horas_execucao=None, observacoes=None, status="concluida"):
     eqp = obter_equipamento_contexto(equipamento_id)
     if not eqp:
         raise ValidacaoNegocioError("Equipamento não encontrado.")
@@ -102,7 +102,7 @@ def validar_execucao_revisao(equipamento_id: int, data_execucao, km_execucao=Non
     return eqp
 
 
-def validar_execucao_lubrificacao(equipamento_id: int, item_id, data_execucao, km_execucao=None, horas_execucao=None):
+def validar_execucao_lubrificacao(equipamento_id, item_id, data_execucao, km_execucao=None, horas_execucao=None):
     eqp = obter_equipamento_contexto(equipamento_id)
     if not eqp:
         raise ValidacaoNegocioError("Equipamento não encontrado.")

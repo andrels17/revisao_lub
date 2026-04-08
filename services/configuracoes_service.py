@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import streamlit as st
+import psycopg2
 
 from database.connection import get_conn
 from ui import constants as ui_constants
@@ -21,7 +22,24 @@ def _parse_int(value, default: int) -> int:
         return int(default)
 
 
-def garantir_tabela():
+def _apply_defaults_to_session() -> dict:
+    cfg = {k: int(v) for k, v in CONFIG_DEFAULTS.items()}
+    for chave, valor in cfg.items():
+        st.session_state[f"{SESSION_PREFIX}{chave}"] = valor
+    ui_constants.TOLERANCIA_PADRAO = int(cfg["tolerancia_padrao"])
+    return cfg
+
+
+def _is_missing_table_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(s in msg for s in [
+        "does not exist",
+        "relation",
+        "undefinedtable",
+    ])
+
+
+def garantir_tabela() -> bool:
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -36,17 +54,27 @@ def garantir_tabela():
             """
         )
         conn.commit()
+        return True
+    except psycopg2.Error:
+        conn.rollback()
+        return False
     finally:
         conn.close()
 
 
 def carregar_todas() -> dict:
-    garantir_tabela()
+    tabela_ok = garantir_tabela()
+    if not tabela_ok:
+        return dict(CONFIG_DEFAULTS)
+
     conn = get_conn()
     cur = conn.cursor()
     try:
         cur.execute("select chave, valor from configuracoes_sistema")
         rows = cur.fetchall()
+    except psycopg2.Error:
+        conn.rollback()
+        return dict(CONFIG_DEFAULTS)
     finally:
         conn.close()
 
@@ -68,7 +96,12 @@ def aplicar_no_session_state():
 
 
 def salvar(configs: dict):
-    garantir_tabela()
+    tabela_ok = garantir_tabela()
+    if not tabela_ok:
+        _apply_defaults_to_session()
+        st.warning("Não foi possível salvar configurações no banco. Usando valores padrão nesta sessão.")
+        return
+
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -83,18 +116,27 @@ def salvar(configs: dict):
                 (chave, str(valor)),
             )
         conn.commit()
+    except psycopg2.Error:
+        conn.rollback()
+        st.warning("Não foi possível salvar configurações no banco.")
     finally:
         conn.close()
     aplicar_no_session_state()
 
 
 def resetar():
-    garantir_tabela()
+    tabela_ok = garantir_tabela()
+    if not tabela_ok:
+        _apply_defaults_to_session()
+        return
+
     conn = get_conn()
     cur = conn.cursor()
     try:
         cur.execute("delete from configuracoes_sistema")
         conn.commit()
+    except psycopg2.Error:
+        conn.rollback()
     finally:
         conn.close()
     aplicar_no_session_state()
