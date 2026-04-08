@@ -21,6 +21,42 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── CSS global — responsividade mobile + ajustes visuais ─────────────────────
+st.markdown(
+    """
+    <style>
+    /* Cards de métrica com quebra de linha no mobile */
+    @media (max-width: 640px) {
+        [data-testid="column"] { min-width: 48% !important; }
+        [data-testid="stMetric"] { font-size: 0.85rem; }
+        .stDataFrame { font-size: 0.75rem; }
+    }
+
+    /* Botões do menu lateral — melhor toque em mobile */
+    section[data-testid="stSidebar"] button {
+        min-height: 2.6rem;
+        font-size: 0.88rem;
+    }
+
+    /* Expanders com visual mais suave */
+    details summary {
+        font-size: 0.92rem;
+    }
+
+    /* Tabelas com scroll horizontal em telas pequenas */
+    [data-testid="stDataFrame"] {
+        overflow-x: auto;
+    }
+
+    /* Remover padding excessivo em containers estreitos */
+    @media (max-width: 768px) {
+        .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # ── Navegação estruturada ────────────────────────────────────────────────────
 SECOES = {
     "📊 Painel": {
@@ -48,7 +84,6 @@ SECOES = {
     },
 }
 
-# Mapa plano nome → módulo (para lookup rápido)
 _PAGINAS = {nome: mod for sec in SECOES.values() for nome, mod in sec.items()}
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
@@ -72,7 +107,18 @@ with st.sidebar:
                 st.session_state["pagina_atual"] = nome_pagina
                 st.rerun()
 
-# ── Renderiza página ─────────────────────────────────────────────────────────
+# ── Renderiza página com tratamento de erro global ───────────────────────────
 pagina_atual = st.session_state.get("pagina_atual", "📊 Dashboard")
-_PAGINAS[pagina_atual].render()
-
+try:
+    _PAGINAS[pagina_atual].render()
+except Exception as exc:
+    st.error(
+        f"**Erro ao carregar a página '{pagina_atual}'.**\n\n"
+        f"`{type(exc).__name__}: {exc}`\n\n"
+        "Tente atualizar a página. Se o erro persistir, verifique a conexão com o banco de dados."
+    )
+    with st.expander("🔍 Detalhes técnicos"):
+        import traceback
+        st.code(traceback.format_exc(), language="python")
+    if st.button("🔄 Tentar novamente"):
+        st.rerun()
