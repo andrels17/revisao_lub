@@ -218,9 +218,12 @@ def render():
 
     pendencias_rev, pendencias_lub, _ = _carregar_pendencias()
 
-    tab1, tab2, tab3 = st.tabs([
+    fila = alertas_service.gerar_fila_sugerida(max_por_tipo=200)
+
+    tab1, tab2, tab3, tab4 = st.tabs([
         f"Revisão ({len(pendencias_rev)})",
         f"Lubrificação ({len(pendencias_lub)})",
+        "Fila sugerida do dia",
         "Histórico",
     ])
 
@@ -239,4 +242,17 @@ def render():
                 _card_alerta(p["eqp"], p["item"], "lubrificacao", p["enviado_hoje"])
 
     with tab3:
+        resumo = fila.get("resumo", {})
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total sugerido", resumo.get("total", 0))
+        c2.metric("Com operacional", resumo.get("operacional", 0))
+        c3.metric("Com gestão", resumo.get("gestao", 0))
+        st.caption("Esta aba não envia automaticamente. Ela organiza a fila recomendada do dia com prioridade para itens vencidos e que ainda não receberam alerta hoje.")
+        itens = fila.get("revisao", []) + fila.get("lubrificacao", [])
+        if itens:
+            st.dataframe(pd.DataFrame(itens), use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhuma fila sugerida para hoje.")
+
+    with tab4:
         _render_historico()

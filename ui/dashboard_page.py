@@ -195,5 +195,15 @@ def render():
         ranking_eq = dashboard_service.ranking_equipamentos_criticos(filtrados)
         if ranking_eq:
             st.dataframe(pd.DataFrame(ranking_eq), use_container_width=True, hide_index=True)
+            opcoes_360 = [item["Equipamento"] for item in ranking_eq if item.get("Equipamento")]
+            escolhido_360 = st.selectbox("Abrir Painel 360°", opcoes_360, key="dash_painel_360")
+            if st.button("Ir para equipamento", use_container_width=True, key="dash_go_360"):
+                from services import equipamentos_service
+                termo = (escolhido_360 or "").split(" - ")[0].strip()
+                resultados = equipamentos_service.buscar(termo)
+                if resultados:
+                    st.session_state["painel_360_equipamento_id"] = resultados[0]["id"]
+                    st.session_state["pagina_atual"] = "🚜 Equipamentos"
+                    st.rerun()
         else:
             st.info("Nenhum equipamento crítico para os filtros selecionados.")
