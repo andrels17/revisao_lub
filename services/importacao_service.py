@@ -2,6 +2,14 @@ import io
 import pandas as pd
 from services import equipamentos_service, setores_service
 
+COLUNAS_OBRIGATORIAS = ["codigo", "nome"]
+COLUNAS_OPCIONAIS = ["tipo", "setor", "km_atual", "horas_atual", "placa", "serie"]
+
+TIPOS_VALIDOS = {
+    "caminhão", "trator", "colheitadeira", "pulverizador",
+    "implemento", "máquina", "outro",
+}
+
 
 def get_template_csv() -> bytes:
     df = pd.DataFrame(columns=["codigo", "nome", "tipo", "setor", "km_atual", "horas_atual", "placa", "serie"])
@@ -18,6 +26,14 @@ def get_template_csv() -> bytes:
     return df.to_csv(index=False).encode("utf-8")
 
 
+def _parse_numerico(valor, campo: str, linha: int, erros: list) -> float:
+    try:
+        return float(valor or 0)
+    except (ValueError, TypeError):
+        erros.append(f"Linha {linha}: valor inválido em '{campo}' — '{valor}' não é numérico")
+        return 0.0
+
+
 def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
     try:
         if filename.endswith(".csv"):
@@ -31,9 +47,9 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
 
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
 
-    for col in ["codigo", "nome"]:
-        if col not in df.columns:
-            return {"erro": f"Coluna obrigatória ausente: '{col}'"}
+    ausentes = [col for col in COLUNAS_OBRIGATORIAS if col not in df.columns]
+    if ausentes:
+        return {"erro": f"Colunas obrigatórias ausentes: {', '.join(ausentes)}"}
 
     erros = []
     for idx, row in df.iterrows():
@@ -45,6 +61,13 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
         elif not nome or nome == "nan":
             erros.append(f"Linha {linha}: nome vazio")
 
+        tipo = str(row.get("tipo", "")).strip().lower()
+        if tipo and tipo != "nan" and tipo not in TIPOS_VALIDOS:
+            erros.append(
+                f"Linha {linha}: tipo '{row.get('tipo')}' desconhecido — "
+                f"use: {', '.join(t.title() for t in sorted(TIPOS_VALIDOS))}"
+            )
+
     return {
         "df": df,
         "erros": erros,
@@ -54,13 +77,15 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
     }
 
 
-def importar(df: pd.DataFrame, setor_padrao_id=None) -> dict:
+def importar(df: pd.DataFrame, setor_padrao_id=None, atualizar_duplicados: bool = False) -> dict:
     setores_map = {s["nome"].lower(): s["id"] for s in setores_service.listar()}
     importados = 0
+    atualizados = 0
     duplicados = 0
     erros = []
 
     for idx, row in df.iterrows():
+        linha = idx + 2
         codigo = str(row.get("codigo", "")).strip()
         nome = str(row.get("nome", "")).strip()
         if not codigo or not nome or codigo == "nan" or nome == "nan":
@@ -73,14 +98,8 @@ def importar(df: pd.DataFrame, setor_padrao_id=None) -> dict:
         setor_nome = str(row.get("setor", "")).strip().lower()
         setor_id = setores_map.get(setor_nome) or setor_padrao_id
 
-        try:
-            km = float(row.get("km_atual", 0) or 0)
-        except (ValueError, TypeError):
-            km = 0
-        try:
-            horas = float(row.get("horas_atual", 0) or 0)
-        except (ValueError, TypeError):
-            horas = 0
+        km = _parse_numerico(row.get("km_atual", 0), "km_atual", linha, erros)
+        horas = _parse_numerico(row.get("horas_atual", 0), "horas_atual", linha, erros)
 
         try:
             equipamentos_service.criar(
@@ -95,8 +114,43 @@ def importar(df: pd.DataFrame, setor_padrao_id=None) -> dict:
         except Exception as e:
             msg = str(e)
             if "unique" in msg.lower() or "duplicate" in msg.lower():
-                duplicados += 1
+                if atualizar_duplicados:
+                    try:
+                        _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas)
+                        atualizados += 1
+                    except Exception as e2:
+                        erros.append(f"Linha {linha} ({codigo}): erro ao atualizar — {e2}")
+                else:
+                    duplicados += 1
             else:
-                erros.append(f"Linha {idx + 2} ({codigo}): {msg}")
+                erros.append(f"Linha {linha} ({codigo}): {msg}")
 
-    return {"importados": importados, "duplicados": duplicados, "erros": erros}
+    return {
+        "importados": importados,
+        "atualizados": atualizados,
+        "duplicados": duplicados,
+        "erros": erros,
+    }
+
+
+def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas):
+    from database.connection import get_conn
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            update equipamentos
+               set nome = %s,
+                   tipo = %s,
+                   setor_id = %s,
+                   km_atual = greatest(coalesce(km_atual, 0), %s),
+                   horas_atual = greatest(coalesce(horas_atual, 0), %s)
+             where codigo = %s
+            """,
+            (nome, tipo, setor_id, km, horas, codigo),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+

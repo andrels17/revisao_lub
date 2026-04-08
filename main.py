@@ -1,5 +1,4 @@
 import streamlit as st
-from ui.components import global_search
 from ui import (
     dashboard_page,
     equipamentos_page,
@@ -14,43 +13,62 @@ from ui import (
     importacao_page,
 )
 
-st.set_page_config(page_title="Revisão e Lubrificação", layout="wide")
+st.set_page_config(
+    page_title="Revisão e Lubrificação",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-MENU = {
-    "📊 Dashboard":              dashboard_page,
-    "─── CADASTROS ───":         None,
-    "🏢 Setores":                setores_page,
-    "🚜 Equipamentos":           equipamentos_page,
-    "👷 Responsáveis":           responsaveis_page,
-    "🔗 Vínculos":               vinculos_page,
-    "📋 Templates":              templates_page,
-    "─── OPERAÇÃO ───":          None,
-    "📏 Leituras KM / Horas":    leituras_page,
-    "🔧 Controle de Revisões":   controle_revisoes_page,
-    "🛢️ Controle de Lubrificações": lubrificacoes_page,
-    "─── COMUNICAÇÃO ───":       None,
-    "📱 Alertas WhatsApp":       alertas_page,
-    "─── FERRAMENTAS ───":       None,
-    "📥 Importar Equipamentos":  importacao_page,
+# ── Navegação estruturada ────────────────────────────────────────────────────
+SECOES = {
+    "📊 Painel": {
+        "📊 Dashboard": dashboard_page,
+    },
+    "📁 Cadastros": {
+        "🏢 Setores": setores_page,
+        "🚜 Equipamentos": equipamentos_page,
+        "👷 Responsáveis": responsaveis_page,
+        "🔗 Vínculos": vinculos_page,
+        "📋 Templates": templates_page,
+    },
+    "⚙️ Operação": {
+        "📏 Leituras KM / Horas": leituras_page,
+        "🔧 Controle de Revisões": controle_revisoes_page,
+        "🛢️ Controle de Lubrificações": lubrificacoes_page,
+    },
+    "📡 Comunicação": {
+        "📱 Alertas WhatsApp": alertas_page,
+    },
+    "🔧 Ferramentas": {
+        "📥 Importar Equipamentos": importacao_page,
+    },
 }
 
-opcoes_validas = [k for k, v in MENU.items() if v is not None and not k.startswith("─")]
-separadores    = [k for k, v in MENU.items() if v is None or k.startswith("─")]
+# Mapa plano nome → módulo (para lookup rápido)
+_PAGINAS = {nome: mod for sec in SECOES.values() for nome, mod in sec.items()}
 
-# Sidebar com seções visuais
-st.sidebar.title("Menu")
-if 'main_menu' not in st.session_state or st.session_state['main_menu'] not in opcoes_validas:
-    st.session_state['main_menu'] = opcoes_validas[0]
-
-menu = st.sidebar.selectbox(
-    "Navegar",
-    opcoes_validas,
-    index=opcoes_validas.index(st.session_state['main_menu']),
-)
-st.session_state['main_menu'] = menu
-
-with st.container():
-    global_search.render()
+# ── Sidebar ──────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.title("Menu")
     st.divider()
 
-MENU[menu].render()
+    if "pagina_atual" not in st.session_state:
+        st.session_state["pagina_atual"] = "📊 Dashboard"
+
+    for secao, paginas in SECOES.items():
+        st.caption(secao)
+        for nome_pagina in paginas:
+            selecionado = st.session_state["pagina_atual"] == nome_pagina
+            if st.button(
+                nome_pagina,
+                key=f"nav_{nome_pagina}",
+                use_container_width=True,
+                type="primary" if selecionado else "secondary",
+            ):
+                st.session_state["pagina_atual"] = nome_pagina
+                st.rerun()
+
+# ── Renderiza página ─────────────────────────────────────────────────────────
+pagina_atual = st.session_state.get("pagina_atual", "📊 Dashboard")
+_PAGINAS[pagina_atual].render()
+

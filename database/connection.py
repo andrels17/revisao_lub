@@ -1,7 +1,9 @@
 import os
+from contextlib import contextmanager
 from urllib.parse import urlparse, parse_qsl, urlunparse
 
 import psycopg2
+import psycopg2.pool
 import streamlit as st
 
 
@@ -58,13 +60,42 @@ def _build_url_from_parts() -> str | None:
     return f"postgresql://{user}:{password}@{host}:{port}/{dbname}?sslmode=require&connect_timeout=10"
 
 
-def get_conn():
+@st.cache_resource
+def _get_pool():
+    """Cria um pool de conexões reutilizável (criado uma vez por sessão do Streamlit)."""
     database_url = _get_secret("DATABASE_URL") or _build_url_from_parts()
     dsn = _normalize_database_url(database_url)
+    try:
+        return psycopg2.pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=dsn)
+    except psycopg2.OperationalError as exc:
+        raise RuntimeError(
+            "Não foi possível conectar ao banco Neon. Verifique se a DATABASE_URL está correta, "
+            "se o banco está ativo e se a URL contém sslmode=require."
+        ) from exc
 
+
+@contextmanager
+def get_conn_ctx():
+    """Context manager que devolve a conexão ao pool automaticamente."""
+    pool = _get_pool()
+    conn = pool.getconn()
+    try:
+        yield conn
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        pool.putconn(conn)
+
+
+def get_conn():
+    """Compatibilidade com código legado — retorna uma conexão direta."""
+    database_url = _get_secret("DATABASE_URL") or _build_url_from_parts()
+    dsn = _normalize_database_url(database_url)
     try:
         return psycopg2.connect(dsn)
     except psycopg2.OperationalError as exc:
         raise RuntimeError(
-            "Não foi possível conectar ao banco Neon. Verifique se a DATABASE_URL está correta, se o banco está ativo e se a URL contém sslmode=require."
+            "Não foi possível conectar ao banco Neon. Verifique se a DATABASE_URL está correta, "
+            "se o banco está ativo e se a URL contém sslmode=require."
         ) from exc

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import pandas as pd
 import streamlit as st
 
@@ -10,22 +8,80 @@ STATUS_LABEL = {
     "VENCIDO": "🔴 Vencido",
     "PROXIMO": "🟡 Próximo",
     "EM DIA": "🟢 Em dia",
-    "REALIZADO": "✅ Realizado no ciclo",
+}
+
+STATUS_COR = {
+    "VENCIDO": "#ef4444",
+    "PROXIMO": "#f59e0b",
+    "EM DIA": "#22c55e",
 }
 
 
 def _cards(kpis):
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Equipamentos", kpis["total_equipamentos"])
-    c2.metric("Itens vencidos", kpis["vencidos"])
-    c3.metric("Itens próximos", kpis["proximos"])
-    c4.metric("Realizados no ciclo", kpis["realizados"])
+    c2.metric("Alertas vencidos", kpis["vencidos"], delta=None)
+    c3.metric("Alertas próximos", kpis["proximos"])
+    c4.metric("Itens em dia", kpis["em_dia"])
 
-    c5, c6, c7, c8 = st.columns(4)
-    c5.metric("Itens em dia", kpis["em_dia"])
-    c6.metric("Equipamentos com alerta", kpis["equipamentos_com_alerta"])
-    c7.metric("Equipamentos vencidos", kpis["equipamentos_vencidos"])
-    c8.metric("Equipamentos com realizado", kpis["equipamentos_realizados"])
+    c5, c6, c7 = st.columns(3)
+    c5.metric("Equipamentos com alerta", kpis["equipamentos_com_alerta"])
+    c6.metric("Equipamentos vencidos", kpis["equipamentos_vencidos"])
+    c7.metric("Equipamentos próximos", kpis["equipamentos_proximos"])
+
+
+def _grafico_pizza(kpis):
+    """Gráfico de pizza com distribuição de status."""
+    labels = ["Vencidos", "Próximos", "Em dia"]
+    values = [kpis["vencidos"], kpis["proximos"], kpis["em_dia"]]
+    cores = ["#ef4444", "#f59e0b", "#22c55e"]
+
+    if sum(values) == 0:
+        return
+
+    try:
+        import plotly.graph_objects as go  # type: ignore
+        fig = go.Figure(data=[go.Pie(
+            labels=labels,
+            values=values,
+            marker_colors=cores,
+            hole=0.4,
+            textinfo="label+percent",
+        )])
+        fig.update_layout(
+            margin=dict(t=30, b=0, l=0, r=0),
+            height=250,
+            showlegend=False,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    except ImportError:
+        df_pizza = pd.DataFrame({"Status": labels, "Qtd": values})
+        st.bar_chart(df_pizza.set_index("Status"))
+
+
+def _grafico_barras_setores(ranking):
+    """Barras horizontais por setor."""
+    if not ranking:
+        return
+    try:
+        import plotly.graph_objects as go  # type: ignore
+        setores = [r["Setor"] for r in ranking]
+        vencidos = [r["Vencidos"] for r in ranking]
+        proximos = [r["Próximos"] for r in ranking]
+
+        fig = go.Figure()
+        fig.add_trace(go.Bar(name="Vencidos", x=vencidos, y=setores, orientation="h", marker_color="#ef4444"))
+        fig.add_trace(go.Bar(name="Próximos", x=proximos, y=setores, orientation="h", marker_color="#f59e0b"))
+        fig.update_layout(
+            barmode="stack",
+            margin=dict(t=10, b=0, l=0, r=0),
+            height=max(200, 40 * len(setores)),
+            legend=dict(orientation="h", y=-0.15),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    except ImportError:
+        df_bar = pd.DataFrame(ranking).set_index("Setor")[["Vencidos", "Próximos"]]
+        st.bar_chart(df_bar)
 
 
 def _formatar_alertas_df(alertas):
@@ -37,12 +93,11 @@ def _formatar_alertas_df(alertas):
         "origem",
         "equipamento_label",
         "setor",
-        "item",
-        "controle",
-        "referencia_ciclo",
+        "etapa",
+        "tipo",
         "atual",
-        "executado_em",
-        "proximo_vencimento",
+        "ultima_execucao",
+        "vencimento",
         "falta",
         "status",
     ]].rename(
@@ -50,12 +105,11 @@ def _formatar_alertas_df(alertas):
             "origem": "Origem",
             "equipamento_label": "Equipamento",
             "setor": "Setor",
-            "item": "Item",
-            "controle": "Controle",
-            "referencia_ciclo": "Referência do ciclo",
+            "etapa": "Etapa / Item",
+            "tipo": "Controle",
             "atual": "Atual",
-            "executado_em": "Executado em",
-            "proximo_vencimento": "Próximo vencimento",
+            "ultima_execucao": "Última execução",
+            "vencimento": "Vencimento",
             "falta": "Falta",
             "status": "Status",
         }
@@ -64,44 +118,41 @@ def _formatar_alertas_df(alertas):
     return df
 
 
-def _grafico_status(alertas):
-    if not alertas:
-        return
-    df = pd.DataFrame(alertas)
-    base = df.groupby(["origem", "status"]).size().reset_index(name="Total")
-    base["Status"] = base["status"].map(lambda x: STATUS_LABEL.get(x, x))
-    chart = base.pivot(index="Status", columns="origem", values="Total").fillna(0)
-    st.bar_chart(chart)
-
-
-def _grafico_setores(alertas):
-    if not alertas:
-        return
-    df = pd.DataFrame(alertas)
-    base = df[df["status"].isin(["VENCIDO", "PROXIMO"])].groupby(["setor", "origem"]).size().reset_index(name="Total")
-    if base.empty:
-        st.info("Nenhum alerta vencido ou próximo para exibir no gráfico por setor.")
-        return
-    chart = base.pivot(index="setor", columns="origem", values="Total").fillna(0).sort_values(by=list(base["origem"].unique()), ascending=False)
-    st.bar_chart(chart)
-
-
 def render():
-    st.title("Dashboard")
-    st.caption("Visão executiva consolidada de revisão e lubrificação.")
+    col_title, col_btn = st.columns([5, 1])
+    with col_title:
+        st.title("Dashboard")
+        st.caption("Visão executiva de alertas de revisão e lubrificação.")
+    with col_btn:
+        st.write("")
+        if st.button("🔄 Atualizar", help="Recarrega os dados do banco"):
+            dashboard_service.carregar_alertas.clear()
+            st.rerun()
 
     alertas = dashboard_service.carregar_alertas()
     kpis = dashboard_service.resumo_kpis(alertas)
     _cards(kpis)
 
     if not alertas:
-        st.info("Nenhum item encontrado. Verifique se os equipamentos possuem templates configurados.")
+        st.info("Nenhum alerta encontrado. Verifique se os equipamentos possuem template de revisão ou lubrificação configurado.")
         return
 
-    setores = sorted({item["setor"] for item in alertas if item["setor"]})
-    origens = ["Todos", "Revisão", "Lubrificação"]
-    status_options = ["Todos", "VENCIDO", "PROXIMO", "EM DIA", "REALIZADO"]
+    # ── Gráficos resumo ──────────────────────────────────────────────────────
+    ranking_setores = dashboard_service.ranking_setores(alertas)
+    col_pizza, col_barras = st.columns([1, 2])
+    with col_pizza:
+        st.subheader("Distribuição de status")
+        _grafico_pizza(kpis)
+    with col_barras:
+        st.subheader("Alertas por setor")
+        _grafico_barras_setores(ranking_setores)
 
+    st.divider()
+
+    # ── Filtros ───────────────────────────────────────────────────────────────
+    setores = sorted({item["setor"] for item in alertas if item["setor"]})
+    origens = ["Todas", "Revisão", "Lubrificação"]
+    status_options = ["Todos", "VENCIDO", "PROXIMO", "EM DIA"]
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
         setor_filtro = st.multiselect("Filtrar por setor", setores)
@@ -113,39 +164,35 @@ def render():
     filtrados = alertas
     if setor_filtro:
         filtrados = [item for item in filtrados if item["setor"] in setor_filtro]
-    if origem_filtro != "Todos":
+    if origem_filtro != "Todas":
         filtrados = [item for item in filtrados if item["origem"] == origem_filtro]
     if status_filtro != "Todos":
         filtrados = [item for item in filtrados if item["status"] == status_filtro]
 
-    g1, g2 = st.columns(2)
-    with g1:
-        st.subheader("Distribuição por status")
-        _grafico_status(filtrados)
-    with g2:
-        st.subheader("Alertas por setor")
-        _grafico_setores(filtrados)
-
-    st.subheader("Pendências e próximos vencimentos")
+    # ── Tabela de pendências ──────────────────────────────────────────────────
+    st.subheader(f"Pendências e próximos vencimentos ({len(filtrados)} itens)")
     df_alertas = _formatar_alertas_df(filtrados)
     if not df_alertas.empty:
         st.dataframe(df_alertas, use_container_width=True, hide_index=True)
     else:
         st.info("Nenhum item para os filtros selecionados.")
 
-    c1, c2 = st.columns(2)
-    with c1:
+    # ── Rankings ──────────────────────────────────────────────────────────────
+    col_a, col_b = st.columns(2)
+
+    with col_a:
         st.subheader("Setores com mais alertas")
         ranking = dashboard_service.ranking_setores(filtrados)
         if ranking:
             st.dataframe(pd.DataFrame(ranking), use_container_width=True, hide_index=True)
         else:
-            st.info("Nenhum alerta relevante para exibir por setor.")
+            st.info("Nenhum alerta de vencimento ou proximidade para exibir por setor.")
 
-    with c2:
+    with col_b:
         st.subheader("Top equipamentos críticos")
-        top_criticos = dashboard_service.top_equipamentos_criticos(filtrados)
-        if top_criticos:
-            st.dataframe(pd.DataFrame(top_criticos), use_container_width=True, hide_index=True)
+        ranking_eq = dashboard_service.ranking_equipamentos_criticos(filtrados)
+        if ranking_eq:
+            st.dataframe(pd.DataFrame(ranking_eq), use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum equipamento crítico para os filtros selecionados.")
+

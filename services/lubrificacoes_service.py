@@ -1,66 +1,53 @@
+from psycopg2 import errors
+
 from database.connection import get_conn
 
 TOLERANCIA_PADRAO = 10
-
-
-def _ultima_execucao_item(cur, equipamento_id, item_id, tipo_controle):
-    coluna = "horas_execucao" if tipo_controle == "horas" else "km_execucao"
-    cur.execute(
-        f"""
-        select coalesce(max({coluna}), 0)
-        from execucoes_lubrificacao
-        where equipamento_id = %s and item_id = %s
-        """,
-        (equipamento_id, item_id),
-    )
-    return float(cur.fetchone()[0] or 0)
 
 
 def calcular_proximas_lubrificacoes(equipamento_id):
     conn = get_conn()
     cur = conn.cursor()
     try:
-        cur.execute(
-            "select horas_atual, km_atual, template_lubrificacao_id from equipamentos where id = %s",
-            (equipamento_id,),
-        )
-        row = cur.fetchone()
-        if not row:
-            return []
-
-        horas_atual, km_atual, template_id = row
-        if not template_id:
-            return []
-
-        cur.execute(
-            "select tipo_controle from templates_lubrificacao where id = %s",
-            (template_id,),
-        )
-        tipo_row = cur.fetchone()
-        if not tipo_row:
-            return []
-
-        tipo_controle = tipo_row[0]
-        leitura_atual = float(horas_atual if tipo_controle == "horas" else km_atual)
-
+        # Tudo em uma única query com LEFT JOIN — elimina o N+1 anterior
         cur.execute(
             """
-            select id, nome_item, tipo_produto, intervalo_valor
-            from itens_template_lubrificacao
-            where template_id = %s and ativo = true
-            order by intervalo_valor
+            select
+                itl.id,
+                itl.nome_item,
+                itl.tipo_produto,
+                itl.intervalo_valor,
+                tl.tipo_controle,
+                e.horas_atual,
+                e.km_atual,
+                coalesce(
+                    max(case when tl.tipo_controle = 'horas'
+                             then el.horas_execucao
+                             else el.km_execucao end),
+                    0
+                ) as ultima_execucao
+            from equipamentos e
+            join templates_lubrificacao tl on tl.id = e.template_lubrificacao_id
+            join itens_template_lubrificacao itl on itl.template_id = tl.id and itl.ativo = true
+            left join execucoes_lubrificacao el
+                   on el.equipamento_id = e.id and el.item_id = itl.id
+            where e.id = %s
+            group by itl.id, itl.nome_item, itl.tipo_produto, itl.intervalo_valor,
+                     tl.tipo_controle, e.horas_atual, e.km_atual
+            order by itl.intervalo_valor
             """,
-            (template_id,),
+            (equipamento_id,),
         )
-        itens = cur.fetchall()
-        if not itens:
+        rows = cur.fetchall()
+        if not rows:
             return []
 
+        status_ordem = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2}
         resultados = []
-        STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2}
 
-        for item_id, nome_item, tipo_produto, intervalo in itens:
-            ultima = _ultima_execucao_item(cur, equipamento_id, item_id, tipo_controle)
+        for item_id, nome_item, tipo_produto, intervalo, tipo_controle, horas_atual, km_atual, ultima in rows:
+            leitura_atual = float(horas_atual if tipo_controle == "horas" else km_atual)
+            ultima = float(ultima or 0)
             proxima = ultima + float(intervalo)
             diff = proxima - leitura_atual
 
@@ -86,8 +73,11 @@ def calcular_proximas_lubrificacoes(equipamento_id):
                 }
             )
 
-        resultados.sort(key=lambda x: (STATUS_ORDEM.get(x["status"], 99), x["diferenca"]))
+        resultados.sort(key=lambda x: (status_ordem.get(x["status"], 99), x["diferenca"]))
         return resultados
+    except (errors.UndefinedTable, errors.UndefinedColumn):
+        conn.rollback()
+        return []
     finally:
         conn.close()
 
@@ -118,12 +108,11 @@ def registrar_execucao(dados):
         )
         execucao_id = cur.fetchone()[0]
 
-        # Atualiza leituras do equipamento (pega o maior valor)
         cur.execute(
             """
             update equipamentos
-               set km_atual    = greatest(km_atual,    %s),
-                   horas_atual = greatest(horas_atual, %s)
+               set km_atual    = greatest(coalesce(km_atual, 0), %s),
+                   horas_atual = greatest(coalesce(horas_atual, 0), %s)
              where id = %s
             """,
             (dados.get("km_execucao", 0), dados.get("horas_execucao", 0), dados["equipamento_id"]),
@@ -137,20 +126,41 @@ def registrar_execucao(dados):
 def listar_por_equipamento(equipamento_id):
     conn = get_conn()
     cur = conn.cursor()
+    consultas = [
+        """
+        select el.id, el.data_execucao, el.nome_item, el.tipo_produto,
+               el.km_execucao, el.horas_execucao,
+               coalesce(r.nome, '-') as responsavel, el.observacoes
+        from execucoes_lubrificacao el
+        left join responsaveis r on r.id = el.responsavel_id
+        where el.equipamento_id = %s
+        order by el.data_execucao desc, el.created_at desc
+        """,
+        """
+        select el.id, el.data_execucao, el.nome_item, el.tipo_produto,
+               el.km_execucao, el.horas_execucao,
+               coalesce(r.nome, '-') as responsavel, el.observacoes
+        from execucoes_lubrificacao el
+        left join responsaveis r on r.id = el.responsavel_id
+        where el.equipamento_id = %s
+        order by el.data_execucao desc, el.id desc
+        """,
+    ]
     try:
-        cur.execute(
-            """
-            select el.id, el.data_execucao, el.nome_item, el.tipo_produto,
-                   el.km_execucao, el.horas_execucao,
-                   coalesce(r.nome, '-') as responsavel, el.observacoes
-            from execucoes_lubrificacao el
-            left join responsaveis r on r.id = el.responsavel_id
-            where el.equipamento_id = %s
-            order by el.data_execucao desc, el.created_at desc
-            """,
-            (equipamento_id,),
-        )
-        rows = cur.fetchall()
+        rows = None
+        for sql in consultas:
+            try:
+                cur.execute(sql, (equipamento_id,))
+                rows = cur.fetchall()
+                break
+            except errors.UndefinedColumn:
+                conn.rollback()
+                continue
+            except errors.UndefinedTable:
+                conn.rollback()
+                return []
+        if rows is None:
+            return []
         return [
             {
                 "id": r[0],
@@ -204,5 +214,8 @@ def listar_todos():
             }
             for r in rows
         ]
+    except (errors.UndefinedTable, errors.UndefinedColumn):
+        conn.rollback()
+        return []
     finally:
         conn.close()

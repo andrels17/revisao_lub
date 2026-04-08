@@ -66,12 +66,23 @@ def render():
             st.dataframe(resultado["preview"], use_container_width=True, hide_index=True)
 
             if resultado["linhas_ok"] > 0:
+                atualizar = st.checkbox(
+                    "Atualizar equipamentos já existentes (pelo código)",
+                    value=False,
+                    help="Se marcado, equipamentos com código duplicado terão nome, tipo, setor e leituras atualizados. Se desmarcado, duplicados são ignorados.",
+                )
                 if st.button("✅ Confirmar importação", use_container_width=True, type="primary"):
-                    res = importacao_service.importar(resultado["df"], setor_padrao_id=setor_padrao)
-                    st.success(
-                        f"Importação concluída: **{res['importados']}** importado(s)"
-                        + (f" | {res['duplicados']} duplicado(s) ignorado(s)" if res["duplicados"] else "")
+                    res = importacao_service.importar(
+                        resultado["df"],
+                        setor_padrao_id=setor_padrao,
+                        atualizar_duplicados=atualizar,
                     )
+                    msg = f"Importação concluída: **{res['importados']}** importado(s)"
+                    if res.get("atualizados"):
+                        msg += f" | **{res['atualizados']}** atualizado(s)"
+                    if res["duplicados"]:
+                        msg += f" | {res['duplicados']} duplicado(s) ignorado(s)"
+                    st.success(msg)
                     if res["erros"]:
                         for e in res["erros"]:
                             st.error(e)
