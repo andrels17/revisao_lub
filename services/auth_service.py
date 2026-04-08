@@ -6,6 +6,8 @@ Roles disponíveis:
   gestor       — ver tudo, aprovar execuções, relatórios
   operador     — ver suas pendências e registrar execuções
   visualizador — somente leitura (dashboard e relatórios)
+
+Nota: todos os IDs são UUID (str) — compatível com o schema do Neon.
 """
 from __future__ import annotations
 
@@ -74,13 +76,13 @@ def verificar_senha(senha: str, senha_hash: str) -> bool:
 def login(email: str, senha: str) -> dict | None:
     """
     Verifica credenciais. Retorna dict do usuário ou None.
-    Atualiza ultimo_login em caso de sucesso.
+    IDs retornados são UUID representados como str.
     """
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT id, nome, email, senha_hash, role, ativo, responsavel_id
+            SELECT id::text, nome, email, senha_hash, role, ativo, responsavel_id::text
             FROM usuarios
             WHERE email = %s
             """,
@@ -102,18 +104,18 @@ def login(email: str, senha: str) -> dict | None:
     try:
         with get_conn() as conn:
             conn.cursor().execute(
-                "UPDATE usuarios SET ultimo_login = NOW() WHERE id = %s", (uid,)
+                "UPDATE usuarios SET ultimo_login = NOW() WHERE id = %s::uuid", (uid,)
             )
             conn.commit()
     except Exception:
         pass
 
     return {
-        "id":             uid,
+        "id":             uid,       # str (UUID)
         "nome":           nome,
         "email":          email_db,
         "role":           role,
-        "responsavel_id": resp_id,
+        "responsavel_id": resp_id,   # str (UUID) ou None
     }
 
 
@@ -155,8 +157,8 @@ def listar_usuarios() -> list[dict]:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT u.id, u.nome, u.email, u.role, u.ativo,
-                   u.responsavel_id, r.nome AS responsavel_nome,
+            SELECT u.id::text, u.nome, u.email, u.role, u.ativo,
+                   u.responsavel_id::text, r.nome AS responsavel_nome,
                    u.ultimo_login, u.created_at
             FROM usuarios u
             LEFT JOIN responsaveis r ON r.id = u.responsavel_id
@@ -172,7 +174,7 @@ def criar_usuario(
     email: str,
     senha: str,
     role: str,
-    responsavel_id: int | None = None,
+    responsavel_id: str | None = None,  # UUID como str
 ) -> tuple[bool, str]:
     try:
         h = hash_senha(senha)
@@ -180,7 +182,7 @@ def criar_usuario(
             conn.cursor().execute(
                 """
                 INSERT INTO usuarios (nome, email, senha_hash, role, responsavel_id)
-                VALUES (%s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s::uuid)
                 """,
                 (nome, email.strip().lower(), h, role, responsavel_id or None),
             )
@@ -193,11 +195,11 @@ def criar_usuario(
 
 
 def editar_usuario(
-    uid: int,
+    uid: str,                           # UUID como str
     nome: str,
     role: str,
     ativo: bool,
-    responsavel_id: int | None = None,
+    responsavel_id: str | None = None,  # UUID como str
     nova_senha: str | None = None,
 ) -> tuple[bool, str]:
     try:
@@ -207,8 +209,8 @@ def editar_usuario(
                 cur.execute(
                     """
                     UPDATE usuarios
-                    SET nome=%s, role=%s, ativo=%s, responsavel_id=%s, senha_hash=%s
-                    WHERE id=%s
+                    SET nome=%s, role=%s, ativo=%s, responsavel_id=%s::uuid, senha_hash=%s
+                    WHERE id = %s::uuid
                     """,
                     (nome, role, ativo, responsavel_id or None, hash_senha(nova_senha), uid),
                 )
@@ -216,8 +218,8 @@ def editar_usuario(
                 cur.execute(
                     """
                     UPDATE usuarios
-                    SET nome=%s, role=%s, ativo=%s, responsavel_id=%s
-                    WHERE id=%s
+                    SET nome=%s, role=%s, ativo=%s, responsavel_id=%s::uuid
+                    WHERE id = %s::uuid
                     """,
                     (nome, role, ativo, responsavel_id or None, uid),
                 )
@@ -227,12 +229,14 @@ def editar_usuario(
         return False, f"Erro: {e}"
 
 
-def excluir_usuario(uid: int, uid_logado: int) -> tuple[bool, str]:
+def excluir_usuario(uid: str, uid_logado: str) -> tuple[bool, str]:
     if uid == uid_logado:
         return False, "Você não pode excluir seu próprio usuário."
     try:
         with get_conn() as conn:
-            conn.cursor().execute("DELETE FROM usuarios WHERE id = %s", (uid,))
+            conn.cursor().execute(
+                "DELETE FROM usuarios WHERE id = %s::uuid", (uid,)
+            )
             conn.commit()
         return True, "Usuário removido."
     except Exception as e:
