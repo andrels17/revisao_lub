@@ -22,6 +22,7 @@ STATUS_LABEL = {
     "VENCIDO": "🔴 Vencido",
     "PROXIMO": "🟡 Próximo",
     "EM DIA": "🟢 Em dia",
+    "REALIZADO": "✅ Realizado no ciclo",
 }
 
 
@@ -30,21 +31,13 @@ def _formatar_status(status):
     return STATUS_LABEL.get(status, status)
 
 
-def _extrair_etapa_observacoes(obs):
-    if not obs:
-        return "-"
-    primeira = str(obs).splitlines()[0].strip()
-    if primeira.lower().startswith("etapa:"):
-        return primeira.split(":", 1)[1].strip() or "-"
-    return "-"
-
-
 
 def _resumo_status(itens):
     return {
         "vencidos": sum(1 for item in itens if item.get("status") == "VENCIDO"),
         "proximos": sum(1 for item in itens if item.get("status") == "PROXIMO"),
         "em_dia": sum(1 for item in itens if item.get("status") == "EM DIA"),
+        "realizados": sum(1 for item in itens if item.get("status") == "REALIZADO"),
     }
 
 
@@ -53,6 +46,7 @@ def _calcular_saude_equipamento(revisoes, lubrificacoes):
     total_itens = len(revisoes) + len(lubrificacoes)
     vencidos = sum(1 for item in revisoes + lubrificacoes if item.get("status") == "VENCIDO")
     proximos = sum(1 for item in revisoes + lubrificacoes if item.get("status") == "PROXIMO")
+    realizados = sum(1 for item in revisoes + lubrificacoes if item.get("status") == "REALIZADO")
 
     if total_itens == 0:
         return {
@@ -61,7 +55,7 @@ def _calcular_saude_equipamento(revisoes, lubrificacoes):
             "detalhe": "Equipamento sem revisão ou lubrificação configurada.",
         }
 
-    score = max(0, 100 - (vencidos * 25) - (proximos * 8))
+    score = max(0, 100 - (vencidos * 25) - (proximos * 8) + min(12, realizados * 2))
     if vencidos >= 3 or score < 45:
         faixa = "Crítico"
     elif vencidos >= 1 or score < 70:
@@ -72,7 +66,7 @@ def _calcular_saude_equipamento(revisoes, lubrificacoes):
     return {
         "score": score,
         "faixa": faixa,
-        "detalhe": f"{vencidos} vencido(s) e {proximos} próximo(s) entre {total_itens} item(ns).",
+        "detalhe": f"{vencidos} vencido(s), {proximos} próximo(s) e {realizados} realizado(s) no ciclo entre {total_itens} item(ns).",
     }
 
 
@@ -105,14 +99,14 @@ def _tabela_revisoes(revisoes):
         "etapa": "Etapa",
         "tipo_controle": "Controle",
         "atual": "Atual",
-        "ultima_execucao": "Executado em",
-        "vencimento": "Próximo vencimento",
+        "ultima_execucao": "Última execução",
+        "vencimento": "Vencimento",
         "diferenca": "Falta",
         "status": "Status",
     })
     df_rev["Status"] = df_rev["Status"].map(_formatar_status)
-    st.caption("Quando uma revisão é lançada, esta grade passa a mostrar o próximo ciclo da etapa. Ex.: revisão 5.000 km executada em 10.003 km passa a ter próximo vencimento em 15.003 km.")
     st.dataframe(df_rev, use_container_width=True, hide_index=True)
+
 
 
 def _tabela_lubrificacoes(lubrificacoes):
@@ -121,14 +115,15 @@ def _tabela_lubrificacoes(lubrificacoes):
         return
 
     df_lub = pd.DataFrame(lubrificacoes)[[
-        "item", "tipo_produto", "tipo_controle", "atual", "ultima_execucao", "vencimento", "diferenca", "status"
+        "item", "tipo_produto", "tipo_controle", "referencia_ciclo", "atual", "ultima_execucao", "vencimento", "diferenca", "status"
     ]].rename(columns={
         "item": "Item",
         "tipo_produto": "Produto",
         "tipo_controle": "Controle",
+        "referencia_ciclo": "Referência do ciclo",
         "atual": "Atual",
-        "ultima_execucao": "Última execução",
-        "vencimento": "Vencimento",
+        "ultima_execucao": "Executado em",
+        "vencimento": "Próximo vencimento",
         "diferenca": "Falta",
         "status": "Status",
     })
@@ -219,30 +214,20 @@ def _render_acoes_rapidas(equipamento, revisoes, lubrificacoes, vinculos):
                 key=f'etapa_rev_{equipamento["id"]}',
                 format_func=lambda r: "Nenhuma revisão disponível" if r is None else f'{r["etapa"]} · {_formatar_status(r["status"])}',
             )
-            km_sugerido = float(equipamento.get("km_atual") or 0)
-            horas_sugeridas = float(equipamento.get("horas_atual") or 0)
-            if etapa is not None:
-                if (etapa.get("tipo_controle") or "").lower() == "km":
-                    km_sugerido = float(etapa.get("vencimento") or km_sugerido)
-                elif (etapa.get("tipo_controle") or "").lower() == "horas":
-                    horas_sugeridas = float(etapa.get("vencimento") or horas_sugeridas)
-
             km_execucao = st.number_input(
                 "KM execução",
                 min_value=0.0,
-                value=km_sugerido,
+                value=float(equipamento.get("km_atual") or 0),
                 step=1.0,
                 key=f'km_exec_{equipamento["id"]}',
             )
             horas_execucao = st.number_input(
                 "Horas execução",
                 min_value=0.0,
-                value=horas_sugeridas,
+                value=float(equipamento.get("horas_atual") or 0),
                 step=1.0,
                 key=f'horas_exec_{equipamento["id"]}',
             )
-            if etapa is not None:
-                st.caption(f"Sugestão baseada no vencimento da etapa: {float(etapa.get('vencimento') or 0):.0f} {(etapa.get('tipo_controle') or '').lower()}")
             data_execucao = st.date_input("Data da revisão", key=f'data_rev_{equipamento["id"]}')
             status_execucao = st.selectbox("Status", ["concluida", "pendente"], key=f'status_rev_{equipamento["id"]}')
             responsavel = _select_responsavel("Responsável", responsaveis, key=f'resp_rev_{equipamento["id"]}')
@@ -270,37 +255,36 @@ def _render_acoes_rapidas(equipamento, revisoes, lubrificacoes, vinculos):
     with col_c:
         with st.form(f'form_lub_rapida_{equipamento["id"]}', clear_on_submit=True):
             st.markdown("**Lançar lubrificação**")
-            pendencias_lub = [l for l in lubrificacoes if l.get("status") in {"VENCIDO", "PROXIMO"}] or lubrificacoes
+            pendencias_lub = [l for l in lubrificacoes if l.get("status") in {"VENCIDO", "PROXIMO", "EM DIA"}] or lubrificacoes
             item = st.selectbox(
                 "Item de lubrificação",
                 pendencias_lub if pendencias_lub else [None],
                 key=f'item_lub_{equipamento["id"]}',
                 format_func=lambda l: "Nenhum item disponível" if l is None else f'{l["item"]} · {l.get("tipo_produto") or "-"} · {_formatar_status(l["status"])}',
             )
-            km_sugerido_lub = float(equipamento.get("km_atual") or 0)
-            horas_sugeridas_lub = float(equipamento.get("horas_atual") or 0)
-            if item is not None:
-                if (item.get("tipo_controle") or "").lower() == "km":
-                    km_sugerido_lub = float(item.get("vencimento") or km_sugerido_lub)
-                elif (item.get("tipo_controle") or "").lower() == "horas":
-                    horas_sugeridas_lub = float(item.get("vencimento") or horas_sugeridas_lub)
+            sugestao_km = float((item or {}).get("vencimento") or equipamento.get("km_atual") or 0)
+            sugestao_horas = float((item or {}).get("vencimento") or equipamento.get("horas_atual") or 0)
+            if (item or {}).get("tipo_controle") == "horas":
+                sugestao_km = float(equipamento.get("km_atual") or 0)
+            else:
+                sugestao_horas = float(equipamento.get("horas_atual") or 0)
 
             km_execucao = st.number_input(
                 "KM execução ",
                 min_value=0.0,
-                value=km_sugerido_lub,
+                value=sugestao_km,
                 step=1.0,
                 key=f'km_lub_{equipamento["id"]}',
             )
             horas_execucao = st.number_input(
                 "Horas execução ",
                 min_value=0.0,
-                value=horas_sugeridas_lub,
+                value=sugestao_horas,
                 step=1.0,
                 key=f'horas_lub_{equipamento["id"]}',
             )
             if item is not None:
-                st.caption(f"Sugestão baseada no vencimento do item: {float(item.get('vencimento') or 0):.0f} {(item.get('tipo_controle') or '').lower()}")
+                st.caption("Sugestão automática baseada no próximo vencimento do item selecionado.")
             data_execucao = st.date_input("Data da lubrificação", key=f'data_lub_{equipamento["id"]}')
             responsavel = _select_responsavel("Responsável", responsaveis, key=f'resp_lub_{equipamento["id"]}')
             observacoes = st.text_area("Observações", key=f'obs_lub_{equipamento["id"]}', height=80)
@@ -348,16 +332,18 @@ def _mostrar_painel_360(equipamento_id):
 
     resumo_rev = _resumo_status(revisoes)
     resumo_lub = _resumo_status(lubrificacoes)
-    c5, c6, c7, c8 = st.columns(4)
+    c5, c6, c7, c8, c9 = st.columns(5)
     c5.metric("Revisões vencidas", resumo_rev["vencidos"])
     c6.metric("Lubrificações vencidas", resumo_lub["vencidos"])
     c7.metric("Revisões próximas", resumo_rev["proximos"])
     c8.metric("Lubrificações próximas", resumo_lub["proximos"])
+    c9.metric("Lubrificações realizadas", resumo_lub["realizados"])
 
-    c9, c10, c11 = st.columns(3)
-    c9.metric("Execuções de revisão", resumo_exec_rev["total"])
-    c10.metric("Concluídas", resumo_exec_rev["concluidas"])
-    c11.metric("Pendentes", resumo_exec_rev["pendentes"])
+
+    c10, c11, c12 = st.columns(3)
+    c10.metric("Execuções de revisão", resumo_exec_rev["total"])
+    c11.metric("Concluídas", resumo_exec_rev["concluidas"])
+    c12.metric("Pendentes", resumo_exec_rev["pendentes"])
 
     with st.expander("Dados do equipamento", expanded=True):
         meta1, meta2 = st.columns(2)
@@ -384,6 +370,10 @@ def _mostrar_painel_360(equipamento_id):
         _tabela_revisoes(revisoes)
 
     with tabs[1]:
+        realizados = [item for item in lubrificacoes if item.get("status") == "REALIZADO"]
+        if realizados:
+            st.success(f"{len(realizados)} item(ns) de lubrificação já foram realizados no ciclo atual.")
+        st.caption("Quando um item já foi executado dentro do ciclo atual, ele aparece como ✅ Realizado no ciclo.")
         _tabela_lubrificacoes(lubrificacoes)
 
     with tabs[2]:
@@ -402,11 +392,8 @@ def _mostrar_painel_360(equipamento_id):
 
     with tabs[3]:
         if historico_rev:
-            df_hist_rev = pd.DataFrame(historico_rev)
-            df_hist_rev["etapa_ref"] = df_hist_rev["observacoes"].apply(_extrair_etapa_observacoes)
-            df_hist_rev = df_hist_rev.rename(columns={
+            df_hist_rev = pd.DataFrame(historico_rev).rename(columns={
                 "data": "Data",
-                "etapa_ref": "Etapa",
                 "km": "KM",
                 "horas": "Horas",
                 "responsavel": "Responsável",
@@ -415,7 +402,7 @@ def _mostrar_painel_360(equipamento_id):
                 "resultado": "Resultado",
             })
             st.dataframe(
-                df_hist_rev[["Data", "Etapa", "Resultado", "KM", "Horas", "Responsável", "Status", "Observações"]],
+                df_hist_rev[["Data", "Resultado", "KM", "Horas", "Responsável", "Status", "Observações"]],
                 use_container_width=True,
                 hide_index=True,
             )
