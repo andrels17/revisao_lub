@@ -179,3 +179,29 @@ CREATE INDEX IF NOT EXISTS idx_vinculos_equipamento_eqp ON vinculos_equipamento(
 CREATE INDEX IF NOT EXISTS idx_vinculos_setor_set ON vinculos_setor(setor_id);
 CREATE INDEX IF NOT EXISTS idx_execucoes_lub_eqp ON execucoes_lubrificacao(equipamento_id);
 CREATE INDEX IF NOT EXISTS idx_leituras_eqp ON leituras(equipamento_id);
+
+
+-- ============================================================
+-- FASE 1 — Auditoria e configurações persistentes
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS configuracoes_sistema (
+    chave VARCHAR(100) PRIMARY KEY,
+    valor VARCHAR(500) NOT NULL,
+    descricao TEXT,
+    atualizado_em TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS log_auditoria (
+    id BIGSERIAL PRIMARY KEY,
+    usuario_id UUID NULL,
+    acao VARCHAR(100) NOT NULL,
+    entidade VARCHAR(100) NOT NULL,
+    entidade_id VARCHAR(100),
+    valor_antigo JSONB,
+    valor_novo JSONB,
+    criado_em TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_log_auditoria_entidade ON log_auditoria(entidade, entidade_id);
+CREATE INDEX IF NOT EXISTS idx_log_auditoria_data ON log_auditoria(criado_em DESC);

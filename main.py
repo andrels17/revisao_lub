@@ -15,7 +15,7 @@ from ui import (
     configuracoes_page,
 )
 from ui import auth_page, usuarios_page
-from services import auth_service
+from services import auth_service, configuracoes_service
 
 st.set_page_config(
     page_title="Revisão e Lubrificação",
@@ -50,6 +50,9 @@ st.markdown(
 if not auth_service.usuario_logado():
     auth_page.render()
     st.stop()
+
+# ── Carrega configurações persistentes ──────────────────────────────────────
+configuracoes_service.aplicar_no_session_state()
 
 # ── Estrutura completa de páginas ─────────────────────────────────────────────
 SECOES = {

@@ -1,4 +1,5 @@
 from database.connection import get_conn
+from services import auditoria_service
 
 
 def listar():
@@ -157,6 +158,24 @@ def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0,
             ),
         )
         equipamento_id = cur.fetchone()[0]
+        auditoria_service.registrar_no_conn(
+            conn,
+            acao="criar_equipamento",
+            entidade="equipamentos",
+            entidade_id=equipamento_id,
+            valor_antigo=None,
+            valor_novo={
+                "codigo": codigo,
+                "nome": nome,
+                "tipo": tipo,
+                "setor_id": setor_id,
+                "km_atual": km_atual,
+                "horas_atual": horas_atual,
+                "template_revisao_id": template_revisao_id,
+                "template_lubrificacao_id": template_lubrificacao_id,
+                "ativo": ativo,
+            },
+        )
         conn.commit()
         return equipamento_id
     finally:

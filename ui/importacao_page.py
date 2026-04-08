@@ -62,6 +62,11 @@ def render():
                     for e in resultado["erros"]:
                         st.warning(e)
 
+            if resultado.get("avisos"):
+                with st.expander("Ver avisos / conflitos detectados"):
+                    for a in resultado["avisos"]:
+                        st.info(a)
+
             st.markdown("**Preview (primeiras 10 linhas)**")
             st.dataframe(resultado["preview"], use_container_width=True, hide_index=True)
 

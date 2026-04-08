@@ -130,7 +130,7 @@ def render():
 
                 if st.session_state.get(confirmar_key):
                     _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor,
-                                    data_leitura, resp, obs)
+                                    data_leitura, resp, obs, permitir_regressao=True)
                     st.session_state.pop(confirmar_key, None)
             else:
                 _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor,
@@ -170,7 +170,7 @@ def render():
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 
-def _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs):
+def _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs, permitir_regressao=False):
     try:
         leituras_service.registrar(
             equipamento_id=eqp["id"],
@@ -180,6 +180,7 @@ def _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp
             data_leitura=data_leitura,
             responsavel_id=resp["id"] if resp else None,
             observacoes=obs.strip() or None,
+            permitir_regressao=permitir_regressao,
         )
         st.success(f"✅ Leitura registrada com sucesso para **{eqp['codigo']} — {eqp['nome']}**.")
         st.rerun()

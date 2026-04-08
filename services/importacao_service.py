@@ -1,6 +1,6 @@
 import io
 import pandas as pd
-from services import equipamentos_service, setores_service
+from services import auditoria_service, equipamentos_service, setores_service
 
 COLUNAS_OBRIGATORIAS = ["codigo", "nome"]
 COLUNAS_OPCIONAIS = ["tipo", "setor", "km_atual", "horas_atual", "placa", "serie"]
@@ -34,6 +34,10 @@ def _parse_numerico(valor, campo: str, linha: int, erros: list) -> float:
         return 0.0
 
 
+def _codigos_existentes():
+    return {str(item.get("codigo", "")).strip().upper() for item in equipamentos_service.listar()}
+
+
 def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
     try:
         if filename.endswith(".csv"):
@@ -52,6 +56,10 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
         return {"erro": f"Colunas obrigatórias ausentes: {', '.join(ausentes)}"}
 
     erros = []
+    avisos = []
+    codigos_arquivo = {}
+    existentes = _codigos_existentes()
+
     for idx, row in df.iterrows():
         linha = idx + 2
         codigo = str(row.get("codigo", "")).strip()
@@ -60,6 +68,15 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
             erros.append(f"Linha {linha}: código vazio")
         elif not nome or nome == "nan":
             erros.append(f"Linha {linha}: nome vazio")
+
+        codigo_upper = codigo.upper()
+        if codigo_upper:
+            if codigo_upper in codigos_arquivo:
+                erros.append(f"Linha {linha}: código duplicado no arquivo ({codigo}) — já apareceu na linha {codigos_arquivo[codigo_upper]}")
+            else:
+                codigos_arquivo[codigo_upper] = linha
+            if codigo_upper in existentes:
+                avisos.append(f"Linha {linha}: código {codigo} já existe no sistema")
 
         tipo = str(row.get("tipo", "")).strip().lower()
         if tipo and tipo != "nan" and tipo not in TIPOS_VALIDOS:
@@ -71,7 +88,8 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
     return {
         "df": df,
         "erros": erros,
-        "linhas_ok": len(df) - len(erros),
+        "avisos": avisos,
+        "linhas_ok": max(0, len(df) - len(erros)),
         "linhas_erro": len(erros),
         "preview": df.head(10),
     }
@@ -155,6 +173,15 @@ def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas):
     try:
         cur.execute(
             """
+            select id, nome, tipo, setor_id, coalesce(km_atual, 0), coalesce(horas_atual, 0)
+            from equipamentos
+            where codigo = %s
+            """,
+            (codigo,),
+        )
+        anterior = cur.fetchone()
+        cur.execute(
+            """
             update equipamentos
                set nome = %s,
                    tipo = %s,
@@ -162,10 +189,32 @@ def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas):
                    km_atual = greatest(coalesce(km_atual, 0), %s),
                    horas_atual = greatest(coalesce(horas_atual, 0), %s)
              where codigo = %s
+            returning id
             """,
             (nome, tipo, setor_id, km, horas, codigo),
+        )
+        equipamento_id = cur.fetchone()[0]
+        auditoria_service.registrar_no_conn(
+            conn,
+            acao="importacao_atualizar_equipamento",
+            entidade="equipamentos",
+            entidade_id=equipamento_id,
+            valor_antigo={
+                "nome": anterior[1] if anterior else None,
+                "tipo": anterior[2] if anterior else None,
+                "setor_id": anterior[3] if anterior else None,
+                "km_atual": float(anterior[4] or 0) if anterior else None,
+                "horas_atual": float(anterior[5] or 0) if anterior else None,
+            },
+            valor_novo={
+                "codigo": codigo,
+                "nome": nome,
+                "tipo": tipo,
+                "setor_id": setor_id,
+                "km_atual": km,
+                "horas_atual": horas,
+            },
         )
         conn.commit()
     finally:
         conn.close()
-

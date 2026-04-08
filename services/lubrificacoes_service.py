@@ -2,7 +2,7 @@ from collections import defaultdict
 
 from database.connection import get_conn
 import psycopg2
-from ui.constants import TOLERANCIA_PADRAO
+from services import configuracoes_service
 
 
 # ── helpers de status ────────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo):
     falta = proximo_vencimento - leitura_atual
     if leitura_atual >= proximo_vencimento:
         return "VENCIDO", inicio_ciclo, proximo_vencimento, falta
-    if falta <= TOLERANCIA_PADRAO:
+    if falta <= configuracoes_service.get_tolerancia_padrao():
         return "PROXIMO", inicio_ciclo, proximo_vencimento, falta
     return "EM DIA", inicio_ciclo, proximo_vencimento, falta
 
@@ -150,6 +150,16 @@ def calcular_proximas_lubrificacoes(equipamento_id):
 # ── escrita ──────────────────────────────────────────────────────────────────
 
 def registrar_execucao(dados):
+    from services import auditoria_service, validacoes_service
+
+    contexto = validacoes_service.validar_execucao_lubrificacao(
+        equipamento_id=dados["equipamento_id"],
+        item_id=dados.get("item_id"),
+        data_execucao=dados["data_execucao"],
+        km_execucao=dados.get("km_execucao", 0),
+        horas_execucao=dados.get("horas_execucao", 0),
+    )
+
     conn = get_conn()
     cur  = conn.cursor()
     try:
@@ -182,6 +192,17 @@ def registrar_execucao(dados):
              where id = %s
             """,
             (dados.get("km_execucao", 0), dados.get("horas_execucao", 0), dados["equipamento_id"]),
+        )
+        auditoria_service.registrar_no_conn(
+            conn,
+            acao="criar_execucao_lubrificacao",
+            entidade="execucoes_lubrificacao",
+            entidade_id=execucao_id,
+            valor_antigo={
+                "km_atual": contexto.get("km_atual"),
+                "horas_atual": contexto.get("horas_atual"),
+            },
+            valor_novo=dados,
         )
         conn.commit()
         return execucao_id

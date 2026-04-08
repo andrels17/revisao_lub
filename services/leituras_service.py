@@ -1,13 +1,27 @@
 from psycopg2 import errors
 
 from database.connection import get_conn
+from services import auditoria_service, validacoes_service
 
 
 def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
-               data_leitura=None, responsavel_id=None, observacoes=None):
+               data_leitura=None, responsavel_id=None, observacoes=None,
+               permitir_regressao=False):
+    contexto = validacoes_service.validar_leitura(
+        equipamento_id=equipamento_id,
+        tipo_leitura=tipo_leitura,
+        km_valor=km_valor,
+        horas_valor=horas_valor,
+        permitir_regressao=permitir_regressao,
+    )
+
     conn = get_conn()
     cur = conn.cursor()
     try:
+        valor_antigo = {
+            "km_atual": contexto.get("km_atual"),
+            "horas_atual": contexto.get("horas_atual"),
+        }
         cur.execute(
             """
             insert into leituras
@@ -31,6 +45,23 @@ def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
                 "update equipamentos set horas_atual = greatest(coalesce(horas_atual, 0), %s) where id = %s",
                 (horas_valor, equipamento_id),
             )
+
+        auditoria_service.registrar_no_conn(
+            conn,
+            acao="registrar_leitura",
+            entidade="leituras",
+            entidade_id=leitura_id,
+            valor_antigo=valor_antigo,
+            valor_novo={
+                "equipamento_id": equipamento_id,
+                "tipo_leitura": tipo_leitura,
+                "km_valor": km_valor,
+                "horas_valor": horas_valor,
+                "data_leitura": str(data_leitura) if data_leitura else None,
+                "responsavel_id": responsavel_id,
+                "observacoes": observacoes,
+            },
+        )
 
         conn.commit()
         return leitura_id

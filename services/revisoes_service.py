@@ -3,7 +3,7 @@ import re
 from collections import defaultdict
 
 from database.connection import get_conn
-from ui.constants import TOLERANCIA_PADRAO
+from services import configuracoes_service
 
 try:
     import psycopg2
@@ -29,7 +29,7 @@ def _normalizar_numero(valor):
 def _status_por_diferenca(diff):
     if diff <= 0:
         return "VENCIDO"
-    if diff <= TOLERANCIA_PADRAO:
+    if diff <= configuracoes_service.get_tolerancia_padrao():
         return "PROXIMO"
     return "EM DIA"
 
