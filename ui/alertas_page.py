@@ -10,6 +10,7 @@ from services import (
     lubrificacoes_service,
     vinculos_service,
     configuracoes_service,
+    escopo_service,
 )
 from ui.constants import STATUS_LABEL
 from ui.exportacao import botao_exportar_excel
@@ -235,6 +236,7 @@ def render():
     col_t, col_b = st.columns([5, 1])
     with col_t:
         st.title("Alertas — WhatsApp")
+        st.caption(f"Escopo atual: {escopo_service.resumo_escopo()}")
         st.caption("Clique em 📱 WhatsApp para abrir o app com a mensagem pré-preenchida.")
     with col_b:
         st.write("")
@@ -256,14 +258,26 @@ def render():
         if not pendencias_rev:
             st.success("Nenhuma revisão vencida ou próxima do vencimento.")
         else:
-            for p in pendencias_rev:
+            por_pagina = st.selectbox("Alertas por página", [10, 20, 50, 100], index=1, key="rev_alertas_pg")
+            total_paginas = max(1, ((len(pendencias_rev) - 1) // int(por_pagina)) + 1)
+            pagina = st.number_input("Página revisão", min_value=1, max_value=total_paginas, value=1, step=1, key="rev_alertas_pagina")
+            inicio = (int(pagina) - 1) * int(por_pagina)
+            fim = inicio + int(por_pagina)
+            st.caption(f"Exibindo {inicio + 1}–{min(fim, len(pendencias_rev))} de {len(pendencias_rev)} revisão(ões).")
+            for p in pendencias_rev[inicio:fim]:
                 _card_alerta(p["eqp"], p["item"], "revisao", p["enviado_hoje"])
 
     with tab2:
         if not pendencias_lub:
             st.success("Nenhuma lubrificação vencida ou próxima do vencimento.")
         else:
-            for p in pendencias_lub:
+            por_pagina = st.selectbox("Alertas por página", [10, 20, 50, 100], index=1, key="lub_alertas_pg")
+            total_paginas = max(1, ((len(pendencias_lub) - 1) // int(por_pagina)) + 1)
+            pagina = st.number_input("Página lubrificação", min_value=1, max_value=total_paginas, value=1, step=1, key="lub_alertas_pagina")
+            inicio = (int(pagina) - 1) * int(por_pagina)
+            fim = inicio + int(por_pagina)
+            st.caption(f"Exibindo {inicio + 1}–{min(fim, len(pendencias_lub))} de {len(pendencias_lub)} lubrificação(ões).")
+            for p in pendencias_lub[inicio:fim]:
                 _card_alerta(p["eqp"], p["item"], "lubrificacao", p["enviado_hoje"])
 
     with tab3:

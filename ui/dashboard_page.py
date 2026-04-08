@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from services import dashboard_service, painel_360_service
+from services import dashboard_service, escopo_service, painel_360_service
 from ui.exportacao import botao_exportar_excel
 from ui.constants  import STATUS_LABEL, STATUS_COR
 
@@ -197,10 +197,20 @@ def render():
     st.subheader(f"Pendências e próximos vencimentos ({len(filtrados)} itens)")
     df_alertas = _formatar_alertas_df(filtrados)
     if not df_alertas.empty:
+        pcol1, pcol2, pcol3 = st.columns([3, 1, 1])
+        with pcol2:
+            por_pagina = st.selectbox("Itens por página", [25, 50, 100, 200], index=1, key="dash_alertas_pg")
+        total_paginas = max(1, ((len(df_alertas) - 1) // int(por_pagina)) + 1)
+        with pcol3:
+            pagina = st.number_input("Página", min_value=1, max_value=total_paginas, value=1, step=1, key="dash_alertas_pagina")
+        inicio = (int(pagina) - 1) * int(por_pagina)
+        fim = inicio + int(por_pagina)
+        df_visivel = df_alertas.iloc[inicio:fim]
         col_exp = st.columns([5, 1])[1]
         with col_exp:
             botao_exportar_excel(df_alertas, "alertas", label="⬇️ Excel", key="exp_dash_alertas")
-        st.dataframe(df_alertas, use_container_width=True, hide_index=True)
+        st.caption(f"Exibindo {inicio + 1}–{min(fim, len(df_alertas))} de {len(df_alertas)} item(ns).")
+        st.dataframe(df_visivel, use_container_width=True, hide_index=True)
     else:
         st.info("Nenhum item para os filtros selecionados.")
 

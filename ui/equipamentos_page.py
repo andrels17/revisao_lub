@@ -9,6 +9,7 @@ from services import (
     leituras_service,
     lubrificacoes_service,
     painel_360_service,
+    escopo_service,
     revisoes_service,
     responsaveis_service,
     setores_service,
@@ -447,6 +448,7 @@ def _mostrar_painel_360(equipamento_id):
 
 def render():
     st.title("Equipamentos")
+    st.info(f"Escopo atual: {escopo_service.resumo_escopo()}")
     equipamentos = equipamentos_service.listar()
     setores = [item for item in setores_service.listar() if item.get("ativo")]
     templates_rev = templates_revisao_service.listar()
@@ -462,6 +464,9 @@ def render():
 
     with tab1:
         st.subheader("Novo equipamento")
+        pode_cadastrar = escopo_service.pode_gerenciar_cadastros()
+        if not pode_cadastrar:
+            st.warning("Seu perfil está em modo consulta para cadastro de equipamentos.")
         if not setores:
             st.warning("Cadastre pelo menos um setor antes de criar equipamentos.")
         with st.form("form_equipamento", clear_on_submit=True):
@@ -477,7 +482,7 @@ def render():
                 template_rev = st.selectbox("Template de revisão", [None] + templates_rev, format_func=lambda t: t["nome"] if t else "— nenhum —")
                 template_lub = st.selectbox("Template de lubrificação", [None] + templates_lub, format_func=lambda t: t["nome"] if t else "— nenhum —")
             ativo = st.checkbox("Ativo", value=True)
-            submitted = st.form_submit_button("Salvar equipamento", use_container_width=True, disabled=not setores)
+            submitted = st.form_submit_button("Salvar equipamento", use_container_width=True, disabled=(not setores or not pode_cadastrar))
         if submitted:
             if not codigo.strip() or not nome.strip():
                 st.error("Informe código e nome do equipamento.")
@@ -510,7 +515,17 @@ def render():
                 "horas_atual": "Horas", "template_revisao_id": "T.Revisão", "template_lubrificacao_id": "T.Lubrificação",
                 "setor_nome": "Setor", "ativo": "Ativo",
             })
-            st.dataframe(df[["Código", "Nome", "Tipo", "Setor", "KM atual", "Horas", "T.Revisão", "T.Lubrificação", "Ativo"]], use_container_width=True, hide_index=True)
+            col_pg1, col_pg2 = st.columns([1, 1])
+            with col_pg1:
+                por_pagina = st.selectbox("Itens por página", [20, 50, 100, 200], index=1, key="eq_lista_pg")
+            total_paginas = max(1, ((len(df) - 1) // int(por_pagina)) + 1)
+            with col_pg2:
+                pagina = st.number_input("Página", min_value=1, max_value=total_paginas, value=1, step=1, key="eq_lista_pagina")
+            inicio = (int(pagina) - 1) * int(por_pagina)
+            fim = inicio + int(por_pagina)
+            df_visivel = df.iloc[inicio:fim]
+            st.caption(f"Exibindo {inicio + 1}–{min(fim, len(df))} de {len(df)} equipamento(s).")
+            st.dataframe(df_visivel[["Código", "Nome", "Tipo", "Setor", "KM atual", "Horas", "T.Revisão", "T.Lubrificação", "Ativo"]], use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum equipamento encontrado.")
 

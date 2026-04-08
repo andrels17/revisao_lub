@@ -1,4 +1,5 @@
 from database.connection import get_conn
+from services import escopo_service
 
 
 def listar():
@@ -7,10 +8,11 @@ def listar():
     try:
         cur.execute("select id, nome, tipo_nivel, setor_pai_id, ativo from setores order by nome")
         rows = cur.fetchall()
-        return [
+        itens = [
             {"id": r[0], "nome": r[1], "tipo_nivel": r[2], "setor_pai_id": r[3], "ativo": r[4]}
             for r in rows
         ]
+        return escopo_service.filtrar_setores(itens)
     finally:
         conn.close()
 

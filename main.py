@@ -15,7 +15,7 @@ from ui import (
     configuracoes_page,
 )
 from ui import auth_page, usuarios_page
-from services import auth_service, configuracoes_service
+from services import auth_service, configuracoes_service, escopo_service
 
 st.set_page_config(
     page_title="Revisão e Lubrificação",
@@ -119,6 +119,7 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
+    st.caption(f"Escopo: {escopo_service.resumo_escopo()}")
 
     # Define página padrão (primeira disponível para o role)
     if "pagina_atual" not in st.session_state:

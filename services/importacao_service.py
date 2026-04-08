@@ -1,5 +1,8 @@
 import io
+
 import pandas as pd
+
+from database.connection import get_conn
 from services import auditoria_service, equipamentos_service, setores_service
 
 COLUNAS_OBRIGATORIAS = ["codigo", "nome"]
@@ -9,6 +12,10 @@ TIPOS_VALIDOS = {
     "caminhão", "trator", "colheitadeira", "pulverizador",
     "implemento", "máquina", "outro",
 }
+
+MODO_IGNORAR = "ignorar"
+MODO_ATUALIZAR = "atualizar"
+MODO_PREENCHER_VAZIOS = "preencher_vazios"
 
 
 def get_template_csv() -> bytes:
@@ -28,14 +35,23 @@ def get_template_csv() -> bytes:
 
 def _parse_numerico(valor, campo: str, linha: int, erros: list) -> float:
     try:
+        if pd.isna(valor):
+            return 0.0
         return float(valor or 0)
     except (ValueError, TypeError):
         erros.append(f"Linha {linha}: valor inválido em '{campo}' — '{valor}' não é numérico")
         return 0.0
 
 
-def _codigos_existentes():
-    return {str(item.get("codigo", "")).strip().upper() for item in equipamentos_service.listar()}
+def _normalizar_texto(valor) -> str:
+    if valor is None or pd.isna(valor):
+        return ""
+    return str(valor).strip()
+
+
+def _carregar_existentes_map() -> dict:
+    itens = equipamentos_service.listar()
+    return {str(item.get("codigo", "")).strip().upper(): item for item in itens if item.get("codigo")}
 
 
 def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
@@ -58,74 +74,120 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
     erros = []
     avisos = []
     codigos_arquivo = {}
-    existentes = _codigos_existentes()
+    existentes_map = _carregar_existentes_map()
+    setores_map = {s["nome"].strip().lower(): s["id"] for s in setores_service.listar() if s.get("nome")}
+
+    duplicados_sistema = 0
+    setores_nao_encontrados = 0
+    preview_rows = []
 
     for idx, row in df.iterrows():
         linha = idx + 2
-        codigo = str(row.get("codigo", "")).strip()
-        nome = str(row.get("nome", "")).strip()
-        if not codigo or codigo == "nan":
+        codigo = _normalizar_texto(row.get("codigo"))
+        nome = _normalizar_texto(row.get("nome"))
+        tipo_original = _normalizar_texto(row.get("tipo"))
+        tipo = tipo_original.lower()
+        setor_txt = _normalizar_texto(row.get("setor"))
+
+        status_linha = "nova"
+        acao_sugerida = "importar"
+
+        if not codigo:
             erros.append(f"Linha {linha}: código vazio")
-        elif not nome or nome == "nan":
+            status_linha = "erro"
+        elif not nome:
             erros.append(f"Linha {linha}: nome vazio")
+            status_linha = "erro"
 
         codigo_upper = codigo.upper()
         if codigo_upper:
             if codigo_upper in codigos_arquivo:
                 erros.append(f"Linha {linha}: código duplicado no arquivo ({codigo}) — já apareceu na linha {codigos_arquivo[codigo_upper]}")
+                status_linha = "erro"
             else:
                 codigos_arquivo[codigo_upper] = linha
-            if codigo_upper in existentes:
+            if codigo_upper in existentes_map:
+                duplicados_sistema += 1
                 avisos.append(f"Linha {linha}: código {codigo} já existe no sistema")
+                status_linha = "duplicado"
+                acao_sugerida = "revisar duplicado"
 
-        tipo = str(row.get("tipo", "")).strip().lower()
-        if tipo and tipo != "nan" and tipo not in TIPOS_VALIDOS:
+        if tipo and tipo not in TIPOS_VALIDOS:
             erros.append(
-                f"Linha {linha}: tipo '{row.get('tipo')}' desconhecido — "
-                f"use: {', '.join(t.title() for t in sorted(TIPOS_VALIDOS))}"
+                f"Linha {linha}: tipo '{row.get('tipo')}' desconhecido — use: {', '.join(t.title() for t in sorted(TIPOS_VALIDOS))}"
             )
+            status_linha = "erro"
+
+        if setor_txt and setor_txt.lower() not in setores_map:
+            setores_nao_encontrados += 1
+            avisos.append(f"Linha {linha}: setor '{setor_txt}' não encontrado; será usado setor padrão se informado")
+            if status_linha == "nova":
+                status_linha = "aviso"
+                acao_sugerida = "usar setor padrão"
+
+        preview_rows.append(
+            {
+                "linha": linha,
+                "codigo": codigo,
+                "nome": nome,
+                "tipo": tipo_original,
+                "setor": setor_txt,
+                "km_atual": row.get("km_atual", 0),
+                "horas_atual": row.get("horas_atual", 0),
+                "status_importacao": status_linha,
+                "acao_sugerida": acao_sugerida,
+                "ja_existe": codigo_upper in existentes_map if codigo_upper else False,
+            }
+        )
+
+    preview = pd.DataFrame(preview_rows)
+    resumo = {
+        "total_linhas": int(len(df)),
+        "novas": int(sum(1 for item in preview_rows if item["status_importacao"] == "nova")),
+        "duplicadas_sistema": int(duplicados_sistema),
+        "com_erro": int(sum(1 for item in preview_rows if item["status_importacao"] == "erro")),
+        "com_aviso": int(sum(1 for item in preview_rows if item["status_importacao"] == "aviso")),
+        "setores_nao_encontrados": int(setores_nao_encontrados),
+    }
 
     return {
         "df": df,
         "erros": erros,
         "avisos": avisos,
-        "linhas_ok": max(0, len(df) - len(erros)),
-        "linhas_erro": len(erros),
-        "preview": df.head(10),
+        "linhas_ok": max(0, len(df) - len([r for r in preview_rows if r["status_importacao"] == "erro"])),
+        "linhas_erro": len([r for r in preview_rows if r["status_importacao"] == "erro"]),
+        "preview": preview.head(15),
+        "preview_full": preview,
+        "resumo": resumo,
     }
+
 
 
 def importar(
     df: pd.DataFrame,
     setor_padrao_id=None,
-    atualizar_duplicados: bool = False,
+    modo_duplicados: str = MODO_IGNORAR,
     progress_callback=None,
 ) -> dict:
-    """
-    Importa equipamentos do DataFrame.
-    progress_callback(current, total, codigo) — chamado a cada linha processada.
-    """
-    setores_map = {s["nome"].lower(): s["id"] for s in setores_service.listar()}
+    setores_map = {s["nome"].lower(): s["id"] for s in setores_service.listar() if s.get("nome")}
     importados = 0
     atualizados = 0
     duplicados = 0
+    preenchidos_vazios = 0
     erros = []
     total = len(df)
 
     for idx, row in df.iterrows():
         linha = idx + 2
-        codigo = str(row.get("codigo", "")).strip()
-        nome = str(row.get("nome", "")).strip()
-        if not codigo or not nome or codigo == "nan" or nome == "nan":
+        codigo = _normalizar_texto(row.get("codigo"))
+        nome = _normalizar_texto(row.get("nome"))
+        if not codigo or not nome:
             if progress_callback:
                 progress_callback(idx + 1, total, codigo or "—")
             continue
 
-        tipo = str(row.get("tipo", "Outro")).strip()
-        if not tipo or tipo == "nan":
-            tipo = "Outro"
-
-        setor_nome = str(row.get("setor", "")).strip().lower()
+        tipo = _normalizar_texto(row.get("tipo")) or "Outro"
+        setor_nome = _normalizar_texto(row.get("setor")).lower()
         setor_id = setores_map.get(setor_nome) or setor_padrao_id
 
         km = _parse_numerico(row.get("km_atual", 0), "km_atual", linha, erros)
@@ -144,12 +206,18 @@ def importar(
         except Exception as e:
             msg = str(e)
             if "unique" in msg.lower() or "duplicate" in msg.lower():
-                if atualizar_duplicados:
+                if modo_duplicados == MODO_ATUALIZAR:
                     try:
-                        _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas)
+                        _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, preencher_vazios=False)
                         atualizados += 1
                     except Exception as e2:
                         erros.append(f"Linha {linha} ({codigo}): erro ao atualizar — {e2}")
+                elif modo_duplicados == MODO_PREENCHER_VAZIOS:
+                    try:
+                        alterou = _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, preencher_vazios=True)
+                        preenchidos_vazios += int(bool(alterou))
+                    except Exception as e2:
+                        erros.append(f"Linha {linha} ({codigo}): erro ao preencher vazios — {e2}")
                 else:
                     duplicados += 1
             else:
@@ -162,24 +230,36 @@ def importar(
         "importados": importados,
         "atualizados": atualizados,
         "duplicados": duplicados,
+        "preenchidos_vazios": preenchidos_vazios,
         "erros": erros,
     }
 
 
-def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas):
-    from database.connection import get_conn
+
+def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, preencher_vazios=False):
     conn = get_conn()
     cur = conn.cursor()
     try:
         cur.execute(
             """
-            select id, nome, tipo, setor_id, coalesce(km_atual, 0), coalesce(horas_atual, 0)
+            select id::text, nome, tipo, setor_id::text, coalesce(km_atual, 0), coalesce(horas_atual, 0)
             from equipamentos
             where codigo = %s
             """,
             (codigo,),
         )
         anterior = cur.fetchone()
+        if not anterior:
+            raise ValueError("equipamento não encontrado para atualização")
+
+        nome_final = nome
+        tipo_final = tipo
+        setor_final = setor_id
+        if preencher_vazios:
+            nome_final = anterior[1] or nome
+            tipo_final = anterior[2] or tipo
+            setor_final = anterior[3] or setor_id
+
         cur.execute(
             """
             update equipamentos
@@ -189,32 +269,41 @@ def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas):
                    km_atual = greatest(coalesce(km_atual, 0), %s),
                    horas_atual = greatest(coalesce(horas_atual, 0), %s)
              where codigo = %s
-            returning id
+            returning id::text, nome, tipo, setor_id::text, coalesce(km_atual, 0), coalesce(horas_atual, 0)
             """,
-            (nome, tipo, setor_id, km, horas, codigo),
+            (nome_final, tipo_final, setor_final, km, horas, codigo),
         )
-        equipamento_id = cur.fetchone()[0]
+        atual = cur.fetchone()
         auditoria_service.registrar_no_conn(
             conn,
-            acao="importacao_atualizar_equipamento",
+            acao="importacao_preencher_vazios" if preencher_vazios else "importacao_atualizar_equipamento",
             entidade="equipamentos",
-            entidade_id=equipamento_id,
+            entidade_id=atual[0],
             valor_antigo={
-                "nome": anterior[1] if anterior else None,
-                "tipo": anterior[2] if anterior else None,
-                "setor_id": anterior[3] if anterior else None,
-                "km_atual": float(anterior[4] or 0) if anterior else None,
-                "horas_atual": float(anterior[5] or 0) if anterior else None,
+                "nome": anterior[1],
+                "tipo": anterior[2],
+                "setor_id": anterior[3],
+                "km_atual": float(anterior[4] or 0),
+                "horas_atual": float(anterior[5] or 0),
             },
             valor_novo={
                 "codigo": codigo,
-                "nome": nome,
-                "tipo": tipo,
-                "setor_id": setor_id,
-                "km_atual": km,
-                "horas_atual": horas,
+                "nome": atual[1],
+                "tipo": atual[2],
+                "setor_id": atual[3],
+                "km_atual": float(atual[4] or 0),
+                "horas_atual": float(atual[5] or 0),
             },
         )
         conn.commit()
+        return any(
+            [
+                anterior[1] != atual[1],
+                anterior[2] != atual[2],
+                str(anterior[3] or "") != str(atual[3] or ""),
+                float(anterior[4] or 0) != float(atual[4] or 0),
+                float(anterior[5] or 0) != float(atual[5] or 0),
+            ]
+        )
     finally:
         conn.close()

@@ -1,10 +1,23 @@
 import streamlit as st
-from services import importacao_service, setores_service
+
+from services import escopo_service, importacao_service, setores_service
+
+
+MODO_LABELS = {
+    importacao_service.MODO_IGNORAR: "Ignorar duplicados",
+    importacao_service.MODO_ATUALIZAR: "Atualizar cadastro existente",
+    importacao_service.MODO_PREENCHER_VAZIOS: "Preencher apenas campos vazios + consolidar KM/Horas",
+}
 
 
 def render():
     st.title("Importação de Equipamentos")
     st.caption("Importe múltiplos equipamentos de uma vez via planilha CSV ou Excel.")
+    st.info(f"Escopo atual: {escopo_service.resumo_escopo()}")
+
+    if not escopo_service.pode_importar():
+        st.warning("Somente administradores podem importar equipamentos nesta fase.")
+        return
 
     tab_import, tab_template = st.tabs(["Importar arquivo", "Baixar modelo"])
 
@@ -32,12 +45,12 @@ def render():
         )
 
     with tab_import:
-        setores = setores_service.listar()
+        setores = [s for s in setores_service.listar() if s.get("ativo")]
         setor_padrao = None
         if setores:
             setor_padrao_obj = st.selectbox(
                 "Setor padrão (usado quando a coluna 'setor' não bater com nenhum setor cadastrado)",
-                [None] + [s for s in setores if s.get("ativo")],
+                [None] + setores,
                 format_func=lambda s: s["nome"] if s else "— nenhum —",
             )
             setor_padrao = setor_padrao_obj["id"] if setor_padrao_obj else None
@@ -51,6 +64,14 @@ def render():
             if "erro" in resultado:
                 st.error(resultado["erro"])
                 return
+
+            resumo = resultado.get("resumo", {})
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Linhas do arquivo", resumo.get("total_linhas", 0))
+            c2.metric("Novas", resumo.get("novas", 0))
+            c3.metric("Duplicadas no sistema", resumo.get("duplicadas_sistema", 0))
+            c4.metric("Com aviso", resumo.get("com_aviso", 0))
+            c5.metric("Com erro", resumo.get("com_erro", 0))
 
             st.success(
                 f"Arquivo lido: **{resultado['linhas_ok']}** linha(s) válida(s)"
@@ -67,17 +88,22 @@ def render():
                     for a in resultado["avisos"]:
                         st.info(a)
 
-            st.markdown("**Preview (primeiras 10 linhas)**")
-            st.dataframe(resultado["preview"], use_container_width=True, hide_index=True)
+            st.markdown("**Pré-validação da importação**")
+            st.dataframe(resultado["preview_full"], use_container_width=True, hide_index=True)
 
             if resultado["linhas_ok"] > 0:
-                atualizar = st.checkbox(
-                    "Atualizar equipamentos já existentes (pelo código)",
-                    value=False,
-                    help="Se marcado, equipamentos com código duplicado terão nome, tipo, setor e leituras atualizados. Se desmarcado, duplicados são ignorados.",
+                modo = st.radio(
+                    "Tratamento de códigos já existentes",
+                    options=list(MODO_LABELS.keys()),
+                    format_func=lambda item: MODO_LABELS[item],
+                    horizontal=False,
                 )
+                st.caption(
+                    "Use 'Preencher apenas campos vazios' quando quiser enriquecer o cadastro existente sem sobrescrever nome, tipo e setor já cadastrados."
+                )
+
                 if st.button("✅ Confirmar importação", use_container_width=True, type="primary"):
-                    barra      = st.progress(0, text="Iniciando importação…")
+                    barra = st.progress(0, text="Iniciando importação…")
                     status_txt = st.empty()
 
                     def _progresso(atual, total, codigo):
@@ -88,7 +114,7 @@ def render():
                     res = importacao_service.importar(
                         resultado["df"],
                         setor_padrao_id=setor_padrao,
-                        atualizar_duplicados=atualizar,
+                        modo_duplicados=modo,
                         progress_callback=_progresso,
                     )
 
@@ -98,6 +124,8 @@ def render():
                     msg = f"Importação concluída: **{res['importados']}** importado(s)"
                     if res.get("atualizados"):
                         msg += f" | **{res['atualizados']}** atualizado(s)"
+                    if res.get("preenchidos_vazios"):
+                        msg += f" | **{res['preenchidos_vazios']}** enriquecido(s)"
                     if res["duplicados"]:
                         msg += f" | {res['duplicados']} duplicado(s) ignorado(s)"
                     st.success(msg)

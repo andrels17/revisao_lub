@@ -1,5 +1,5 @@
 from database.connection import get_conn
-from services import auditoria_service
+from services import auditoria_service, escopo_service
 
 
 def listar():
@@ -26,7 +26,7 @@ def listar():
             """
         )
         rows = cur.fetchall()
-        return [
+        itens = [
             {
                 "id": r[0],
                 "codigo": r[1],
@@ -42,6 +42,7 @@ def listar():
             }
             for r in rows
         ]
+        return escopo_service.filtrar_equipamentos(itens)
     finally:
         conn.close()
 
@@ -101,7 +102,7 @@ def obter(equipamento_id):
         r = cur.fetchone()
         if not r:
             return None
-        return {
+        item = {
             "id": r[0],
             "codigo": r[1],
             "nome": r[2],
@@ -116,6 +117,9 @@ def obter(equipamento_id):
             "setor_nome": r[11],
             "ativo": bool(r[12]),
         }
+        if not escopo_service.pode_ver_equipamento(item):
+            return None
+        return item
     finally:
         conn.close()
 
