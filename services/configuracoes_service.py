@@ -24,6 +24,11 @@ def _parse_int(value, default: int) -> int:
         return int(default)
 
 
+
+
+def _clamp_int(value: int, min_value: int, max_value: int) -> int:
+    return max(min_value, min(int(value), max_value))
+
 def _apply_defaults_to_session() -> dict:
     cfg = {k: int(v) for k, v in CONFIG_DEFAULTS.items()}
     for chave, valor in cfg.items():
@@ -83,11 +88,11 @@ def carregar_todas() -> dict:
     data = {k: v for k, v in rows}
     merged = {**CONFIG_DEFAULTS, **data}
     return {
-        "tolerancia_padrao": _parse_int(merged.get("tolerancia_padrao"), CONFIG_DEFAULTS["tolerancia_padrao"]),
-        "ttl_cache": _parse_int(merged.get("ttl_cache"), CONFIG_DEFAULTS["ttl_cache"]),
-        "dias_sem_leitura": _parse_int(merged.get("dias_sem_leitura"), CONFIG_DEFAULTS["dias_sem_leitura"]),
-        "alerta_cooldown_horas": _parse_int(merged.get("alerta_cooldown_horas"), CONFIG_DEFAULTS["alerta_cooldown_horas"]),
-        "fila_alertas_limite": _parse_int(merged.get("fila_alertas_limite"), CONFIG_DEFAULTS["fila_alertas_limite"]),
+        "tolerancia_padrao": _clamp_int(_parse_int(merged.get("tolerancia_padrao"), CONFIG_DEFAULTS["tolerancia_padrao"]), 1, 500),
+        "ttl_cache": _clamp_int(_parse_int(merged.get("ttl_cache"), CONFIG_DEFAULTS["ttl_cache"]), 10, 600),
+        "dias_sem_leitura": _clamp_int(_parse_int(merged.get("dias_sem_leitura"), CONFIG_DEFAULTS["dias_sem_leitura"]), 1, 180),
+        "alerta_cooldown_horas": _clamp_int(_parse_int(merged.get("alerta_cooldown_horas"), CONFIG_DEFAULTS["alerta_cooldown_horas"]), 1, 168),
+        "fila_alertas_limite": _clamp_int(_parse_int(merged.get("fila_alertas_limite"), CONFIG_DEFAULTS["fila_alertas_limite"]), 20, 1000),
     }
 
 
