@@ -17,7 +17,26 @@ from ui import (
     vinculos_page,
 )
 from services import auth_service, configuracoes_service
-from ui.theme import apply_global_theme, render_sidebar_user, render_topbar
+
+# Import seguro do tema
+try:
+    from ui.theme import apply_global_theme, render_sidebar_user, render_topbar
+except ModuleNotFoundError:
+    try:
+        from theme import apply_global_theme, render_sidebar_user, render_topbar
+    except ModuleNotFoundError:
+        def apply_global_theme():
+            return None
+
+        def render_sidebar_user(usuario: dict, role_label: str):
+            nome = usuario.get("nome") or "Usuário"
+            email = usuario.get("email") or "-"
+            st.sidebar.markdown(f"**{nome}**")
+            st.sidebar.caption(f"{role_label} · {email}")
+
+        def render_topbar(usuario: dict, pagina_atual: str):
+            st.title(pagina_atual)
+
 
 st.set_page_config(
     page_title="Revisão e Lubrificação",
