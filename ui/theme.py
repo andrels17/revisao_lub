@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from html import escape
+
 import streamlit as st
 
 
@@ -25,6 +27,9 @@ def apply_global_theme() -> None:
             --success:#22c55e;
             --warning:#f59e0b;
             --danger:#ef4444;
+            --success-soft:rgba(34,197,94,.14);
+            --warning-soft:rgba(245,158,11,.14);
+            --danger-soft:rgba(239,68,68,.14);
             --shadow:0 16px 40px rgba(0,0,0,.24);
             --shadow-strong:0 24px 64px rgba(0,0,0,.34);
             --radius:20px;
@@ -46,7 +51,11 @@ def apply_global_theme() -> None:
         }
         .app-shell{padding:.15rem 0 .85rem 0;}
 
+        @keyframes fadeSlideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes skeletonShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
         .app-topbar{
+            animation:fadeSlideIn .35s ease;
             display:flex;align-items:center;justify-content:space-between;gap:1rem;
             padding:1rem 1.1rem;border:1px solid var(--line);border-radius:24px;
             background: linear-gradient(135deg, rgba(12,24,42,.96), rgba(18,35,58,.94));
@@ -62,6 +71,7 @@ def apply_global_theme() -> None:
         }
 
         .page-hero{
+            animation:fadeSlideIn .4s ease;
             padding:1.1rem 1.15rem;border:1px solid var(--line);border-radius:24px;
             background:linear-gradient(135deg, rgba(12,24,42,.96), rgba(18,35,58,.94));
             box-shadow:var(--shadow);margin-bottom:1rem;
@@ -70,6 +80,7 @@ def apply_global_theme() -> None:
         .page-hero p{margin:.42rem 0 0 0;color:#c0d0e6;font-size:.92rem;}
 
         .section-card{
+            animation:fadeSlideIn .45s ease;
             border:1px solid var(--line);border-radius:22px;padding:1rem 1rem .95rem 1rem;
             background:linear-gradient(180deg, rgba(15,27,45,.98), rgba(18,35,58,.98));
             box-shadow:var(--shadow);margin-bottom:.95rem;
@@ -77,6 +88,7 @@ def apply_global_theme() -> None:
         .section-card h3{margin:.1rem 0 .25rem 0;font-size:1.02rem;}
         .section-card p{margin:0;color:var(--muted);font-size:.86rem;}
         .subtle-card{
+            animation:fadeSlideIn .45s ease;
             border:1px solid var(--line);border-radius:18px;padding:.9rem 1rem;
             background:rgba(12,24,42,.72);box-shadow:0 10px 24px rgba(0,0,0,.14);
         }
@@ -163,11 +175,14 @@ def apply_global_theme() -> None:
         h1, h2, h3 {letter-spacing:-0.02em;}
 
         [data-testid="stMetric"] {
+            position:relative;overflow:hidden;
             border:1px solid var(--line);border-radius:18px;padding:.95rem 1rem;
             background:linear-gradient(180deg, rgba(15,27,45,.98), rgba(18,35,58,.98));
             box-shadow:var(--shadow);
         }
         [data-testid="stMetricLabel"], [data-testid="stMetricDelta"] {color:var(--muted) !important;}
+        [data-testid="stMetric"]:hover {transform:translateY(-2px);border-color:rgba(79,140,255,.24);}
+        [data-testid="stMetric"] [data-testid="stMetricValue"] {font-weight:800 !important;}
         [data-testid="stMetricValue"] {color:var(--text) !important;}
 
         [data-testid="stDataFrame"] {
@@ -200,11 +215,23 @@ def apply_global_theme() -> None:
         .stTabs [data-baseweb="tab"] {border-radius:12px 12px 0 0;background:rgba(255,255,255,.03);}
         .stCaption {color:var(--muted) !important;}
 
+        
+        .status-badge{display:inline-flex;align-items:center;gap:.4rem;padding:.26rem .62rem;border-radius:999px;font-size:.75rem;font-weight:700;border:1px solid var(--line);} 
+        .status-badge.status-em-dia{background:var(--success-soft);color:#b8f7cd;border-color:rgba(34,197,94,.22);} 
+        .status-badge.status-proximo{background:var(--warning-soft);color:#fde3ae;border-color:rgba(245,158,11,.24);} 
+        .status-badge.status-vencido{background:var(--danger-soft);color:#fecaca;border-color:rgba(239,68,68,.24);} 
+        .status-badge.status-realizado{background:rgba(79,140,255,.14);color:#d7e8ff;border-color:rgba(79,140,255,.24);} 
+        .skeleton-row{display:grid;grid-template-columns:repeat(4,1fr);gap:.85rem;margin:.15rem 0 1rem 0;animation:fadeSlideIn .2s ease;} 
+        .skeleton-card{height:110px;border-radius:18px;border:1px solid rgba(148,163,184,.10);background:linear-gradient(90deg, rgba(15,27,45,.95) 0%, rgba(23,40,63,.98) 50%, rgba(15,27,45,.95) 100%);background-size:200% 100%;animation:skeletonShimmer 1.35s linear infinite;box-shadow:var(--shadow);} 
+        .plot-shell{border:1px solid var(--line);border-radius:20px;padding:.8rem;background:linear-gradient(180deg, rgba(15,27,45,.98), rgba(18,35,58,.98));box-shadow:var(--shadow);} 
+        .plot-caption{font-size:.78rem;color:var(--muted);margin-top:.2rem;} 
+
         @media (max-width: 768px) {
             .block-container {padding-left:.9rem !important;padding-right:.9rem !important;}
             [data-testid="column"] {min-width:48% !important;}
             .stDataFrame {font-size:.78rem;}
-            .app-topbar,.page-hero{padding:.9rem 1rem;border-radius:20px;}
+            .app-topbar,.page-hero{
+            animation:fadeSlideIn .4s ease;padding:.9rem 1rem;border-radius:20px;}
         }
         </style>
         """,
@@ -265,3 +292,38 @@ def render_section_intro(title: str, description: str = "") -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+
+def render_loading_skeleton(cards: int = 4) -> None:
+    cards = max(1, int(cards or 1))
+    st.markdown("<div class='skeleton-row'>" + "".join(["<div class='skeleton-card'></div>" for _ in range(cards)]) + "</div>", unsafe_allow_html=True)
+
+
+def get_status_tone(status: str | None) -> str:
+    status = (status or "").strip().upper()
+    return {"EM DIA": "em-dia", "PROXIMO": "proximo", "VENCIDO": "vencido", "REALIZADO": "realizado"}.get(status, "realizado")
+
+
+def render_status_badge(status: str, label: str | None = None) -> str:
+    tone = get_status_tone(status)
+    text = escape(label or status or "-")
+    return f"<span class='status-badge status-{tone}'>{text}</span>"
+
+
+def apply_plotly_dark_figure(fig, *, height: int = 320):
+    fig.update_layout(
+        height=height,
+        margin=dict(t=18, b=18, l=18, r=18),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#dbe9ff", size=13),
+        hoverlabel=dict(bgcolor="#0b1628", bordercolor="rgba(79,140,255,.28)", font=dict(color="#ecf3ff")),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#9db0c7")),
+    )
+    try:
+        fig.update_xaxes(showgrid=True, gridcolor="rgba(157,176,199,.10)", zeroline=False, linecolor="rgba(157,176,199,.18)", tickfont=dict(color="#9db0c7"))
+        fig.update_yaxes(showgrid=True, gridcolor="rgba(157,176,199,.10)", zeroline=False, linecolor="rgba(157,176,199,.18)", tickfont=dict(color="#9db0c7"))
+    except Exception:
+        pass
+    return fig

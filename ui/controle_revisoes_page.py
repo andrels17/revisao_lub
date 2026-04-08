@@ -3,6 +3,8 @@ import datetime
 import pandas as pd
 import streamlit as st
 
+from ui.theme import render_loading_skeleton, render_page_intro
+
 from ui.constants  import STATUS_LABEL, STATUS_ORDEM
 from ui.exportacao import botao_exportar_excel
 
@@ -201,6 +203,7 @@ def render():
             st.cache_data.clear()
             st.rerun()
 
+    render_loading_skeleton(4)
     dados = revisoes_service.listar_controle_revisoes()
 
     if not dados:

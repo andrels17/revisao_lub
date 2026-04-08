@@ -6,6 +6,7 @@ import streamlit as st
 from services import dashboard_service
 from ui.constants import STATUS_LABEL
 from ui.exportacao import botao_exportar_excel
+from ui.theme import apply_plotly_dark_figure, render_loading_skeleton, render_status_badge
 
 
 PLOTLY_COLORS = {
@@ -52,6 +53,10 @@ def _inject_styles():
             background: linear-gradient(90deg, rgba(79,140,255,.92), rgba(56,189,248,.82));
         }
         .mini-card .label{font-size:.80rem;color:#9bb2cc;margin-bottom:.45rem;}
+        .mini-card--danger::before{background:linear-gradient(90deg, rgba(239,68,68,.95), rgba(248,113,113,.82));}
+        .mini-card--warning::before{background:linear-gradient(90deg, rgba(245,158,11,.95), rgba(251,191,36,.82));}
+        .mini-card--success::before{background:linear-gradient(90deg, rgba(34,197,94,.92), rgba(74,222,128,.82));}
+        .mini-card--info::before{background:linear-gradient(90deg, rgba(79,140,255,.92), rgba(56,189,248,.82));}
         .mini-card .value{font-size:1.85rem;font-weight:800;color:#edf4ff;line-height:1.1;}
         .mini-card .hint{font-size:.78rem;color:#7389a4;margin-top:.5rem;}
         .section-card{
@@ -95,10 +100,10 @@ def _hero(total_alertas: int):
     )
 
 
-def _metric_card(label: str, value, hint: str = ""):
+def _metric_card(label: str, value, hint: str = "", tone: str = "neutro"):
     st.markdown(
         f"""
-        <div class="mini-card">
+        <div class="mini-card mini-card--{tone}">
             <div class="label">{label}</div>
             <div class="value">{value}</div>
             <div class="hint">{hint}</div>
@@ -111,25 +116,26 @@ def _metric_card(label: str, value, hint: str = ""):
 def _render_cards(kpis):
     c1, c2, c3, c4 = st.columns(4, gap="medium")
     with c1:
-        _metric_card("Total de equipamentos", kpis["total_equipamentos"], "Base monitorada")
+        _metric_card("Total de equipamentos", kpis["total_equipamentos"], "Base monitorada", "info")
     with c2:
-        _metric_card("Alertas vencidos", kpis["vencidos"], "Maior urgência")
+        _metric_card("Alertas vencidos", kpis["vencidos"], "Maior urgência", "danger")
     with c3:
-        _metric_card("Alertas próximos", kpis["proximos"], "Janela de atenção")
+        _metric_card("Alertas próximos", kpis["proximos"], "Janela de atenção", "warning")
     with c4:
-        _metric_card("Itens em dia", kpis["em_dia"], "Status saudável")
+        _metric_card("Itens em dia", kpis["em_dia"], "Status saudável", "success")
 
     st.markdown('<div class="dashboard-block-gap"></div>', unsafe_allow_html=True)
     c5, c6, c7 = st.columns(3, gap="medium")
     with c5:
-        _metric_card("Equipamentos com alerta", kpis["equipamentos_com_alerta"], "Vencidos ou próximos")
+        _metric_card("Equipamentos com alerta", kpis["equipamentos_com_alerta"], "Vencidos ou próximos", "info")
     with c6:
-        _metric_card("Equipamentos vencidos", kpis["equipamentos_vencidos"], "Ao menos 1 item vencido")
+        _metric_card("Equipamentos vencidos", kpis["equipamentos_vencidos"], "Ao menos 1 item vencido", "danger")
     with c7:
-        _metric_card("Equipamentos próximos", kpis["equipamentos_proximos"], "Ao menos 1 item próximo")
+        _metric_card("Equipamentos próximos", kpis["equipamentos_proximos"], "Ao menos 1 item próximo", "warning")
 
 
 def _apply_plotly_theme(fig, height: int):
+    apply_plotly_dark_figure(fig, height=height)
     fig.update_layout(
         height=height,
         margin=dict(t=10, b=10, l=10, r=10),
@@ -281,6 +287,7 @@ def render():
             dashboard_service.carregar_alertas.clear()
             st.rerun()
 
+    render_loading_skeleton(4)
     with st.spinner("Carregando dados…"):
         alertas, total_equipamentos = dashboard_service.carregar_alertas()
 

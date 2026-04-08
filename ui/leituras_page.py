@@ -3,6 +3,8 @@ import datetime
 import pandas as pd
 import streamlit as st
 
+from ui.theme import apply_plotly_dark_figure, render_loading_skeleton, render_page_intro
+
 from services import equipamentos_service, responsaveis_service, leituras_service
 from ui.exportacao import botao_exportar_excel
 
@@ -31,7 +33,25 @@ def _grafico_evolucao(dados: list, tipo_leitura: str):
     df_plot = df.rename(columns=cols)[["Data"] + (y_col if isinstance(y_col, list) else [y_col])]
     df_plot = df_plot.set_index("Data")
     df_plot = df_plot[(df_plot > 0).any(axis=1)]
-    if not df_plot.empty:
+    if df_plot.empty:
+        return
+    try:
+        import plotly.graph_objects as go
+        fig = go.Figure()
+        for serie in df_plot.columns:
+            fig.add_trace(go.Scatter(
+                x=df_plot.index,
+                y=df_plot[serie],
+                mode="lines+markers",
+                name=serie,
+                line=dict(width=3),
+                marker=dict(size=7),
+                hovertemplate=f"{serie}: %{{y}}<extra></extra>",
+            ))
+        apply_plotly_dark_figure(fig, height=340)
+        fig.update_layout(margin=dict(t=18,b=18,l=18,r=18), legend=dict(orientation="h", y=1.05, x=0))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    except Exception:
         st.line_chart(df_plot, use_container_width=True)
 
 
@@ -39,6 +59,7 @@ def render():
     render_page_intro("Leituras de KM e horas", "Registre medições com foco operacional e uma experiência visual mais limpa para o dia a dia.", "Operação")
     st.caption("Atualize os hodômetros e horímetros dos equipamentos.")
 
+    render_loading_skeleton(3)
     with st.spinner("Carregando equipamentos…"):
         equipamentos = equipamentos_service.listar()
         responsaveis = responsaveis_service.listar()
