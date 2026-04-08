@@ -1,8 +1,31 @@
+from __future__ import annotations
+
+from typing import Any
+
+import streamlit as st
+
 from database.connection import get_conn
-from services import auditoria_service, escopo_service
+from services import (
+    auditoria_service,
+    escopo_service,
+    lubrificacoes_service,
+    revisoes_service,
+)
 
 
-def listar():
+TTL_EQ = 60
+
+
+def _safe_close(conn) -> None:
+    try:
+        if conn and not conn.closed:
+            conn.close()
+    except Exception:
+        pass
+
+
+@st.cache_data(ttl=TTL_EQ, show_spinner=False)
+def listar() -> list[dict[str, Any]]:
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -13,8 +36,8 @@ def listar():
                 e.codigo,
                 e.nome,
                 e.tipo,
-                e.km_atual,
-                e.horas_atual,
+                coalesce(e.km_atual, 0),
+                coalesce(e.horas_atual, 0),
                 e.template_revisao_id,
                 e.setor_id,
                 coalesce(s.nome, '-') as setor_nome,
@@ -22,7 +45,7 @@ def listar():
                 coalesce(e.ativo, true) as ativo
             from equipamentos e
             left join setores s on s.id = e.setor_id
-            order by e.codigo
+            order by e.codigo, e.nome
             """
         )
         rows = cur.fetchall()
@@ -44,10 +67,10 @@ def listar():
         ]
         return escopo_service.filtrar_equipamentos(itens)
     finally:
-        conn.close()
+        _safe_close(conn)
 
 
-def buscar(termo="", somente_ativos=False):
+def buscar(termo: str = "", somente_ativos: bool = False) -> list[dict[str, Any]]:
     termo_norm = (termo or "").strip().lower()
     itens = listar()
     if somente_ativos:
@@ -55,7 +78,7 @@ def buscar(termo="", somente_ativos=False):
     if not termo_norm:
         return itens
 
-    def _match(item):
+    def _match(item: dict[str, Any]) -> bool:
         alvo = " ".join(
             [
                 str(item.get("codigo", "")),
@@ -80,8 +103,8 @@ def obter(equipamento_id):
                 e.codigo,
                 e.nome,
                 e.tipo,
-                e.km_atual,
-                e.horas_atual,
+                coalesce(e.km_atual, 0),
+                coalesce(e.horas_atual, 0),
                 e.template_revisao_id,
                 coalesce(tr.nome, '-') as template_revisao_nome,
                 e.template_lubrificacao_id,
@@ -119,24 +142,119 @@ def obter(equipamento_id):
             return None
         return item
     finally:
-        conn.close()
+        _safe_close(conn)
 
 
 def obter_por_id(equipamento_id):
     return obter(equipamento_id)
 
 
-def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0,
-          template_revisao_id=None, ativo=True):
+@st.cache_data(ttl=TTL_EQ, show_spinner=False)
+def listar_responsaveis_principais() -> dict[str, dict[str, Any]]:
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            select
+                ve.equipamento_id,
+                ve.responsavel_id,
+                coalesce(r.nome, '-') as responsavel_nome
+            from vinculos_equipamento ve
+            join responsaveis r on r.id = ve.responsavel_id
+            where coalesce(ve.ativo, true) = true
+              and coalesce(ve.principal, false) = true
+              and coalesce(r.ativo, true) = true
+            """
+        )
+        rows = cur.fetchall()
+        return {
+            row[0]: {
+                "responsavel_id": row[1],
+                "responsavel_nome": row[2],
+            }
+            for row in rows
+        }
+    except Exception:
+        return {}
+    finally:
+        _safe_close(conn)
+
+
+def _resumo_saude(revisoes: list[dict[str, Any]], lubrificacoes: list[dict[str, Any]]) -> dict[str, Any]:
+    total_itens = len(revisoes) + len(lubrificacoes)
+    vencidos = sum(1 for item in revisoes + lubrificacoes if item.get("status") == "VENCIDO")
+    proximos = sum(1 for item in revisoes + lubrificacoes if item.get("status") == "PROXIMO")
+    if total_itens == 0:
+        return {
+            "score": 100,
+            "saude": "Sem plano",
+            "vencidos": 0,
+            "proximos": 0,
+        }
+
+    score = max(0, 100 - (vencidos * 25) - (proximos * 8))
+    if vencidos >= 3 or score < 45:
+        saude = "Crítico"
+    elif vencidos >= 1 or score < 70:
+        saude = "Atenção"
+    else:
+        saude = "Saudável"
+
+    return {
+        "score": score,
+        "saude": saude,
+        "vencidos": vencidos,
+        "proximos": proximos,
+    }
+
+
+@st.cache_data(ttl=TTL_EQ, show_spinner="Carregando equipamentos…")
+def carregar_snapshot_equipamentos() -> list[dict[str, Any]]:
+    equipamentos = listar()
+    if not equipamentos:
+        return []
+
+    ids = [e["id"] for e in equipamentos]
+    rev_idx = revisoes_service.listar_controle_revisoes_por_equipamento()
+    lub_idx = lubrificacoes_service.calcular_proximas_lubrificacoes_batch(ids)
+    principais = listar_responsaveis_principais()
+
+    rows: list[dict[str, Any]] = []
+    for eq in equipamentos:
+        resumo = _resumo_saude(rev_idx.get(eq["id"], []), lub_idx.get(eq["id"], []))
+        principal = principais.get(eq["id"], {})
+        rows.append(
+            {
+                **eq,
+                "responsavel_principal_id": principal.get("responsavel_id"),
+                "responsavel_principal_nome": principal.get("responsavel_nome") or "-",
+                "score_saude": resumo["score"],
+                "saude": resumo["saude"],
+                "vencidos": resumo["vencidos"],
+                "proximos": resumo["proximos"],
+                "tem_plano": bool(eq.get("template_revisao_id") or eq.get("template_lubrificacao_id")),
+            }
+        )
+
+    rows.sort(key=lambda x: (x["saude"] != "Crítico", x["saude"] != "Atenção", x["codigo"], x["nome"]))
+    return rows
+
+
+def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, ativo=True):
     return criar_completo(
-        codigo=codigo, nome=nome, tipo=tipo, setor_id=setor_id,
-        km_atual=km_atual, horas_atual=horas_atual,
-        template_revisao_id=template_revisao_id, ativo=ativo,
+        codigo=codigo,
+        nome=nome,
+        tipo=tipo,
+        setor_id=setor_id,
+        km_atual=km_atual,
+        horas_atual=horas_atual,
+        template_revisao_id=template_revisao_id,
+        ativo=ativo,
     )
 
 
-def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0,
-                   template_revisao_id=None, template_lubrificacao_id=None, ativo=True):
+def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, template_lubrificacao_id=None, ativo=True):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -151,9 +269,15 @@ def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0,
             returning id
             """,
             (
-                codigo, nome, tipo, setor_id,
-                km_atual, horas_atual,
-                template_revisao_id, template_lubrificacao_id, ativo,
+                codigo,
+                nome,
+                tipo,
+                setor_id,
+                km_atual,
+                horas_atual,
+                template_revisao_id,
+                template_lubrificacao_id,
+                ativo,
             ),
         )
         equipamento_id = cur.fetchone()[0]
@@ -176,15 +300,13 @@ def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0,
             },
         )
         conn.commit()
+        limpar_cache()
         return equipamento_id
     finally:
-        conn.close()
+        _safe_close(conn)
 
 
 def atualizar_inline(equipamento_id, *, nome, tipo, setor_id, ativo):
-    """
-    Atualiza os campos expostos na edição inline da tela de equipamentos.
-    """
     atual = obter(equipamento_id)
     if not atual:
         raise ValueError("Equipamento não encontrado ou fora do escopo.")
@@ -203,7 +325,6 @@ def atualizar_inline(equipamento_id, *, nome, tipo, setor_id, ativo):
             """,
             (nome, tipo, setor_id, bool(ativo), equipamento_id),
         )
-
         auditoria_service.registrar_no_conn(
             conn,
             acao="atualizar_equipamento_inline",
@@ -223,15 +344,12 @@ def atualizar_inline(equipamento_id, *, nome, tipo, setor_id, ativo):
             },
         )
         conn.commit()
+        limpar_cache()
     finally:
-        conn.close()
+        _safe_close(conn)
 
 
 def definir_responsavel_principal(equipamento_id, responsavel_id):
-    """
-    Define o responsável principal operacional do equipamento.
-    Se responsavel_id vier vazio/None, remove o principal atual.
-    """
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -280,5 +398,21 @@ def definir_responsavel_principal(equipamento_id, responsavel_id):
             valor_novo={"responsavel_id": responsavel_id},
         )
         conn.commit()
+        limpar_cache()
     finally:
-        conn.close()
+        _safe_close(conn)
+
+
+def limpar_cache() -> None:
+    try:
+        listar.clear()
+    except Exception:
+        pass
+    try:
+        listar_responsaveis_principais.clear()
+    except Exception:
+        pass
+    try:
+        carregar_snapshot_equipamentos.clear()
+    except Exception:
+        pass
