@@ -10,6 +10,8 @@ CONFIG_DEFAULTS = {
     "tolerancia_padrao": 10,
     "ttl_cache": 60,
     "dias_sem_leitura": 7,
+    "alerta_cooldown_horas": 24,
+    "fila_alertas_limite": 200,
 }
 
 SESSION_PREFIX = "cfg_"
@@ -84,6 +86,8 @@ def carregar_todas() -> dict:
         "tolerancia_padrao": _parse_int(merged.get("tolerancia_padrao"), CONFIG_DEFAULTS["tolerancia_padrao"]),
         "ttl_cache": _parse_int(merged.get("ttl_cache"), CONFIG_DEFAULTS["ttl_cache"]),
         "dias_sem_leitura": _parse_int(merged.get("dias_sem_leitura"), CONFIG_DEFAULTS["dias_sem_leitura"]),
+        "alerta_cooldown_horas": _parse_int(merged.get("alerta_cooldown_horas"), CONFIG_DEFAULTS["alerta_cooldown_horas"]),
+        "fila_alertas_limite": _parse_int(merged.get("fila_alertas_limite"), CONFIG_DEFAULTS["fila_alertas_limite"]),
     }
 
 
@@ -152,3 +156,11 @@ def get_ttl_cache() -> int:
 
 def get_dias_sem_leitura() -> int:
     return int(st.session_state.get(f"{SESSION_PREFIX}dias_sem_leitura", CONFIG_DEFAULTS["dias_sem_leitura"]))
+
+
+def get_alerta_cooldown_horas() -> int:
+    return int(st.session_state.get(f"{SESSION_PREFIX}alerta_cooldown_horas", CONFIG_DEFAULTS["alerta_cooldown_horas"]))
+
+
+def get_fila_alertas_limite() -> int:
+    return int(st.session_state.get(f"{SESSION_PREFIX}fila_alertas_limite", CONFIG_DEFAULTS["fila_alertas_limite"]))

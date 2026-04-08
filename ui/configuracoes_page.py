@@ -53,6 +53,25 @@ def render():
         help="Usado como referência operacional e preparado para dashboards/alertas futuros.",
     )
 
+    st.divider()
+    st.subheader("Automação assistida de alertas")
+    cooldown_horas = st.slider(
+        "Cooldown entre alertas do mesmo equipamento/tipo (horas)",
+        min_value=1,
+        max_value=168,
+        value=int(cfg.get("alerta_cooldown_horas", 24)),
+        step=1,
+        help="Evita reenvio excessivo na fila sugerida. Itens dentro do cooldown aparecem bloqueados.",
+    )
+    fila_limite = st.number_input(
+        "Limite padrão da fila sugerida",
+        min_value=20,
+        max_value=1000,
+        value=int(cfg.get("fila_alertas_limite", 200)),
+        step=10,
+        help="Quantidade máxima de itens sugeridos por tipo na aba de fila.",
+    )
+
     col_salvar, col_reset, _ = st.columns([1, 1, 3])
     with col_salvar:
         if st.button("💾 Salvar configurações", type="primary", use_container_width=True):
@@ -60,13 +79,15 @@ def render():
                 "tolerancia_padrao": int(nova_tolerancia),
                 "ttl_cache": int(novo_ttl),
                 "dias_sem_leitura": int(dias_sem_leitura),
+                "alerta_cooldown_horas": int(cooldown_horas),
+                "fila_alertas_limite": int(fila_limite),
             })
             try:
                 dashboard_service.carregar_alertas.clear()
             except Exception:
                 pass
             st.success(
-                f"Configurações salvas. Tolerância: {int(nova_tolerancia)} | Cache: {int(novo_ttl)}s | Dias sem leitura: {int(dias_sem_leitura)}"
+                f"Configurações salvas. Tolerância: {int(nova_tolerancia)} | Cache: {int(novo_ttl)}s | Dias sem leitura: {int(dias_sem_leitura)} | Cooldown: {int(cooldown_horas)}h"
             )
             st.rerun()
 
@@ -81,4 +102,4 @@ def render():
             st.rerun()
 
     st.divider()
-    st.caption("As configurações ficam salvas para todos os usuários. A tolerância já é aplicada imediatamente nas regras de revisão e lubrificação.")
+    st.caption("As configurações ficam salvas para todos os usuários. A tolerância já é aplicada imediatamente nas regras de revisão e lubrificação, e a fila sugerida passa a respeitar cooldown e limite padrão.")

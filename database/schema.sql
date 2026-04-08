@@ -229,3 +229,9 @@ CREATE TABLE IF NOT EXISTS public.comentarios_equipamento (
 
 CREATE INDEX IF NOT EXISTS idx_comentarios_equipamento_eqp
     ON public.comentarios_equipamento (equipamento_id, created_at DESC);
+
+
+-- Configurações adicionais para automação assistida de alertas
+-- Inserir manualmente, se desejar:
+-- insert into configuracoes_sistema (chave, valor, descricao) values ('alerta_cooldown_horas', '24', 'Cooldown entre alertas do mesmo equipamento/tipo em horas') on conflict (chave) do nothing;
+-- insert into configuracoes_sistema (chave, valor, descricao) values ('fila_alertas_limite', '200', 'Limite padrão da fila sugerida de alertas por tipo') on conflict (chave) do nothing;
