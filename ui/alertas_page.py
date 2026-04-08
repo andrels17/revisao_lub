@@ -176,7 +176,8 @@ def _render_fila_sugerida(fila: dict):
     with col3:
         status = st.selectbox("Status", ["Todos", "VENCIDO", "PROXIMO"], key="fila_status")
     with col4:
-        limite = st.number_input("Limite visual", min_value=10, max_value=500, value=min(len(df), 100), step=10, key="fila_limite")
+        limite_padrao = min(max(len(df), 10), 100)
+        limite = st.number_input("Limite visual", min_value=10, max_value=500, value=limite_padrao, step=10, key="fila_limite")
 
     dfv = df.copy()
     if tipo != "Todos":
