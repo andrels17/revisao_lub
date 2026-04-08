@@ -1,22 +1,11 @@
 """
-Serviço de autenticação com roles.
-
-Roles disponíveis:
-  admin        — acesso total + gerenciar usuários
-  gestor       — ver tudo, aprovar execuções, relatórios
-  operador     — ver suas pendências e registrar execuções
-  visualizador — somente leitura (dashboard e relatórios)
-
-Nota: todos os IDs são UUID (str) — compatível com o schema do Neon.
+Servico de autenticacao com roles.
+Todos os IDs são UUID — lidos como str (::text) e escritos com cast ::uuid.
 """
 from __future__ import annotations
-
 import bcrypt
 import streamlit as st
-
 from database.connection import get_conn
-
-# ── Mapa de permissões por role ───────────────────────────────────────────────
 
 ROLE_LABELS = {
     "admin":        "Administrador",
@@ -25,44 +14,70 @@ ROLE_LABELS = {
     "visualizador": "Visualizador",
 }
 
-# Páginas permitidas por role (chaves = nome da página no menu principal)
 ROLE_PAGINAS: dict[str, set[str]] = {
     "admin": {
-        "📊 Dashboard",
-        "🏢 Setores", "🚜 Equipamentos", "👷 Responsáveis",
-        "🔗 Vínculos", "📋 Templates",
-        "📏 Leituras KM / Horas", "🔧 Controle de Revisões",
-        "🛢️ Controle de Lubrificações",
-        "📱 Alertas WhatsApp",
-        "📥 Importar Equipamentos", "📈 Relatório de Manutenção",
-        "⚙️ Configurações",
+        "Dashboard",
+        "Setores", "Equipamentos", "Responsaveis",
+        "Vinculos", "Templates",
+        "Leituras KM / Horas", "Controle de Revisoes",
+        "Controle de Lubrificacoes",
+        "Alertas WhatsApp",
+        "Importar Equipamentos", "Relatorio de Manutencao",
+        "Configuracoes",
     },
     "gestor": {
-        "📊 Dashboard",
-        "🏢 Setores", "🚜 Equipamentos", "👷 Responsáveis",
-        "🔗 Vínculos", "📋 Templates",
-        "📏 Leituras KM / Horas", "🔧 Controle de Revisões",
-        "🛢️ Controle de Lubrificações",
-        "📱 Alertas WhatsApp",
-        "📈 Relatório de Manutenção",
+        "Dashboard",
+        "Setores", "Equipamentos", "Responsaveis",
+        "Vinculos", "Templates",
+        "Leituras KM / Horas", "Controle de Revisoes",
+        "Controle de Lubrificacoes",
+        "Alertas WhatsApp",
+        "Relatorio de Manutencao",
     },
     "operador": {
-        "📊 Dashboard",
-        "📏 Leituras KM / Horas",
-        "🔧 Controle de Revisões",
-        "🛢️ Controle de Lubrificações",
+        "Dashboard",
+        "Leituras KM / Horas",
+        "Controle de Revisoes",
+        "Controle de Lubrificacoes",
     },
     "visualizador": {
-        "📊 Dashboard",
-        "📈 Relatório de Manutenção",
+        "Dashboard",
+        "Relatorio de Manutencao",
     },
 }
 
-# ── Helpers de hash ───────────────────────────────────────────────────────────
+ROLE_PAGINAS["admin"] = {
+    "📊 Dashboard",
+    "🏢 Setores", "🚜 Equipamentos", "👷 Responsáveis",
+    "🔗 Vínculos", "📋 Templates",
+    "📏 Leituras KM / Horas", "🔧 Controle de Revisões",
+    "🛢️ Controle de Lubrificações",
+    "📱 Alertas WhatsApp",
+    "📥 Importar Equipamentos", "📈 Relatório de Manutenção",
+    "⚙️ Configurações",
+}
+ROLE_PAGINAS["gestor"] = {
+    "📊 Dashboard",
+    "🏢 Setores", "🚜 Equipamentos", "👷 Responsáveis",
+    "🔗 Vínculos", "📋 Templates",
+    "📏 Leituras KM / Horas", "🔧 Controle de Revisões",
+    "🛢️ Controle de Lubrificações",
+    "📱 Alertas WhatsApp",
+    "📈 Relatório de Manutenção",
+}
+ROLE_PAGINAS["operador"] = {
+    "📊 Dashboard",
+    "📏 Leituras KM / Horas",
+    "🔧 Controle de Revisões",
+    "🛢️ Controle de Lubrificações",
+}
+ROLE_PAGINAS["visualizador"] = {
+    "📊 Dashboard",
+    "📈 Relatório de Manutenção",
+}
 
 def hash_senha(senha: str) -> str:
     return bcrypt.hashpw(senha.encode(), bcrypt.gensalt()).decode()
-
 
 def verificar_senha(senha: str, senha_hash: str) -> bool:
     try:
@@ -70,37 +85,26 @@ def verificar_senha(senha: str, senha_hash: str) -> bool:
     except Exception:
         return False
 
-
-# ── Auth principal ────────────────────────────────────────────────────────────
-
 def login(email: str, senha: str) -> dict | None:
-    """
-    Verifica credenciais. Retorna dict do usuário ou None.
-    IDs retornados são UUID representados como str.
-    """
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT id::text, nome, email, senha_hash, role, ativo, responsavel_id::text
+            SELECT id::text, nome, email, senha_hash, role, ativo,
+                   responsavel_id::text
             FROM usuarios
             WHERE email = %s
             """,
             (email.strip().lower(),),
         )
         row = cur.fetchone()
-
     if not row:
         return None
-
     uid, nome, email_db, senha_hash, role, ativo, resp_id = row
-
     if not ativo:
         return None
     if not verificar_senha(senha, senha_hash):
         return None
-
-    # Atualiza ultimo_login (ignora falha — não bloqueia o login)
     try:
         with get_conn() as conn:
             conn.cursor().execute(
@@ -109,31 +113,24 @@ def login(email: str, senha: str) -> dict | None:
             conn.commit()
     except Exception:
         pass
-
     return {
-        "id":             uid,       # str (UUID)
+        "id":             uid,  # UUID como str
         "nome":           nome,
         "email":          email_db,
         "role":           role,
-        "responsavel_id": resp_id,   # str (UUID) ou None
+        "responsavel_id": resp_id,
     }
-
 
 def logout():
     for key in ("usuario", "pagina_atual"):
         st.session_state.pop(key, None)
 
-
-# ── Getters de sessão ─────────────────────────────────────────────────────────
-
 def usuario_logado() -> dict | None:
     return st.session_state.get("usuario")
-
 
 def role_atual() -> str | None:
     u = usuario_logado()
     return u["role"] if u else None
-
 
 def pode_acessar(pagina: str) -> bool:
     role = role_atual()
@@ -141,23 +138,18 @@ def pode_acessar(pagina: str) -> bool:
         return False
     return pagina in ROLE_PAGINAS.get(role, set())
 
-
 def requer_role(*roles: str):
-    """Para a renderização se o usuário não tiver o role necessário."""
     role = role_atual()
     if role not in roles:
-        st.error("⛔ Você não tem permissão para acessar este recurso.")
+        st.error("Voce nao tem permissao para acessar este recurso.")
         st.stop()
-
-
-# ── CRUD de usuários (somente admin) ─────────────────────────────────────────
 
 def listar_usuarios() -> list[dict]:
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT u.id::text, u.nome, u.email, u.role, u.ativo,
+            SELECT u.id, u.nome, u.email, u.role, u.ativo,
                    u.responsavel_id::text, r.nome AS responsavel_nome,
                    u.ultimo_login, u.created_at
             FROM usuarios u
@@ -168,13 +160,12 @@ def listar_usuarios() -> list[dict]:
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
-
 def criar_usuario(
     nome: str,
     email: str,
     senha: str,
     role: str,
-    responsavel_id: str | None = None,  # UUID como str
+    responsavel_id: str | None = None,
 ) -> tuple[bool, str]:
     try:
         h = hash_senha(senha)
@@ -187,19 +178,18 @@ def criar_usuario(
                 (nome, email.strip().lower(), h, role, responsavel_id or None),
             )
             conn.commit()
-        return True, "Usuário criado com sucesso."
+        return True, "Usuario criado com sucesso."
     except Exception as e:
         if "unique" in str(e).lower():
-            return False, "E-mail já cadastrado."
-        return False, f"Erro ao criar usuário: {e}"
-
+            return False, "E-mail ja cadastrado."
+        return False, f"Erro ao criar usuario: {e}"
 
 def editar_usuario(
-    uid: str,                           # UUID como str
+    uid: int,
     nome: str,
     role: str,
     ativo: bool,
-    responsavel_id: str | None = None,  # UUID como str
+    responsavel_id: str | None = None,
     nova_senha: str | None = None,
 ) -> tuple[bool, str]:
     try:
@@ -209,35 +199,36 @@ def editar_usuario(
                 cur.execute(
                     """
                     UPDATE usuarios
-                    SET nome=%s, role=%s, ativo=%s, responsavel_id=%s::uuid, senha_hash=%s
-                    WHERE id = %s::uuid
+                    SET nome=%s, role=%s, ativo=%s,
+                        responsavel_id=%s::uuid, senha_hash=%s
+                    WHERE id=%s
                     """,
-                    (nome, role, ativo, responsavel_id or None, hash_senha(nova_senha), uid),
+                    (nome, role, ativo, responsavel_id or None,
+                     hash_senha(nova_senha), uid),
                 )
             else:
                 cur.execute(
                     """
                     UPDATE usuarios
                     SET nome=%s, role=%s, ativo=%s, responsavel_id=%s::uuid
-                    WHERE id = %s::uuid
+                    WHERE id=%s
                     """,
                     (nome, role, ativo, responsavel_id or None, uid),
                 )
             conn.commit()
-        return True, "Usuário atualizado."
+        return True, "Usuario atualizado."
     except Exception as e:
         return False, f"Erro: {e}"
 
-
-def excluir_usuario(uid: str, uid_logado: str) -> tuple[bool, str]:
+def excluir_usuario(uid: int, uid_logado: int) -> tuple[bool, str]:
     if uid == uid_logado:
-        return False, "Você não pode excluir seu próprio usuário."
+        return False, "Voce nao pode excluir seu proprio usuario."
     try:
         with get_conn() as conn:
             conn.cursor().execute(
-                "DELETE FROM usuarios WHERE id = %s::uuid", (uid,)
+                "DELETE FROM usuarios WHERE id = %s", (uid,)
             )
             conn.commit()
-        return True, "Usuário removido."
+        return True, "Usuario removido."
     except Exception as e:
         return False, f"Erro: {e}"
