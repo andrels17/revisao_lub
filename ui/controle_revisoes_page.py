@@ -193,7 +193,7 @@ def _card_pendencia(item, idx):
 def render():
     col_t, col_b = st.columns([5, 1])
     with col_t:
-        st.title("Controle de Revisões")
+        render_page_intro("Controle de revisões", "Acompanhe pendências e registre execuções com uma interface mais organizada e padronizada.", "Operação")
         st.caption("Acompanhe o ciclo de revisões de cada equipamento e registre execuções diretamente desta página.")
     with col_b:
         st.write("")

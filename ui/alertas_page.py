@@ -13,6 +13,7 @@ from services import (
 )
 from ui.constants import STATUS_LABEL
 from ui.exportacao import botao_exportar_excel
+from ui.theme import render_page_intro
 
 
 def _inject_styles():
@@ -23,18 +24,18 @@ def _inject_styles():
             padding: 1.1rem 1.2rem;
             border-radius: 20px;
             background: linear-gradient(135deg, rgba(3,105,161,.95), rgba(15,23,42,.95));
-            color: #f8fafc;
+            color: #f8fbff;
             border: 1px solid rgba(148,163,184,.18);
             box-shadow: 0 18px 50px rgba(2,6,23,.16);
             margin-bottom: .9rem;
         }
         .wa-hero h2{margin:0;font-size:1.28rem;font-weight:800;}
-        .wa-hero p{margin:.35rem 0 0 0;color:#dbeafe;font-size:.92rem;}
+        .wa-hero p{margin:.35rem 0 0 0;color:#cfe2ff;font-size:.92rem;}
         .lite-card{
             border: 1px solid rgba(148,163,184,.18);
             border-radius: 18px;
             padding: 1rem;
-            background: rgba(255,255,255,.98);
+            background: rgba(15,27,45,.98);
             box-shadow: 0 10px 25px rgba(15,23,42,.05);
             margin-bottom: .8rem;
         }
@@ -44,12 +45,12 @@ def _inject_styles():
             border-radius:999px;
             font-size:.73rem;
             font-weight:700;
-            background:#f8fafc;
+            background:#f8fbff;
             border:1px solid rgba(148,163,184,.28);
             margin-right:.35rem;
         }
         .meta{
-            color:#64748b;
+            color:#9db0c7;
             font-size:.82rem;
             margin-top:.35rem;
         }
@@ -57,7 +58,7 @@ def _inject_styles():
             border: 1px solid rgba(148,163,184,.18);
             border-radius: 20px;
             padding: 1rem;
-            background: rgba(255,255,255,.98);
+            background: rgba(15,27,45,.98);
             box-shadow: 0 10px 25px rgba(15,23,42,.05);
         }
         </style>
@@ -310,7 +311,7 @@ def render():
 
     top_left, top_right = st.columns([5, 1])
     with top_left:
-        st.title("📱 Alertas WhatsApp")
+        render_page_intro("Alertas WhatsApp", "Monte filas, revise pendências e acompanhe envios com cards e blocos mais integrados ao tema dark.", "Comunicação")
     with top_right:
         st.write("")
         if st.button("🔄 Atualizar", help="Recarrega pendências"):

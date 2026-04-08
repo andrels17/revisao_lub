@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 from services import templates_revisao_service, templates_lubrificacao_service
+from ui.theme import render_page_intro
 
 TIPOS_CONTROLE = ["horas", "km"]
 TIPOS_PRODUTO = [
@@ -11,9 +12,8 @@ TIPOS_PRODUTO = [
 
 
 def _render_templates_revisao():
-    st.subheader("Templates de Revisão")
-    st.caption("Cada etapa representa um intervalo a partir da última execução (ex: 250h, 500h, 1000h).")
-
+    st.markdown("### Templates de revisão")
+    st.caption("Cada etapa representa um intervalo a partir da última execução, como 250h, 500h ou 1000h.")
     templates = templates_revisao_service.listar_com_etapas()
     tab_lista, tab_novo = st.tabs(["Existentes", "Novo template"])
 
@@ -24,9 +24,9 @@ def _render_templates_revisao():
             etapas_raw = st.text_input(
                 "Intervalos separados por vírgula",
                 placeholder="Ex: 250, 500, 750, 1000",
-                help="Cada número = intervalo desde a última execução.",
+                help="Cada número representa um intervalo desde a última execução.",
             )
-            submitted = st.form_submit_button("Salvar template", use_container_width=True)
+            submitted = st.form_submit_button("Salvar template", type="primary", use_container_width=True)
 
         if submitted:
             if not nome.strip():
@@ -37,10 +37,7 @@ def _render_templates_revisao():
                 try:
                     unidade = "h" if tipo_controle == "horas" else "km"
                     valores = [float(v.strip()) for v in etapas_raw.split(",") if v.strip()]
-                    etapas = [
-                        {"nome_etapa": f"Revisão {int(v)}{unidade}", "gatilho_valor": v}
-                        for v in valores
-                    ]
+                    etapas = [{"nome_etapa": f"Revisão {int(v)}{unidade}", "gatilho_valor": v} for v in valores]
                     templates_revisao_service.criar(nome.strip(), tipo_controle, etapas)
                     st.success(f"Template criado com {len(etapas)} etapa(s).")
                     st.rerun()
@@ -53,16 +50,13 @@ def _render_templates_revisao():
             return
         for t in templates:
             unidade = "h" if t["tipo_controle"] == "horas" else "km"
-            resumo = ", ".join(
-                f"{int(e['gatilho_valor'])}{unidade}" for e in t["etapas"]
-            ) or "sem etapas"
+            resumo = ", ".join(f"{int(e['gatilho_valor'])}{unidade}" for e in t["etapas"]) or "sem etapas"
             with st.expander(f"**{t['nome']}** — {resumo}"):
-                st.caption(f"ID: {t['id']} | Controle: {t['tipo_controle']}")
+                st.caption(f"Controle: {t['tipo_controle']}")
                 if t["etapas"]:
                     df = pd.DataFrame(t["etapas"])[["nome_etapa", "gatilho_valor"]]
                     df.columns = ["Etapa", f"Intervalo ({unidade})"]
                     st.dataframe(df, use_container_width=True, hide_index=True)
-
                 st.markdown("**Adicionar etapa**")
                 c1, c2, c3 = st.columns([2, 1, 1])
                 with c1:
@@ -82,9 +76,8 @@ def _render_templates_revisao():
 
 
 def _render_templates_lubrificacao():
-    st.subheader("Templates de Lubrificação")
-    st.caption("Defina óleos, graxas e filtros com seus intervalos de troca.")
-
+    st.markdown("### Templates de lubrificação")
+    st.caption("Defina óleos, graxas e filtros com seus intervalos de troca de forma padronizada.")
     templates = templates_lubrificacao_service.listar_com_itens()
     tab_lista, tab_novo = st.tabs(["Existentes", "Novo template"])
 
@@ -92,13 +85,13 @@ def _render_templates_lubrificacao():
         with st.form("form_tmpl_lub", clear_on_submit=True):
             nome = st.text_input("Nome do template", placeholder="Ex: Lubrificação Trator Padrão")
             tipo_controle = st.selectbox("Tipo de controle", TIPOS_CONTROLE)
-            submitted = st.form_submit_button("Criar template", use_container_width=True)
+            submitted = st.form_submit_button("Criar template", type="primary", use_container_width=True)
         if submitted:
             if not nome.strip():
                 st.error("Informe o nome.")
             else:
                 templates_lubrificacao_service.criar(nome.strip(), tipo_controle)
-                st.success("Template criado. Adicione os itens na aba 'Existentes'.")
+                st.success("Template criado. Adicione os itens na aba de existentes.")
                 st.rerun()
 
     with tab_lista:
@@ -109,12 +102,10 @@ def _render_templates_lubrificacao():
             unidade = "h" if t["tipo_controle"] == "horas" else "km"
             n = len(t["itens"])
             with st.expander(f"**{t['nome']}** — {n} item(ns) | {t['tipo_controle']}"):
-                st.caption(f"ID: {t['id']}")
                 if t["itens"]:
                     df = pd.DataFrame(t["itens"])[["nome_item", "tipo_produto", "intervalo_valor"]]
                     df.columns = ["Item", "Produto", f"Intervalo ({unidade})"]
                     st.dataframe(df, use_container_width=True, hide_index=True)
-
                 st.markdown("**Adicionar item**")
                 c1, c2, c3, c4 = st.columns([2, 2, 1, 1])
                 with c1:
@@ -128,9 +119,7 @@ def _render_templates_lubrificacao():
                     st.write("")
                     if st.button("Adicionar", key=f"add_i_{t['id']}"):
                         if ni.strip():
-                            templates_lubrificacao_service.adicionar_item(
-                                t["id"], ni.strip(), tp or None, iv
-                            )
+                            templates_lubrificacao_service.adicionar_item(t["id"], ni.strip(), tp or None, iv)
                             st.success("Item adicionado.")
                             st.rerun()
                         else:
@@ -138,7 +127,11 @@ def _render_templates_lubrificacao():
 
 
 def render():
-    st.title("Templates de Manutenção")
+    render_page_intro(
+        "Templates de manutenção",
+        "Padronize intervalos e itens para acelerar cadastro de revisões e lubrificações sem poluição visual.",
+        "Cadastros",
+    )
     tab_rev, tab_lub = st.tabs(["Revisão", "Lubrificação"])
     with tab_rev:
         _render_templates_revisao()

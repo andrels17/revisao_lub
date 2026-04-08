@@ -1,7 +1,7 @@
 import streamlit as st
 
 from services import escopo_service, importacao_service, setores_service
-
+from ui.theme import render_page_intro
 
 MODO_LABELS = {
     importacao_service.MODO_IGNORAR: "Ignorar duplicados",
@@ -11,8 +11,11 @@ MODO_LABELS = {
 
 
 def render():
-    st.title("Importação de Equipamentos")
-    st.caption("Importe múltiplos equipamentos de uma vez via planilha CSV ou Excel.")
+    render_page_intro(
+        "Importação em lote de equipamentos",
+        "Faça carga inicial ou atualização em massa com uma área mais limpa para arquivo, validação e confirmação.",
+        "Ferramentas",
+    )
     st.info(f"Escopo atual: {escopo_service.resumo_escopo()}")
 
     if not escopo_service.pode_importar():
@@ -22,27 +25,26 @@ def render():
     tab_import, tab_template = st.tabs(["Importar arquivo", "Baixar modelo"])
 
     with tab_template:
-        st.markdown("**Modelo de planilha para importação**")
+        st.markdown("### Modelo de planilha")
         st.write("Baixe o modelo, preencha e importe:")
         csv_bytes = importacao_service.get_template_csv()
         st.download_button(
-            "⬇️ Baixar modelo CSV",
+            "Baixar modelo CSV",
             data=csv_bytes,
             file_name="modelo_equipamentos.csv",
             mime="text/csv",
             use_container_width=True,
         )
-        st.markdown("**Colunas:**")
-        st.markdown(
-            "- `codigo` *(obrigatório)* — código único\n"
-            "- `nome` *(obrigatório)* — nome do equipamento\n"
-            "- `tipo` — Trator, Caminhão, Máquina, etc.\n"
-            "- `setor` — nome exato do setor cadastrado\n"
-            "- `km_atual` — hodômetro atual\n"
-            "- `horas_atual` — horímetro atual\n"
-            "- `placa` — placa do veículo\n"
-            "- `serie` — número de série"
-        )
+        st.markdown("""
+- `codigo` *(obrigatório)* — código único
+- `nome` *(obrigatório)* — nome do equipamento
+- `tipo` — Trator, Caminhão, Máquina, etc.
+- `setor` — nome exato do setor cadastrado
+- `km_atual` — hodômetro atual
+- `horas_atual` — horímetro atual
+- `placa` — placa do veículo
+- `serie` — número de série
+""")
 
     with tab_import:
         setores = [s for s in setores_service.listar() if s.get("ativo")]
@@ -60,7 +62,6 @@ def render():
         if arquivo:
             file_bytes = arquivo.read()
             resultado = importacao_service.processar_arquivo(file_bytes, arquivo.name)
-
             if "erro" in resultado:
                 st.error(resultado["erro"])
                 return
@@ -69,7 +70,7 @@ def render():
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("Linhas do arquivo", resumo.get("total_linhas", 0))
             c2.metric("Novas", resumo.get("novas", 0))
-            c3.metric("Duplicadas no sistema", resumo.get("duplicadas_sistema", 0))
+            c3.metric("Duplicadas", resumo.get("duplicadas_sistema", 0))
             c4.metric("Com aviso", resumo.get("com_aviso", 0))
             c5.metric("Com erro", resumo.get("com_erro", 0))
 
@@ -84,11 +85,11 @@ def render():
                         st.warning(e)
 
             if resultado.get("avisos"):
-                with st.expander("Ver avisos / conflitos detectados"):
+                with st.expander("Ver avisos e conflitos detectados"):
                     for a in resultado["avisos"]:
                         st.info(a)
 
-            st.markdown("**Pré-validação da importação**")
+            st.markdown("### Pré-validação da importação")
             st.dataframe(resultado["preview_full"], use_container_width=True, hide_index=True)
 
             if resultado["linhas_ok"] > 0:
@@ -98,18 +99,16 @@ def render():
                     format_func=lambda item: MODO_LABELS[item],
                     horizontal=False,
                 )
-                st.caption(
-                    "Use 'Preencher apenas campos vazios' quando quiser enriquecer o cadastro existente sem sobrescrever nome, tipo e setor já cadastrados."
-                )
+                st.caption("Use a opção de preencher vazios para enriquecer o cadastro sem sobrescrever dados principais já consolidados.")
 
-                if st.button("✅ Confirmar importação", use_container_width=True, type="primary"):
+                if st.button("Confirmar importação", use_container_width=True, type="primary"):
                     barra = st.progress(0, text="Iniciando importação…")
                     status_txt = st.empty()
 
                     def _progresso(atual, total, codigo):
                         pct = int(atual / total * 100) if total else 100
                         barra.progress(pct, text=f"Processando {atual}/{total} — {codigo}")
-                        status_txt.caption(f"⏳ {atual} de {total} linhas processadas")
+                        status_txt.caption(f"{atual} de {total} linhas processadas")
 
                     res = importacao_service.importar(
                         resultado["df"],

@@ -349,7 +349,7 @@ def _render_historico():
 def render():
     col_t, col_b = st.columns([5, 1])
     with col_t:
-        st.title("🛢️ Controle de Lubrificações")
+        render_page_intro("Controle de lubrificações", "Gerencie trocas e execuções com um layout mais leve, consistente e confortável no tema escuro.", "Operação")
         st.caption("Acompanhe e registre lubrificações por equipamento.")
     with col_b:
         st.write("")

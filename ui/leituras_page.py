@@ -36,7 +36,7 @@ def _grafico_evolucao(dados: list, tipo_leitura: str):
 
 
 def render():
-    st.title("📏 Leituras de KM / Horas")
+    render_page_intro("Leituras de KM e horas", "Registre medições com foco operacional e uma experiência visual mais limpa para o dia a dia.", "Operação")
     st.caption("Atualize os hodômetros e horímetros dos equipamentos.")
 
     with st.spinner("Carregando equipamentos…"):

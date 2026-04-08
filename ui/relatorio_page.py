@@ -9,6 +9,7 @@ import streamlit as st
 
 from database.connection import get_conn
 from ui.exportacao import botao_exportar_excel
+from ui.theme import render_page_intro
 
 try:
     import psycopg2
@@ -141,7 +142,7 @@ def _carregar_equipamentos(setor_id=None):
 def render():
     col_title, col_btn = st.columns([5, 1])
     with col_title:
-        st.title("Relatório de Manutenção")
+        render_page_intro("Relatório de manutenção", "Filtre e exporte dados com uma apresentação mais moderna e alinhada ao novo padrão visual do sistema.", "Ferramentas")
         st.caption("Consulte e exporte o histórico de revisões e lubrificações realizadas em qualquer período.")
     with col_btn:
         st.write("")

@@ -14,6 +14,7 @@ from services import (
     setores_service,
 )
 from ui.constants import STATUS_LABEL, TIPOS_EQUIPAMENTO
+from ui.theme import render_page_intro
 
 
 def _inject_css():
@@ -21,7 +22,7 @@ def _inject_css():
         """
         <style>
         .eq-shell {
-            background: linear-gradient(180deg, rgba(248,250,252,.95), rgba(255,255,255,.98));
+            background: linear-gradient(180deg, rgba(10,19,34,.92), rgba(15,27,45,.96));
             border: 1px solid rgba(148,163,184,.18);
             border-radius: 24px;
             padding: 1.05rem 1.1rem;
@@ -32,13 +33,13 @@ def _inject_css():
             padding: 1.15rem 1.2rem;
             border-radius: 22px;
             background: linear-gradient(135deg, rgba(15,23,42,.97), rgba(30,41,59,.95));
-            color: #f8fafc;
+            color: #f8fbff;
             border: 1px solid rgba(148,163,184,.16);
             box-shadow: 0 20px 60px rgba(2,6,23,.16);
             margin-bottom: .95rem;
         }
         .eq-hero h2{margin:0;font-size:1.38rem;font-weight:800;}
-        .eq-hero p{margin:.38rem 0 0 0;color:#cbd5e1;font-size:.93rem;}
+        .eq-hero p{margin:.38rem 0 0 0;color:#c0d0e6;font-size:.93rem;}
         .eq-pill{
             display:inline-block;
             padding:.18rem .55rem;
@@ -54,18 +55,18 @@ def _inject_css():
             border: 1px solid rgba(148,163,184,.18);
             border-radius: 20px;
             padding: 1rem 1rem .9rem 1rem;
-            background: rgba(255,255,255,.98);
+            background: rgba(15,27,45,.98);
             box-shadow: 0 10px 28px rgba(15,23,42,.05);
             min-height: 110px;
         }
-        .eq-kpi .label{font-size:.80rem;color:#64748b;margin-bottom:.35rem;}
-        .eq-kpi .value{font-size:1.9rem;font-weight:800;color:#0f172a;line-height:1.1;}
-        .eq-kpi .hint{font-size:.78rem;color:#94a3b8;margin-top:.35rem;}
+        .eq-kpi .label{font-size:.80rem;color:#9db0c7;margin-bottom:.35rem;}
+        .eq-kpi .value{font-size:1.9rem;font-weight:800;color:#ecf3ff;line-height:1.1;}
+        .eq-kpi .hint{font-size:.78rem;color:#7f93ad;margin-top:.35rem;}
         .eq-toolbar{
             border: 1px solid rgba(148,163,184,.18);
             border-radius: 20px;
             padding: .9rem 1rem;
-            background: rgba(255,255,255,.98);
+            background: rgba(15,27,45,.98);
             box-shadow: 0 10px 25px rgba(15,23,42,.05);
             margin-bottom: .85rem;
         }
@@ -73,12 +74,12 @@ def _inject_css():
             border: 1px solid rgba(148,163,184,.18);
             border-radius: 20px;
             padding: .95rem 1rem;
-            background: rgba(255,255,255,.98);
+            background: rgba(15,27,45,.98);
             box-shadow: 0 10px 25px rgba(15,23,42,.04);
             margin-bottom: .75rem;
         }
-        .eq-row-title{font-size:1rem;font-weight:800;color:#0f172a;margin:0;}
-        .eq-row-sub{font-size:.82rem;color:#64748b;margin-top:.18rem;}
+        .eq-row-title{font-size:1rem;font-weight:800;color:#ecf3ff;margin:0;}
+        .eq-row-sub{font-size:.82rem;color:#9db0c7;margin-top:.18rem;}
         .eq-badge{
             display:inline-block;
             padding:.22rem .58rem;
@@ -88,15 +89,15 @@ def _inject_css():
             margin-right:.34rem;
             border:1px solid transparent;
         }
-        .eq-ok{background:rgba(34,197,94,.12);color:#166534;}
-        .eq-warn{background:rgba(245,158,11,.14);color:#92400e;}
-        .eq-danger{background:rgba(239,68,68,.12);color:#991b1b;}
-        .eq-neutral{background:rgba(148,163,184,.14);color:#334155;}
+        .eq-ok{background:rgba(34,197,94,.16);color:#86efac;}
+        .eq-warn{background:rgba(245,158,11,.16);color:#fcd34d;}
+        .eq-danger{background:rgba(239,68,68,.16);color:#fca5a5;}
+        .eq-neutral{background:rgba(148,163,184,.14);color:#dbe9ff;}
         .eq-soft{
             border: 1px solid rgba(148,163,184,.16);
             border-radius: 16px;
             padding: .75rem .85rem;
-            background: rgba(248,250,252,.95);
+            background: rgba(10,19,34,.78);
         }
         .stTextInput input, .stSelectbox div[data-baseweb="select"], .stNumberInput input {
             border-radius: 14px !important;
@@ -386,7 +387,7 @@ def render():
 
     top_left, top_right = st.columns([5, 1])
     with top_left:
-        st.title("🚜 Equipamentos")
+        render_page_intro("Equipamentos", "Cadastre, pesquise e gerencie a frota em uma tela mais limpa, escura e consistente com o restante do sistema.", "Cadastros")
     with top_right:
         st.write("")
         if st.button("🔄 Atualizar", use_container_width=True):

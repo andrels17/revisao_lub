@@ -8,49 +8,74 @@ from ui.constants import STATUS_LABEL
 from ui.exportacao import botao_exportar_excel
 
 
+PLOTLY_COLORS = {
+    "vencidos": "#ef4444",
+    "proximos": "#f59e0b",
+    "em_dia": "#38bdf8",
+    "axis": "rgba(157,176,199,.34)",
+    "grid": "rgba(157,176,199,.12)",
+    "font": "#dbe9ff",
+    "muted": "#9db0c7",
+}
+
+
 def _inject_styles():
     st.markdown(
         """
         <style>
         .modern-hero{
             padding: 1.15rem 1.2rem;
-            border: 1px solid rgba(148,163,184,.18);
-            border-radius: 20px;
-            background: linear-gradient(135deg, rgba(15,23,42,.96), rgba(30,41,59,.94));
-            color: #f8fafc;
-            box-shadow: 0 18px 50px rgba(2,6,23,.18);
-            margin-bottom: .8rem;
+            border: 1px solid rgba(148,163,184,.14);
+            border-radius: 22px;
+            background: linear-gradient(135deg, rgba(12,24,42,.98), rgba(18,35,58,.96));
+            color: #f8fbff;
+            box-shadow: 0 18px 50px rgba(0,0,0,.24);
+            margin-bottom: 1.1rem;
         }
         .modern-hero h2{margin:0;font-size:1.35rem;font-weight:700;}
-        .modern-hero p{margin:.35rem 0 0 0;color:#cbd5e1;font-size:.92rem;}
+        .modern-hero p{margin:.35rem 0 0 0;color:#c0d0e6;font-size:.92rem;}
         .mini-card{
-            border: 1px solid rgba(148,163,184,.18);
+            position:relative;
+            border: 1px solid rgba(148,163,184,.14);
             border-radius: 18px;
-            padding: 1rem 1rem .9rem 1rem;
-            background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
-            box-shadow: 0 10px 25px rgba(15,23,42,.06);
-            min-height: 112px;
+            padding: 1.02rem 1rem 1rem 1rem;
+            background: linear-gradient(180deg, rgba(15,27,45,.98), rgba(19,35,58,.98));
+            box-shadow: 0 14px 30px rgba(0,0,0,.20);
+            min-height: 126px;
+            margin-bottom: 1.1rem;
+            overflow:hidden;
         }
-        .mini-card .label{font-size:.80rem;color:#64748b;margin-bottom:.35rem;}
-        .mini-card .value{font-size:1.85rem;font-weight:800;color:#0f172a;line-height:1.1;}
-        .mini-card .hint{font-size:.78rem;color:#94a3b8;margin-top:.4rem;}
+        .mini-card::before{
+            content:"";
+            position:absolute;
+            left:0;top:0;right:0;height:3px;
+            background: linear-gradient(90deg, rgba(79,140,255,.92), rgba(56,189,248,.82));
+        }
+        .mini-card .label{font-size:.80rem;color:#9bb2cc;margin-bottom:.45rem;}
+        .mini-card .value{font-size:1.85rem;font-weight:800;color:#edf4ff;line-height:1.1;}
+        .mini-card .hint{font-size:.78rem;color:#7389a4;margin-top:.5rem;}
         .section-card{
-            border: 1px solid rgba(148,163,184,.18);
+            border: 1px solid rgba(148,163,184,.14);
             border-radius: 20px;
-            padding: 1rem 1rem .8rem 1rem;
-            background: rgba(255,255,255,.97);
-            box-shadow: 0 10px 25px rgba(15,23,42,.05);
+            padding: 1.05rem 1rem .95rem 1rem;
+            background: linear-gradient(180deg, rgba(15,27,45,.98), rgba(18,35,58,.98));
+            box-shadow: 0 14px 30px rgba(0,0,0,.18);
+            margin-top: .22rem;
         }
+        .section-card h3{margin-top:.08rem;margin-bottom:.75rem;}
         .pill{
             display:inline-block;
             padding:.18rem .55rem;
             border-radius:999px;
             font-size:.72rem;
             font-weight:700;
-            background:#eef2ff;
-            color:#4338ca;
+            background:rgba(79,140,255,.12);
+            border:1px solid rgba(79,140,255,.18);
+            color:#dcebff;
             margin-right:.35rem;
         }
+        .dashboard-block-gap{height:.22rem;}
+        .table-note{color:#7f93ad;font-size:.78rem;margin-top:.15rem;}
         </style>
         """,
         unsafe_allow_html=True,
@@ -84,7 +109,7 @@ def _metric_card(label: str, value, hint: str = ""):
 
 
 def _render_cards(kpis):
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4, gap="medium")
     with c1:
         _metric_card("Total de equipamentos", kpis["total_equipamentos"], "Base monitorada")
     with c2:
@@ -94,14 +119,34 @@ def _render_cards(kpis):
     with c4:
         _metric_card("Itens em dia", kpis["em_dia"], "Status saudável")
 
-    st.write("")
-    c5, c6, c7 = st.columns(3)
+    st.markdown('<div class="dashboard-block-gap"></div>', unsafe_allow_html=True)
+    c5, c6, c7 = st.columns(3, gap="medium")
     with c5:
         _metric_card("Equipamentos com alerta", kpis["equipamentos_com_alerta"], "Vencidos ou próximos")
     with c6:
         _metric_card("Equipamentos vencidos", kpis["equipamentos_vencidos"], "Ao menos 1 item vencido")
     with c7:
         _metric_card("Equipamentos próximos", kpis["equipamentos_proximos"], "Ao menos 1 item próximo")
+
+
+def _apply_plotly_theme(fig, height: int):
+    fig.update_layout(
+        height=height,
+        margin=dict(t=10, b=10, l=10, r=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=PLOTLY_COLORS["font"], size=13),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.18,
+            xanchor="left",
+            x=0,
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(color=PLOTLY_COLORS["muted"]),
+        ),
+    )
+    return fig
 
 
 def _grafico_status(kpis):
@@ -119,14 +164,24 @@ def _grafico_status(kpis):
                 go.Pie(
                     labels=labels,
                     values=values,
-                    hole=0.56,
+                    hole=0.62,
                     textinfo="label+percent",
+                    textfont=dict(color="#eaf2ff", size=12),
                     hovertemplate="%{label}: %{value}<extra></extra>",
+                    marker=dict(
+                        colors=[
+                            PLOTLY_COLORS["vencidos"],
+                            PLOTLY_COLORS["proximos"],
+                            PLOTLY_COLORS["em_dia"],
+                        ],
+                        line=dict(color="rgba(7,17,31,.95)", width=3),
+                    ),
                 )
             ]
         )
-        fig.update_layout(height=260, margin=dict(t=10, b=0, l=0, r=0), showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        _apply_plotly_theme(fig, 300)
+        fig.update_layout(showlegend=False)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     except Exception:
         st.bar_chart(pd.DataFrame({"Status": labels, "Qtd": values}).set_index("Status"))
 
@@ -141,16 +196,34 @@ def _grafico_setores(ranking):
         import plotly.graph_objects as go
 
         fig = go.Figure()
-        fig.add_trace(go.Bar(name="Vencidos", x=df["Vencidos"], y=df["Setor"], orientation="h"))
-        fig.add_trace(go.Bar(name="Próximos", x=df["Próximos"], y=df["Setor"], orientation="h"))
+        fig.add_trace(
+            go.Bar(
+                name="Vencidos",
+                x=df["Vencidos"],
+                y=df["Setor"],
+                orientation="h",
+                marker=dict(color=PLOTLY_COLORS["vencidos"]),
+                hovertemplate="%{y}: %{x} vencido(s)<extra></extra>",
+            )
+        )
+        fig.add_trace(
+            go.Bar(
+                name="Próximos",
+                x=df["Próximos"],
+                y=df["Setor"],
+                orientation="h",
+                marker=dict(color=PLOTLY_COLORS["proximos"]),
+                hovertemplate="%{y}: %{x} próximo(s)<extra></extra>",
+            )
+        )
+        _apply_plotly_theme(fig, max(300, 42 * len(df)))
         fig.update_layout(
             barmode="stack",
-            height=max(260, 38 * len(df)),
-            margin=dict(t=10, b=0, l=0, r=0),
-            legend=dict(orientation="h", y=-0.2),
             xaxis_title="Alertas",
+            xaxis=dict(showgrid=True, gridcolor=PLOTLY_COLORS["grid"], zeroline=False),
+            yaxis=dict(autorange="reversed", showgrid=False),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     except Exception:
         st.bar_chart(df.set_index("Setor")[["Vencidos", "Próximos"]])
 
@@ -222,7 +295,7 @@ def render():
     ranking_setores = dashboard_service.ranking_setores(alertas)
     ranking_eq = dashboard_service.ranking_equipamentos_criticos(alertas)
 
-    col_g1, col_g2 = st.columns([1, 1.4])
+    col_g1, col_g2 = st.columns([1, 1.4], gap="medium")
     with col_g1:
         with st.container(border=False):
             st.markdown('<div class="section-card">', unsafe_allow_html=True)
@@ -236,10 +309,10 @@ def render():
             _grafico_setores(ranking_setores)
             st.markdown("</div>", unsafe_allow_html=True)
 
-    st.write("")
+    st.markdown('<div class="dashboard-block-gap"></div>', unsafe_allow_html=True)
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Filtros rápidos")
-    f1, f2, f3, f4 = st.columns([2.2, 1.1, 1.1, 1])
+    f1, f2, f3, f4 = st.columns([2.2, 1.1, 1.1, 1], gap="medium")
     setores = sorted({item.get("setor") or "-" for item in alertas})
 
     with f1:
@@ -270,9 +343,10 @@ def render():
 
     st.write("")
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
-    bar1, bar2, bar3 = st.columns([3, 1.2, 1])
+    bar1, bar2, bar3 = st.columns([3, 1.2, 1], gap="medium")
     with bar1:
         st.subheader(f"Pendências e próximos vencimentos ({len(df_alertas)})")
+        st.markdown('<div class="table-note">Tabela em tema escuro para reduzir o brilho e melhorar a leitura.</div>', unsafe_allow_html=True)
     with bar2:
         page_size = st.selectbox("Linhas por página", [20, 50, 100, 200], index=1)
     with bar3:
@@ -282,7 +356,7 @@ def render():
         st.info("Nenhum item para os filtros selecionados.")
     else:
         total_pages = max(1, math.ceil(len(df_alertas) / page_size))
-        nav1, nav2, nav3 = st.columns([1, 1, 4])
+        nav1, nav2, nav3 = st.columns([1, 1, 4], gap="medium")
         with nav1:
             page = st.number_input("Página", min_value=1, max_value=total_pages, value=1, step=1)
         with nav2:
@@ -294,8 +368,8 @@ def render():
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.write("")
-    col_a, col_b = st.columns(2)
+    st.markdown('<div class="dashboard-block-gap"></div>', unsafe_allow_html=True)
+    col_a, col_b = st.columns(2, gap="medium")
     with col_a:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Setores com mais alertas")
