@@ -88,18 +88,48 @@ def get_conn_ctx():
         pool.putconn(conn)
 
 
-def get_conn():
+class _PooledConn:
     """
-    Retorna uma conexão do pool compartilhado.
-    Mantém a assinatura legada (conn.close() devolve ao pool em vez de fechar).
-    Todo o código que usa `conn = get_conn() / conn.close()` se beneficia
+    Wrapper fino em torno de uma conexão do pool.
+    Expõe a mesma interface que psycopg2.connection; close() devolve ao pool
+    em vez de encerrar a conexão, sem precisar fazer monkey-patch no objeto C.
+    """
+    __slots__ = ("_conn", "_pool")
+
+    def __init__(self, conn, pool):
+        object.__setattr__(self, "_conn", conn)
+        object.__setattr__(self, "_pool", pool)
+
+    # ── delegação transparente ────────────────────────────────────────────────
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_conn"), name)
+
+    def __setattr__(self, name, value):
+        setattr(object.__getattribute__(self, "_conn"), name, value)
+
+    # ── substituição de close() ───────────────────────────────────────────────
+    def close(self):
+        pool = object.__getattribute__(self, "_pool")
+        conn = object.__getattribute__(self, "_conn")
+        pool.putconn(conn)
+
+    # ── suporte a context manager (with get_conn() as conn:) ──────────────────
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        conn = object.__getattribute__(self, "_conn")
+        if exc_type:
+            conn.rollback()
+        self.close()
+        return False
+
+
+def get_conn() -> _PooledConn:
+    """
+    Retorna uma conexão do pool compartilhado encapsulada em _PooledConn.
+    Todo o código legado (conn = get_conn() … conn.close()) se beneficia
     automaticamente do pool sem precisar ser alterado.
     """
     pool = _get_pool()
-    conn = pool.getconn()
-
-    def _return_to_pool():
-        pool.putconn(conn)
-
-    conn.close = _return_to_pool
-    return conn
+    return _PooledConn(pool.getconn(), pool)
