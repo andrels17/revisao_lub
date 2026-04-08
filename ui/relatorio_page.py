@@ -10,6 +10,11 @@ import streamlit as st
 from database.connection import get_conn
 from ui.exportacao import botao_exportar_excel
 
+try:
+    import psycopg2
+except Exception:  # pragma: no cover
+    psycopg2 = None
+
 
 @st.cache_data(ttl=120, show_spinner=False)
 def _carregar_revisoes(data_ini, data_fim, setor_id=None, equipamento_id=None):
@@ -65,29 +70,43 @@ def _carregar_lubrificacoes(data_ini, data_fim, setor_id=None, equipamento_id=No
         if equipamento_id:
             filtros.append("el.equipamento_id = %s"); params.append(equipamento_id)
 
-        cur.execute(
-            f"""
-            select el.id,
-                   el.data_execucao,
-                   e.codigo,
-                   e.nome                         as equipamento,
-                   coalesce(s.nome, '-')          as setor,
-                   el.nome_item,
-                   coalesce(el.tipo_produto, '-') as tipo_produto,
-                   el.km_execucao,
-                   el.horas_execucao,
-                   coalesce(r.nome, '-')          as responsavel,
-                   el.observacoes
-            from execucoes_lubrificacao el
-            join equipamentos e on e.id = el.equipamento_id
-            left join setores s     on s.id = e.setor_id
-            left join responsaveis r on r.id = el.responsavel_id
-            where {" and ".join(filtros)}
-            order by el.data_execucao desc, e.codigo
-            """,
-            params,
-        )
-        rows = cur.fetchall()
+        try:
+            cur.execute(
+                f"""
+                select el.id,
+                       el.data_execucao,
+                       e.codigo,
+                       e.nome                         as equipamento,
+                       coalesce(s.nome, '-')          as setor,
+                       el.nome_item,
+                       coalesce(el.tipo_produto, '-') as tipo_produto,
+                       el.km_execucao,
+                       el.horas_execucao,
+                       coalesce(r.nome, '-')          as responsavel,
+                       el.observacoes
+                from execucoes_lubrificacao el
+                join equipamentos e on e.id = el.equipamento_id
+                left join setores s     on s.id = e.setor_id
+                left join responsaveis r on r.id = el.responsavel_id
+                where {" and ".join(filtros)}
+                order by el.data_execucao desc, e.codigo
+                """,
+                params,
+            )
+            rows = cur.fetchall()
+        except Exception as exc:
+            if not psycopg2 or not isinstance(
+                exc,
+                (
+                    psycopg2.errors.UndefinedTable,
+                    psycopg2.errors.UndefinedColumn,
+                    psycopg2.errors.UndefinedObject,
+                ),
+            ):
+                raise
+            conn.rollback()
+            rows = []
+
         return pd.DataFrame(rows, columns=[
             "ID", "Data", "Código", "Equipamento", "Setor",
             "Item", "Produto", "KM", "Horas", "Responsável", "Observações"
