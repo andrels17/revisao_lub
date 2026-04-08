@@ -1,14 +1,8 @@
+from ui.constants import STATUS_LABELS
 import streamlit as st
 from services import equipamentos_service
 
 
-STATUS_LABELS = {
-    'VENCIDO': '🔴 Vencido',
-    'PROXIMO': '🟡 Próximo',
-    'EM DIA': '🟢 Em dia',
-    'REALIZADO': '✅ Realizado',
-    'REALIZADO NO CICLO': '✅ Realizado',
-}
 
 
 def _format_resultado(item: dict) -> str:

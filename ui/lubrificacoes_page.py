@@ -1,9 +1,9 @@
+from ui.constants  import STATUS_LABEL, STATUS_ORDEM
+from ui.exportacao import botao_exportar_excel
 import pandas as pd
 import streamlit as st
 from services import equipamentos_service, responsaveis_service, lubrificacoes_service, vinculos_service
 
-STATUS_LABEL = {"VENCIDO": "🔴 Vencido", "PROXIMO": "🟡 Próximo", "EM DIA": "🟢 Em dia"}
-STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2}
 
 
 def _fmt_eqp(e):
@@ -61,6 +61,9 @@ def _render_pendencias(pendencias_df, equipamentos):
     df_show = df.rename(columns={"setor": "Setor"}).copy()
     df_show["Status"] = df_show["Status"].map(lambda x: STATUS_LABEL.get(x, x))
     cols = ["Equipamento", "Setor", "Item", "Produto", "Controle", "Atual", "Última troca", "Próxima troca", "Falta", "Status"]
+    col_exp = st.columns([5,1])[1]
+    with col_exp:
+        botao_exportar_excel(df_show[cols], "lubrificacoes_pendencias", label="⬇️ Excel", key="exp_lub_pend")
     st.dataframe(df_show[cols], use_container_width=True, hide_index=True)
 
 
@@ -137,7 +140,11 @@ def _render_historico(equipamentos):
     st.subheader("Histórico de Lubrificações")
     historico = lubrificacoes_service.listar_todos()
     if historico:
-        st.dataframe(pd.DataFrame(historico), use_container_width=True, hide_index=True)
+        df_hist = pd.DataFrame(historico)
+        col_exp = st.columns([5,1])[1]
+        with col_exp:
+            botao_exportar_excel(df_hist, "lubrificacoes_historico", label="⬇️ Excel", key="exp_lub_hist")
+        st.dataframe(df_hist, use_container_width=True, hide_index=True)
     else:
         st.info("Nenhuma lubrificação registrada ainda.")
 

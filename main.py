@@ -11,6 +11,7 @@ from ui import (
     leituras_page,
     alertas_page,
     importacao_page,
+    relatorio_page,
 )
 
 st.set_page_config(

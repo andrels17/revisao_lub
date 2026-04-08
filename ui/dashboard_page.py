@@ -2,19 +2,11 @@ import pandas as pd
 import streamlit as st
 
 from services import dashboard_service
+from ui.exportacao import botao_exportar_excel
+from ui.constants  import STATUS_LABEL, STATUS_COR
 
 
-STATUS_LABEL = {
-    "VENCIDO": "🔴 Vencido",
-    "PROXIMO": "🟡 Próximo",
-    "EM DIA": "🟢 Em dia",
-}
 
-STATUS_COR = {
-    "VENCIDO": "#ef4444",
-    "PROXIMO": "#f59e0b",
-    "EM DIA": "#22c55e",
-}
 
 
 def _cards(kpis):
@@ -173,6 +165,9 @@ def render():
     st.subheader(f"Pendências e próximos vencimentos ({len(filtrados)} itens)")
     df_alertas = _formatar_alertas_df(filtrados)
     if not df_alertas.empty:
+        col_exp = st.columns([5,1])[1]
+        with col_exp:
+            botao_exportar_excel(df_alertas, "alertas", label="⬇️ Excel", key="exp_dash_alertas")
         st.dataframe(df_alertas, use_container_width=True, hide_index=True)
     else:
         st.info("Nenhum item para os filtros selecionados.")

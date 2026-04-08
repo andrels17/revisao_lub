@@ -1,8 +1,8 @@
+"""
+config.py — mantido para referência, mas não é utilizado em runtime.
+As credenciais do banco são carregadas diretamente via st.secrets (Streamlit Cloud)
+ou variáveis de ambiente em database/connection.py.
 
-import os
-
-DB_HOST = os.getenv("DB_HOST")
-DB_NAME = os.getenv("DB_NAME")
-DB_USER = os.getenv("DB_USER")
-DB_PASS = os.getenv("DB_PASS")
-DB_PORT = os.getenv("DB_PORT", "5432")
+Para configurar localmente, crie um arquivo .streamlit/secrets.toml:
+  DATABASE_URL = "postgresql://USUARIO:SENHA@HOST/neondb?sslmode=require"
+"""

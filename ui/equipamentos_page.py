@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from ui.constants import STATUS_LABEL, STATUS_ORDEM, TIPOS_EQUIPAMENTO
 from services import (
     equipamentos_service,
     execucoes_service,
@@ -13,17 +14,7 @@ from services import (
     vinculos_service,
 )
 
-TIPOS_EQUIPAMENTO = [
-    "Caminhão", "Trator", "Colheitadeira", "Pulverizador",
-    "Implemento", "Máquina", "Outro",
-]
 
-STATUS_LABEL = {
-    "VENCIDO": "🔴 Vencido",
-    "PROXIMO": "🟡 Próximo",
-    "EM DIA": "🟢 Em dia",
-    "REALIZADO": "✅ Realizado",
-}
 
 
 

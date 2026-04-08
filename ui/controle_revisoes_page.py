@@ -3,6 +3,9 @@ import datetime
 import pandas as pd
 import streamlit as st
 
+from ui.constants  import STATUS_LABEL, STATUS_ORDEM
+from ui.exportacao import botao_exportar_excel
+
 from services import (
     equipamentos_service,
     execucoes_service,
@@ -11,13 +14,6 @@ from services import (
     vinculos_service,
 )
 
-STATUS_LABEL = {
-    "VENCIDO":   "🔴 Vencido",
-    "PROXIMO":   "🟡 Próximo",
-    "EM DIA":    "🟢 Em dia",
-    "REALIZADO": "✅ Realizado",
-}
-STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2, "REALIZADO": 3}
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -67,6 +63,9 @@ def _render_tabela(dados, titulo, vazio_msg):
         "status":             "Status",
     })
     df["Status"] = df["Status"].map(_badge)
+    col_exp = st.columns([5,1])[1]
+    with col_exp:
+        botao_exportar_excel(df, "revisoes", label="⬇️ Excel", key=f"exp_rev_{titulo[:8]}")
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 
