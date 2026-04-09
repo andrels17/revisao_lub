@@ -11,11 +11,13 @@ from ui.exportacao import botao_exportar_excel
 PLOTLY_COLORS = {
     "vencidos": "#ef4444",
     "proximos": "#f59e0b",
-    "em_dia":   "#38bdf8",
+    "em_dia":   "#22c55e",
     "axis":     "rgba(148,163,184,.22)",
     "grid":     "rgba(148,163,184,.08)",
     "font":     "#c8dcf4",
     "muted":    "#8fa4c0",
+    "paper":    "#0d1929",
+    "outline":  "rgba(148,163,184,.12)",
 }
 
 
@@ -79,6 +81,18 @@ def _inject_styles():
             padding: .8rem .85rem .75rem;
             background: #0d1929;
             margin-bottom: .75rem;
+            animation: dashFadeUp .32s ease-out;
+            will-change: transform, opacity;
+            transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+        }
+        .dash-section:hover {
+            transform: translateY(-1px);
+            border-color: rgba(96,165,250,.18);
+            box-shadow: 0 10px 24px rgba(3,8,20,.18);
+        }
+        @keyframes dashFadeUp {
+            from { opacity: 0; transform: translateY(6px); }
+            to   { opacity: 1; transform: translateY(0); }
         }
         .dash-section-title {
             font-size: .78rem; font-weight: 700;
@@ -172,6 +186,13 @@ def _apply_plotly_theme(fig, height: int):
             xanchor="left", x=0,
             bgcolor="rgba(0,0,0,0)",
             font=dict(color=PLOTLY_COLORS["muted"], size=11),
+            traceorder="normal",
+        ),
+        transition=dict(duration=260, easing="cubic-in-out"),
+        hoverlabel=dict(
+            bgcolor="#0b1525",
+            bordercolor=PLOTLY_COLORS["outline"],
+            font=dict(color="#e8f1ff", size=12),
         ),
     )
     return fig
@@ -180,59 +201,138 @@ def _apply_plotly_theme(fig, height: int):
 def _grafico_status(kpis):
     labels = ["Vencidos", "Próximos", "Em dia"]
     values = [kpis["vencidos"], kpis["proximos"], kpis["em_dia"]]
-    if sum(values) == 0:
+    total = sum(values)
+    if total == 0:
         st.info("Sem distribuição para exibir.")
         return
     try:
         import plotly.graph_objects as go
         fig = go.Figure(data=[
             go.Pie(
-                labels=labels, values=values, hole=0.65,
-                textinfo="label+percent",
-                textfont=dict(color="#cce0ff", size=11),
-                hovertemplate="%{label}: %{value}<extra></extra>",
+                labels=labels,
+                values=values,
+                hole=0.72,
+                sort=False,
+                direction="clockwise",
+                texttemplate="%{value} · %{percent}",
+                textposition="outside",
+                textfont=dict(color="#d9e8ff", size=12),
+                hovertemplate="%{label}: %{value} item(ns) · %{percent}<extra></extra>",
                 marker=dict(
                     colors=[PLOTLY_COLORS["vencidos"], PLOTLY_COLORS["proximos"], PLOTLY_COLORS["em_dia"]],
-                    line=dict(color="#07111f", width=2),
+                    line=dict(color="#07111f", width=3),
                 ),
+                pull=[0.02, 0.0, 0.0],
+                automargin=True,
             )
         ])
-        _apply_plotly_theme(fig, 260)
-        fig.update_layout(showlegend=False)
+        _apply_plotly_theme(fig, 290)
+        fig.update_layout(
+            showlegend=True,
+            legend=dict(y=-0.14),
+            margin=dict(t=8, b=42, l=8, r=8),
+            uniformtext_minsize=11,
+            uniformtext_mode="hide",
+            annotations=[
+                dict(
+                    text=f"<b>{total}</b><br><span style='font-size:12px;color:{PLOTLY_COLORS['muted']}'>alertas</span>",
+                    x=0.5, y=0.5,
+                    showarrow=False,
+                    font=dict(color="#f8fbff", size=24),
+                    align="center",
+                )
+            ],
+        )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     except Exception:
         st.bar_chart(pd.DataFrame({"Status": labels, "Qtd": values}).set_index("Status"))
-
 
 def _grafico_setores(ranking):
     if not ranking:
         st.info("Sem setores com pendências relevantes.")
         return
-    df = pd.DataFrame(ranking[:10])
+    df = pd.DataFrame(ranking[:10]).copy()
+    df["Total"] = df[["Vencidos", "Próximos"]].sum(axis=1)
+    df = df.sort_values(["Total", "Vencidos", "Próximos"], ascending=[True, True, True])
     try:
         import plotly.graph_objects as go
         fig = go.Figure()
         fig.add_trace(go.Bar(
-            name="Vencidos", x=df["Vencidos"], y=df["Setor"], orientation="h",
-            marker=dict(color=PLOTLY_COLORS["vencidos"]),
-            hovertemplate="%{y}: %{x} vencido(s)<extra></extra>",
+            name="Próximos",
+            x=df["Próximos"],
+            y=df["Setor"],
+            orientation="h",
+            marker=dict(color=PLOTLY_COLORS["proximos"]),
+            text=df["Próximos"].map(lambda v: str(int(v)) if v else ""),
+            textposition="inside",
+            textfont=dict(color="#0b1220", size=12),
+            insidetextanchor="middle",
+            cliponaxis=False,
+            hovertemplate="%{y}: %{x} próximo(s)<extra></extra>",
+            offsetgroup="alertas",
         ))
         fig.add_trace(go.Bar(
-            name="Próximos", x=df["Próximos"], y=df["Setor"], orientation="h",
-            marker=dict(color=PLOTLY_COLORS["proximos"]),
-            hovertemplate="%{y}: %{x} próximo(s)<extra></extra>",
+            name="Vencidos",
+            x=df["Vencidos"],
+            y=df["Setor"],
+            orientation="h",
+            marker=dict(color=PLOTLY_COLORS["vencidos"]),
+            text=df["Vencidos"].map(lambda v: str(int(v)) if v else ""),
+            textposition="inside",
+            textfont=dict(color="#f8fbff", size=12),
+            insidetextanchor="middle",
+            cliponaxis=False,
+            hovertemplate="%{y}: %{x} vencido(s)<extra></extra>",
+            offsetgroup="alertas",
         ))
-        _apply_plotly_theme(fig, max(260, 38 * len(df)))
+        fig.add_trace(go.Scatter(
+            x=df["Total"],
+            y=df["Setor"],
+            mode="text",
+            text=df["Total"].map(lambda v: f"{int(v)}"),
+            textposition="middle right",
+            textfont=dict(color="#e8f1ff", size=13),
+            hoverinfo="skip",
+            showlegend=False,
+            cliponaxis=False,
+        ))
+        _apply_plotly_theme(fig, max(290, 46 * len(df)))
         fig.update_layout(
             barmode="stack",
-            xaxis_title="Alertas",
-            xaxis=dict(showgrid=True, gridcolor=PLOTLY_COLORS["grid"], zeroline=False),
-            yaxis=dict(autorange="reversed", showgrid=False),
+            bargap=0.38,
+            margin=dict(t=8, b=36, l=8, r=28),
+            xaxis_title=None,
+            yaxis_title=None,
+            xaxis=dict(
+                showgrid=False,
+                zeroline=False,
+                showline=False,
+                ticks="",
+                showticklabels=False,
+                fixedrange=True,
+                rangemode="tozero",
+            ),
+            yaxis=dict(
+                autorange="reversed",
+                showgrid=False,
+                zeroline=False,
+                showline=False,
+                ticks="",
+                tickfont=dict(color="#e8f1ff", size=12),
+                fixedrange=True,
+            ),
+            legend=dict(y=-0.16),
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        max_total = max(df["Total"].max(), 1)
+        fig.update_xaxes(range=[0, max_total * 1.22])
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            config={"displayModeBar": False, "staticPlot": False},
+        )
+        st.caption("Rótulo ao fim da barra = total de alertas por setor.")
     except Exception:
         st.bar_chart(df.set_index("Setor")[["Vencidos", "Próximos"]])
-
 
 def _formatar_alertas_df(alertas):
     if not alertas:
