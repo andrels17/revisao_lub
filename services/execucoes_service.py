@@ -26,6 +26,80 @@ def _formatar_resultado_execucao(km_execucao, horas_execucao):
     return "Realizado"
 
 
+def _itens_execucao_disponiveis(cur) -> bool:
+    try:
+        cur.execute(
+            """
+            select 1
+            from information_schema.tables
+            where table_schema = 'public'
+              and table_name = 'execucao_manutencao_itens'
+            limit 1
+            """
+        )
+        return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
+def salvar_itens_execucao_no_conn(cur, execucao_id, itens_executados):
+    if not itens_executados or not _itens_execucao_disponiveis(cur):
+        return
+    for item in itens_executados:
+        cur.execute(
+            """
+            insert into execucao_manutencao_itens (
+                execucao_id,
+                item_id_referencia,
+                item_nome,
+                produto,
+                intervalo_valor,
+                marcado
+            )
+            values (%s, %s, %s, %s, %s, %s)
+            """,
+            (
+                execucao_id,
+                item.get("id"),
+                item.get("nome_item") or item.get("item_nome") or "Item sem nome",
+                item.get("tipo_produto") or item.get("produto"),
+                item.get("intervalo_valor"),
+                True,
+            ),
+        )
+
+
+def listar_itens_execucao(execucao_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        if not _itens_execucao_disponiveis(cur):
+            return []
+        cur.execute(
+            """
+            select id, item_id_referencia, item_nome, produto, intervalo_valor, marcado
+            from execucao_manutencao_itens
+            where execucao_id = %s
+            order by item_nome
+            """,
+            (execucao_id,),
+        )
+        rows = cur.fetchall()
+        return [
+            {
+                "id": r[0],
+                "item_id_referencia": r[1],
+                "item_nome": r[2],
+                "produto": r[3],
+                "intervalo_valor": float(r[4] or 0),
+                "marcado": bool(r[5]),
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
 
 def criar_execucao(dados):
     km_execucao = dados.get("km_execucao")
@@ -73,6 +147,8 @@ def criar_execucao(dados):
             ),
         )
         execucao_id = cur.fetchone()[0]
+
+        salvar_itens_execucao_no_conn(cur, execucao_id, dados.get("itens_executados") or [])
 
         if dados["tipo"] == "revisao":
             if km_execucao is not None:
@@ -181,6 +257,7 @@ def listar_revisoes_por_equipamento(equipamento_id, limite=20):
                 "observacoes": r[6] or "",
                 "resultado": _formatar_resultado_execucao(r[2], r[3]),
                 "etapa_referencia": _extrair_etapa(r[6]),
+                "itens_executados": listar_itens_execucao(r[0]),
             }
             for r in rows
         ]

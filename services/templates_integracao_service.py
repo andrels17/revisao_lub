@@ -247,6 +247,15 @@ def analisar_compatibilidade(
             total_match += 1
             total_itens_acionados += len(itens_disparados)
 
+        itens_acionados = [
+            {
+                "id": item.get("id"),
+                "nome_item": item.get("nome_item") or "Item sem nome",
+                "tipo_produto": item.get("tipo_produto") or "-",
+                "intervalo_valor": float(item.get("intervalo_valor") or 0),
+            }
+            for item in itens_disparados
+        ]
         itens_texto = ", ".join(
             f"{item.get('nome_item')} ({int(float(item.get('intervalo_valor') or 0))})"
             for item in itens_disparados
@@ -261,6 +270,16 @@ def analisar_compatibilidade(
                 "aplicar_lubrificacao": aplicar_lubrificacao,
                 "dispara_lubrificacao": "Sim" if aplicar_lubrificacao else "Não",
                 "itens_acionados": itens_texto,
+                "itens_acionados_lista": itens_acionados,
+                "todos_itens_template": [
+                    {
+                        "id": item.get("id"),
+                        "nome_item": item.get("nome_item") or "Item sem nome",
+                        "tipo_produto": item.get("tipo_produto") or "-",
+                        "intervalo_valor": float(item.get("intervalo_valor") or 0),
+                    }
+                    for item in itens
+                ],
                 "qtd_itens": len(itens_disparados) if aplicar_lubrificacao else 0,
             }
         )
@@ -415,6 +434,8 @@ def obter_integracao_automatica_por_item(
         "dispara": bool(linha.get("aplicar_lubrificacao")),
         "aplica_automatico": bool(linha.get("aplica_automatico")),
         "itens_acionados": linha.get("itens_acionados") or "—",
+        "itens_acionados_lista": list(linha.get("itens_acionados_lista") or []),
+        "todos_itens_template": list(linha.get("todos_itens_template") or []),
         "qtd_itens": int(linha.get("qtd_itens") or 0),
     }
 

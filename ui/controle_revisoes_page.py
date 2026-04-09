@@ -208,7 +208,15 @@ def _render_tabela(dados, titulo, vazio_msg):
 
 # ── modal de registro rápido ─────────────────────────────────────────────────
 
-def _form_registrar(item, key_suffix):
+def _rotulo_item_lubrificacao(item_lub):
+    nome = str(item_lub.get("nome_item") or item_lub.get("item_nome") or "Item sem nome")
+    produto = str(item_lub.get("tipo_produto") or item_lub.get("produto") or "-")
+    intervalo = float(item_lub.get("intervalo_valor") or 0)
+    intervalo_txt = f"{int(intervalo)}" if float(intervalo).is_integer() else f"{intervalo:g}"
+    return f"{nome} · {produto} · intervalo {intervalo_txt}"
+
+
+def _form_registrar(item, key_suffix, integracao=None):
     """
     Formulário inline para registrar uma execução de revisão
     diretamente da lista, sem precisar ir a outra página.
@@ -226,6 +234,12 @@ def _form_registrar(item, key_suffix):
     ids_op = {v["responsavel_id"] for v in vinculos_op}
     responsaveis_todos = [r for r in responsaveis_service.listar() if r.get("ativo")]
     resp_lista = [r for r in responsaveis_todos if r["id"] in ids_op] or responsaveis_todos
+
+    itens_template = list((integracao or {}).get("todos_itens_template") or [])
+    itens_sugeridos = {
+        str(i.get("id") or i.get("nome_item") or i.get("item_nome"))
+        for i in ((integracao or {}).get("itens_acionados_lista") or [])
+    }
 
     with st.form(f"form_rev_{key_suffix}", clear_on_submit=True):
         st.caption(f"Equipamento: **{eqp['codigo']} — {eqp['nome']}** | Etapa: **{item['etapa']}**")
@@ -256,8 +270,29 @@ def _form_registrar(item, key_suffix):
                 format_func=lambda r: "— não informar —" if r is None else f"{r['nome']} ({r.get('funcao_principal') or 'sem função'})",
                 key=f"resp_{key_suffix}",
             )
-            obs = st.text_area("Observações", height=80, key=f"obs_{key_suffix}",
-                               value=f"Etapa: {item['etapa']}")
+            obs = st.text_area(
+                "Observações opcionais",
+                height=80,
+                key=f"obs_{key_suffix}",
+                placeholder="Ex.: executado sem intercorrências / material conferido / ajuste adicional realizado",
+            )
+
+        itens_marcados = []
+        if itens_template:
+            st.markdown("**Itens complementares da lubrificação**")
+            st.caption("Marque diretamente o que foi executado junto nesta etapa. Isso substitui a dependência de texto livre em observações.")
+            for idx_item, item_lub in enumerate(itens_template):
+                item_key = str(item_lub.get("id") or item_lub.get("nome_item") or item_lub.get("item_nome") or idx_item)
+                default = item_key in itens_sugeridos
+                marcado = st.checkbox(
+                    _rotulo_item_lubrificacao(item_lub),
+                    value=default,
+                    key=f"item_lub_{key_suffix}_{idx_item}",
+                )
+                if marcado:
+                    itens_marcados.append(item_lub)
+            if itens_sugeridos:
+                st.caption("Os itens já marcados são a sugestão do sistema para esta etapa.")
 
         salvar = st.form_submit_button("✅ Registrar execução", use_container_width=True, type="primary")
 
@@ -270,9 +305,9 @@ def _form_registrar(item, key_suffix):
                 "km_execucao":     km_exec,
                 "horas_execucao":  horas_exec,
                 "observacoes":     obs.strip() or None,
+                "itens_executados": itens_marcados,
                 "status":          "concluida",
             })
-            # Invalida cache para refletir o novo registro
             if hasattr(revisoes_service, "listar_controle_revisoes"):
                 try:
                     st.cache_data.clear()
@@ -332,7 +367,7 @@ def _card_pendencia(item, idx, mapa_vinculos=None, templates_lub=None, cache_ana
 
         st.divider()
         st.markdown("**Registrar execução agora**")
-        _form_registrar(item, key_suffix=f"{item['equipamento_id']}_{item.get('etapa_id', idx)}")
+        _form_registrar(item, key_suffix=f"{item['equipamento_id']}_{item.get('etapa_id', idx)}", integracao=integracao)
 
 
 # ── página principal ─────────────────────────────────────────────────────────
