@@ -165,6 +165,23 @@ CREATE TABLE IF NOT EXISTS execucoes_lubrificacao (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+
+
+-- Itens estruturados executados junto da revisão
+CREATE TABLE IF NOT EXISTS public.execucao_manutencao_itens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    execucao_id INTEGER NOT NULL REFERENCES public.execucoes_manutencao(id) ON DELETE CASCADE,
+    item_id_referencia INTEGER,
+    item_nome TEXT NOT NULL,
+    produto TEXT,
+    intervalo_valor NUMERIC(12,2),
+    marcado BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_execucao_manutencao_itens_execucao
+    ON public.execucao_manutencao_itens (execucao_id);
+
 -- Registro de alertas enviados
 CREATE TABLE IF NOT EXISTS alertas_enviados (
     id SERIAL PRIMARY KEY,

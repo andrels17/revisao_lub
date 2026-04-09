@@ -172,6 +172,67 @@ def _render_bloco_integracao_lubrificacao(item, integracao):
         st.caption(f"Observação do vínculo: {integracao['observacoes']}")
 
 
+
+
+def _fmt_data_br(data_valor):
+    if not data_valor:
+        return '—'
+    try:
+        return pd.to_datetime(data_valor).strftime('%d/%m/%Y')
+    except Exception:
+        return str(data_valor)
+
+
+def _chip_item_execucao(item_exec):
+    nome = html.escape(str(item_exec.get("item_nome") or "Item"))
+    produto = str(item_exec.get("produto") or "-").strip()
+    if produto and produto != '-':
+        nome = f"{nome} · {html.escape(produto)}"
+    intervalo = item_exec.get("intervalo_valor")
+    if intervalo not in (None, ""):
+        try:
+            intervalo_num = float(intervalo)
+            intervalo_txt = f"{int(intervalo_num)}" if intervalo_num.is_integer() else f"{intervalo_num:g}"
+            nome = f"{nome} · {intervalo_txt}"
+        except Exception:
+            pass
+    return f"<span class='exec-item-chip'>✓ {nome}</span>"
+
+
+def _render_historico_execucoes(equipamento_id, tipo_controle):
+    historico = execucoes_service.listar_revisoes_por_equipamento(equipamento_id, limite=5)
+    if not historico:
+        st.caption('Sem histórico recente de revisões para este equipamento.')
+        return
+
+    unidade = _fmt_unidade(tipo_controle)
+    st.markdown("**Histórico recente**")
+    for execucao in historico:
+        valor_ref = execucao.get('horas') if tipo_controle == 'horas' else execucao.get('km')
+        try:
+            valor_num = float(valor_ref or 0)
+            valor_txt = f"{int(valor_num)}" if valor_num.is_integer() else f"{valor_num:g}"
+        except Exception:
+            valor_txt = str(valor_ref or '0')
+        etapa = execucao.get('etapa_referencia') or 'Etapa não informada'
+        itens = execucao.get('itens_executados') or []
+        itens_html = ''.join(_chip_item_execucao(item_exec) for item_exec in itens) if itens else "<span class='exec-item-empty'>Sem itens estruturados nesta execução</span>"
+        obs = str(execucao.get('observacoes') or '').strip()
+        obs_html = f"<div class='exec-obs'>{html.escape(obs)}</div>" if obs else ''
+        st.markdown(
+            f"""
+            <div class="exec-history-card">
+                <div class="exec-history-top">
+                    <div class="exec-history-title">{html.escape(str(etapa))}</div>
+                    <div class="exec-history-meta">{_fmt_data_br(execucao.get('data'))} · {html.escape(valor_txt)} {unidade} · {html.escape(str(execucao.get('responsavel') or '-'))}</div>
+                </div>
+                <div class="exec-history-result">{html.escape(str(execucao.get('resultado') or 'Realizado'))}</div>
+                <div class="exec-history-items">{itens_html}</div>
+                {obs_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 # ── tabela de pendências ─────────────────────────────────────────────────────
 
 def _render_tabela(dados, titulo, vazio_msg):
@@ -368,6 +429,9 @@ def _card_pendencia(item, idx, mapa_vinculos=None, templates_lub=None, cache_ana
         st.divider()
         st.markdown("**Registrar execução agora**")
         _form_registrar(item, key_suffix=f"{item['equipamento_id']}_{item.get('etapa_id', idx)}", integracao=integracao)
+
+        st.divider()
+        _render_historico_execucoes(item['equipamento_id'], item.get('tipo_controle'))
 
 
 # ── página principal ─────────────────────────────────────────────────────────
