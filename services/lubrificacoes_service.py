@@ -150,7 +150,7 @@ def calcular_proximas_lubrificacoes(equipamento_id):
 # ── escrita ──────────────────────────────────────────────────────────────────
 
 def registrar_execucao(dados):
-    from services import auditoria_service, validacoes_service
+    from services import auditoria_service, ciclos_service, validacoes_service
 
     contexto = validacoes_service.validar_execucao_lubrificacao(
         equipamento_id=dados["equipamento_id"],
@@ -163,26 +163,53 @@ def registrar_execucao(dados):
     conn = get_conn()
     cur  = conn.cursor()
     try:
-        cur.execute(
-            """
-            insert into execucoes_lubrificacao
-                (equipamento_id, item_id, responsavel_id, nome_item, tipo_produto,
-                 data_execucao, km_execucao, horas_execucao, observacoes)
-            values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            returning id
-            """,
-            (
-                dados["equipamento_id"],
-                dados.get("item_id"),
-                dados.get("responsavel_id"),
-                dados.get("nome_item"),
-                dados.get("tipo_produto"),
-                dados["data_execucao"],
-                dados.get("km_execucao", 0),
-                dados.get("horas_execucao", 0),
-                dados.get("observacoes"),
-            ),
-        )
+        ciclo_id = None
+        if ciclos_service.tabela_tem_ciclo_id("execucoes_lubrificacao"):
+            ciclo_id = ciclos_service.obter_ciclo_id_para_registro("lubrificacao")
+
+        if ciclo_id:
+            cur.execute(
+                """
+                insert into execucoes_lubrificacao
+                    (equipamento_id, item_id, responsavel_id, nome_item, tipo_produto,
+                     data_execucao, km_execucao, horas_execucao, observacoes, ciclo_id)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::uuid)
+                returning id
+                """,
+                (
+                    dados["equipamento_id"],
+                    dados.get("item_id"),
+                    dados.get("responsavel_id"),
+                    dados.get("nome_item"),
+                    dados.get("tipo_produto"),
+                    dados["data_execucao"],
+                    dados.get("km_execucao", 0),
+                    dados.get("horas_execucao", 0),
+                    dados.get("observacoes"),
+                    ciclo_id,
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                insert into execucoes_lubrificacao
+                    (equipamento_id, item_id, responsavel_id, nome_item, tipo_produto,
+                     data_execucao, km_execucao, horas_execucao, observacoes)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                returning id
+                """,
+                (
+                    dados["equipamento_id"],
+                    dados.get("item_id"),
+                    dados.get("responsavel_id"),
+                    dados.get("nome_item"),
+                    dados.get("tipo_produto"),
+                    dados["data_execucao"],
+                    dados.get("km_execucao", 0),
+                    dados.get("horas_execucao", 0),
+                    dados.get("observacoes"),
+                ),
+            )
         execucao_id = cur.fetchone()[0]
         cur.execute(
             """

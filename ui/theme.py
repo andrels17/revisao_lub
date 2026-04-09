@@ -136,6 +136,12 @@ def apply_global_theme() -> None:
         .entity-list-item small{color:var(--muted);}
         .soft-divider{height:1px;background:linear-gradient(90deg, transparent, rgba(148,163,184,.18), transparent);margin:.65rem 0 .8rem 0;}
 
+        .cycle-meta-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.85rem;margin-bottom:.95rem;}
+        .cycle-meta-card{border:1px solid var(--line);border-radius:18px;padding:.9rem 1rem;background:rgba(12,24,42,.72);box-shadow:0 10px 24px rgba(0,0,0,.14);}
+        .cycle-meta-card .label{font-size:.76rem;color:#8fa4c0;text-transform:uppercase;letter-spacing:.08em;font-weight:800;}
+        .cycle-meta-card .value{font-size:1rem;font-weight:800;margin-top:.25rem;}
+        @media (max-width: 980px){.cycle-meta-grid{grid-template-columns:1fr;}}
+
         .stSidebar {background: linear-gradient(180deg, #07111f 0%, #0a1525 100%);}
         section[data-testid="stSidebar"] {border-right: 1px solid rgba(255,255,255,.05);}
         section[data-testid="stSidebar"] .block-container{

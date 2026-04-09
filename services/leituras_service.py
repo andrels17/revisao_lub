@@ -1,7 +1,7 @@
 from psycopg2 import errors
 
 from database.connection import get_conn
-from services import auditoria_service, validacoes_service
+from services import auditoria_service, ciclos_service, validacoes_service
 
 
 def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
@@ -22,17 +22,34 @@ def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
             "km_atual": contexto.get("km_atual"),
             "horas_atual": contexto.get("horas_atual"),
         }
-        cur.execute(
-            """
-            insert into leituras
+        ciclo_id = None
+        if ciclos_service.tabela_tem_ciclo_id("leituras"):
+            ciclo_id = ciclos_service.obter_ciclo_id_para_registro("geral")
+
+        if ciclo_id:
+            cur.execute(
+                """
+                insert into leituras
+                    (equipamento_id, tipo_leitura, km_valor, horas_valor,
+                     data_leitura, responsavel_id, observacoes, ciclo_id)
+                values (%s, %s, %s, %s, %s, %s, %s, %s::uuid)
+                returning id
+                """,
                 (equipamento_id, tipo_leitura, km_valor, horas_valor,
-                 data_leitura, responsavel_id, observacoes)
-            values (%s, %s, %s, %s, %s, %s, %s)
-            returning id
-            """,
-            (equipamento_id, tipo_leitura, km_valor, horas_valor,
-             data_leitura, responsavel_id, observacoes),
-        )
+                 data_leitura, responsavel_id, observacoes, ciclo_id),
+            )
+        else:
+            cur.execute(
+                """
+                insert into leituras
+                    (equipamento_id, tipo_leitura, km_valor, horas_valor,
+                     data_leitura, responsavel_id, observacoes)
+                values (%s, %s, %s, %s, %s, %s, %s)
+                returning id
+                """,
+                (equipamento_id, tipo_leitura, km_valor, horas_valor,
+                 data_leitura, responsavel_id, observacoes),
+            )
         leitura_id = cur.fetchone()[0]
 
         if tipo_leitura in ("km", "ambos") and km_valor is not None:

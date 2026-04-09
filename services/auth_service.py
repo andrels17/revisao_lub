@@ -51,7 +51,7 @@ ROLE_PAGINAS["admin"] = {
     "🏢 Setores", "🚜 Equipamentos", "👷 Responsáveis",
     "🔗 Vínculos", "📋 Templates",
     "📏 Leituras KM / Horas", "🔧 Controle de Revisões",
-    "🛢️ Controle de Lubrificações",
+    "🛢️ Controle de Lubrificações", "🔄 Ciclos Operacionais",
     "📱 Alertas WhatsApp",
     "📥 Importar Equipamentos", "📈 Relatório de Manutenção",
     "⚙️ Configurações",
@@ -61,7 +61,7 @@ ROLE_PAGINAS["gestor"] = {
     "🏢 Setores", "🚜 Equipamentos", "👷 Responsáveis",
     "🔗 Vínculos", "📋 Templates",
     "📏 Leituras KM / Horas", "🔧 Controle de Revisões",
-    "🛢️ Controle de Lubrificações",
+    "🛢️ Controle de Lubrificações", "🔄 Ciclos Operacionais",
     "📱 Alertas WhatsApp",
     "📈 Relatório de Manutenção",
 }
@@ -70,6 +70,7 @@ ROLE_PAGINAS["operador"] = {
     "📏 Leituras KM / Horas",
     "🔧 Controle de Revisões",
     "🛢️ Controle de Lubrificações",
+    "🔄 Ciclos Operacionais",
 }
 ROLE_PAGINAS["visualizador"] = {
     "📊 Dashboard",
