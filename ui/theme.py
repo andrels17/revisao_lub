@@ -9,251 +9,315 @@ def apply_global_theme() -> None:
     st.markdown(
         """
         <style>
-        :root{
-            --bg:#07111f;
-            --bg-soft:#0b1628;
-            --surface:#0f1b2d;
-            --surface-2:#13233a;
-            --surface-3:#182b45;
-            --surface-4:#1c3352;
-            --line:rgba(148,163,184,.14);
-            --line-strong:rgba(148,163,184,.24);
-            --text:#ecf3ff;
-            --muted:#9db0c7;
-            --muted-2:#7f93ad;
-            --brand:#4f8cff;
-            --brand-2:#2f6df6;
-            --brand-soft:rgba(79,140,255,.14);
-            --success:#22c55e;
-            --warning:#f59e0b;
-            --danger:#ef4444;
-            --shadow:0 16px 40px rgba(0,0,0,.24);
-            --shadow-strong:0 24px 64px rgba(0,0,0,.34);
-            --radius:20px;
+        /* ── Variáveis ──────────────────────────────────────────────── */
+        :root {
+            --bg:        #07111f;
+            --surface:   #0d1929;
+            --surface-2: #111f32;
+            --border:    rgba(148,163,184,.12);
+            --border-md: rgba(148,163,184,.20);
+            --text:      #e8f1ff;
+            --muted:     #8fa4c0;
+            --muted-2:   #6b84a0;
+            --brand:     #4f8cff;
+            --brand-2:   #2f6df6;
+            --success:   #22c55e;
+            --warning:   #f59e0b;
+            --danger:    #ef4444;
+            --radius:    10px;
+            --radius-lg: 14px;
         }
 
+        /* ── Fundo do app ───────────────────────────────────────────── */
         .stApp {
-            background:
-                radial-gradient(circle at top right, rgba(79,140,255,.12), transparent 24%),
-                radial-gradient(circle at top left, rgba(56,189,248,.05), transparent 18%),
-                linear-gradient(180deg, #06101d 0%, #091526 100%);
+            background: #07111f;
             color: var(--text);
         }
-
         [data-testid="stAppViewContainer"] { background: transparent; }
         .block-container {
-            padding-top: 1rem !important;
-            padding-bottom: 1.35rem !important;
-            max-width: 1500px;
-        }
-        .app-shell{padding:.05rem 0 .7rem 0;}
-
-        .app-topbar{
-            display:flex;align-items:center;justify-content:space-between;gap:1rem;
-            padding:.8rem .95rem;border:1px solid var(--line);border-radius:22px;
-            background: linear-gradient(135deg, rgba(10,20,36,.92), rgba(14,29,48,.9));
-            box-shadow:0 14px 32px rgba(0,0,0,.2);color:var(--text);margin-bottom:.75rem;
-            backdrop-filter:blur(10px);
-        }
-        .app-topbar .title-wrap{display:flex;align-items:center;gap:.8rem;min-width:0;}
-        .app-topbar .title-icon{
-            width:2.4rem;height:2.4rem;border-radius:14px;display:flex;align-items:center;justify-content:center;
-            background:linear-gradient(135deg, rgba(79,140,255,.18), rgba(47,109,246,.24));
-            border:1px solid rgba(79,140,255,.18);font-size:1.05rem;box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
-        }
-        .app-topbar .eyebrow{margin:0 0 .12rem 0;color:#8fa4c0;font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;}
-        .app-topbar h1{margin:0;font-size:1.08rem;font-weight:800;letter-spacing:-0.02em;line-height:1.1;}
-        .app-topbar p{margin:.16rem 0 0 0;color:#b6c7df;font-size:.82rem;line-height:1.2;}
-
-        .app-chip,.section-chip{
-            display:inline-block;padding:.24rem .62rem;border-radius:999px;
-            background:rgba(79,140,255,.12);border:1px solid rgba(79,140,255,.18);
-            color:#dcebff;font-size:.73rem;font-weight:700;margin-right:.38rem;
+            padding-top: 1.2rem !important;
+            padding-bottom: 1.5rem !important;
+            max-width: 1440px;
         }
 
-        .page-hero{
-            padding:.95rem 1rem;border:1px solid var(--line);border-radius:22px;
-            background:linear-gradient(135deg, rgba(12,24,42,.94), rgba(18,35,58,.9));
-            box-shadow:0 14px 28px rgba(0,0,0,.18);margin-bottom:.8rem;
+        /* ── Topbar ─────────────────────────────────────────────────── */
+        .app-topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: .65rem .9rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            background: var(--surface);
+            margin-bottom: .9rem;
         }
-        .page-hero h2{margin:.12rem 0 0 0;font-size:1.15rem;font-weight:800;letter-spacing:-0.02em;line-height:1.15;}
-        .page-hero p{margin:.34rem 0 0 0;color:#c0d0e6;font-size:.88rem;line-height:1.4;}
+        .app-topbar .title-wrap { display: flex; align-items: center; gap: .65rem; }
+        .app-topbar .title-icon {
+            width: 2rem; height: 2rem; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(79,140,255,.12);
+            border: 1px solid rgba(79,140,255,.16);
+            font-size: .95rem;
+        }
+        .app-topbar .eyebrow {
+            margin: 0 0 .08rem 0; color: var(--muted-2);
+            font-size: .68rem; font-weight: 700;
+            letter-spacing: .07em; text-transform: uppercase;
+        }
+        .app-topbar h1  { margin: 0; font-size: 1rem; font-weight: 700; }
+        .app-topbar p   { margin: .1rem 0 0; color: var(--muted); font-size: .78rem; }
 
+        /* ── Page hero ──────────────────────────────────────────────── */
+        .page-hero {
+            padding: .8rem .95rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            background: var(--surface);
+            margin-bottom: .85rem;
+        }
+        .page-hero h2   { margin: .08rem 0 0; font-size: 1.1rem; font-weight: 700; }
+        .page-hero p    { margin: .28rem 0 0; color: var(--muted); font-size: .85rem; }
 
-        .page-header-card{
-            border:1px solid var(--line);border-radius:22px;padding:1rem 1.05rem;
-            background:linear-gradient(135deg, rgba(10,20,36,.92), rgba(16,32,52,.9));
-            box-shadow:0 16px 36px rgba(0,0,0,.18);margin-bottom:.85rem;
-        }
-        .page-header-card .eyebrow{display:inline-flex;align-items:center;gap:.35rem;margin-bottom:.45rem;padding:.24rem .62rem;border-radius:999px;
-            background:rgba(79,140,255,.12);border:1px solid rgba(79,140,255,.18);color:#dcebff;font-size:.72rem;font-weight:800;letter-spacing:.02em;}
-        .page-header-card h2{margin:0;font-size:1.18rem;font-weight:800;letter-spacing:-0.02em;line-height:1.15;}
-        .page-header-card p{margin:.42rem 0 0 0;color:#b8c9df;font-size:.89rem;line-height:1.42;max-width:920px;}
-
-        .filters-shell{
-            border:1px solid var(--line);border-radius:20px;padding:.9rem .95rem .2rem .95rem;
-            background:linear-gradient(180deg, rgba(10,19,34,.76), rgba(14,27,44,.78));
-            box-shadow:0 10px 24px rgba(0,0,0,.14);margin:.25rem 0 .9rem 0;
-        }
-        .filters-shell .filters-title{font-size:.78rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#8fa4c0;margin-bottom:.45rem;}
-
-        .status-kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.85rem;margin:.1rem 0 1rem 0;}
-        .status-kpi{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:18px;padding:1rem 1rem .92rem 1rem;
-            background:linear-gradient(180deg, rgba(15,27,45,.98), rgba(18,35,58,.98));box-shadow:var(--shadow);}
-        .status-kpi:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent,#4f8cff);}
-        .status-kpi .label{font-size:.8rem;color:#a9bdd8;font-weight:700;}
-        .status-kpi .value{font-size:1.9rem;line-height:1.05;font-weight:900;margin:.38rem 0 .14rem 0;color:#f4f8ff;}
-        .status-kpi .sub{font-size:.76rem;color:#8fa4c0;}
-        .status-kpi.status-danger{--accent:#ef4444;}
-        .status-kpi.status-warning{--accent:#f59e0b;}
-        .status-kpi.status-success{--accent:#22c55e;}
-        .status-kpi.status-info{--accent:#4f8cff;}
-        .section-caption{color:#9db0c7;font-size:.88rem;margin:.1rem 0 .75rem 0;}
-
-        @media (max-width: 980px){
-            .status-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
-        }
-        @media (max-width: 640px){
-            .status-kpi-grid{grid-template-columns:1fr;}
-        }
-
-        .section-card{
-            border:1px solid var(--line);border-radius:20px;padding:.9rem .95rem .85rem .95rem;
-            background:linear-gradient(180deg, rgba(15,27,45,.98), rgba(18,35,58,.98));
-            box-shadow:var(--shadow);margin-bottom:.95rem;
-        }
-        .section-card h3{margin:.1rem 0 .25rem 0;font-size:1.02rem;}
-        .section-card p{margin:0;color:var(--muted);font-size:.86rem;}
-        .subtle-card{
-            border:1px solid var(--line);border-radius:18px;padding:.9rem 1rem;
-            background:rgba(12,24,42,.72);box-shadow:0 10px 24px rgba(0,0,0,.14);
-        }
-        .entity-list-item{
-            border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:.75rem .85rem;
-            background:rgba(10,19,34,.64);margin-bottom:.55rem;
-        }
-        .entity-list-item strong{display:block;margin-bottom:.1rem;}
-        .entity-list-item small{color:var(--muted);}
-        .soft-divider{height:1px;background:linear-gradient(90deg, transparent, rgba(148,163,184,.18), transparent);margin:.65rem 0 .8rem 0;}
-
-        .stSidebar {background: linear-gradient(180deg, #07111f 0%, #0a1525 100%);}
-        section[data-testid="stSidebar"] {border-right: 1px solid rgba(255,255,255,.05);}
-        section[data-testid="stSidebar"] .block-container{
-            padding-top:.9rem !important;padding-left:.9rem !important;padding-right:.9rem !important;
+        /* ── Chip / badge inline ────────────────────────────────────── */
+        .app-chip, .section-chip {
+            display: inline-block;
+            padding: .18rem .5rem;
+            border-radius: 999px;
+            background: rgba(79,140,255,.10);
+            border: 1px solid rgba(79,140,255,.16);
+            color: #cde0ff;
+            font-size: .70rem; font-weight: 700;
+            margin-right: .3rem;
         }
 
-        .sidebar-user{
-            padding:.95rem 1rem;border-radius:20px;
-            background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.03));
-            border:1px solid rgba(255,255,255,.07);color:var(--text);margin-bottom:.8rem;
-            box-shadow:0 14px 34px rgba(0,0,0,.22);
+        /* ── KPI card ───────────────────────────────────────────────── */
+        .status-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: .65rem;
+            margin: .1rem 0 .9rem;
         }
-        .sidebar-user .name{font-size:1rem;font-weight:800;margin-bottom:.18rem;}
-        .sidebar-user .meta{font-size:.78rem;color:#c0d0e6;}
-        .sidebar-section{
-            font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;
-            color:#8fa4c0;font-weight:800;margin:.9rem .2rem .42rem .2rem;
+        .status-kpi {
+            position: relative; overflow: hidden;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: .85rem .9rem .8rem;
+            background: var(--surface);
+        }
+        .status-kpi::before {
+            content: "";
+            position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+            background: var(--accent, var(--brand));
+            border-radius: 3px 0 0 3px;
+        }
+        .status-kpi .label  { font-size: .76rem; color: var(--muted); font-weight: 600; }
+        .status-kpi .value  { font-size: 1.7rem; font-weight: 800; margin: .28rem 0 .1rem; color: var(--text); line-height: 1; }
+        .status-kpi .sub    { font-size: .72rem; color: var(--muted-2); }
+        .status-kpi.status-danger  { --accent: var(--danger); }
+        .status-kpi.status-warning { --accent: var(--warning); }
+        .status-kpi.status-success { --accent: var(--success); }
+        .status-kpi.status-info    { --accent: var(--brand); }
+
+        @media (max-width: 900px) { .status-kpi-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+        @media (max-width: 520px) { .status-kpi-grid { grid-template-columns: 1fr; } }
+
+        /* ── Section card ───────────────────────────────────────────── */
+        .section-card {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: .85rem .9rem .8rem;
+            background: var(--surface);
+            margin-bottom: .8rem;
+        }
+        .section-card h3 { margin: .05rem 0 .5rem; font-size: .95rem; font-weight: 700; }
+        .section-card p  { margin: 0; color: var(--muted); font-size: .82rem; }
+
+        /* ── Entity / list items ────────────────────────────────────── */
+        .entity-list-item {
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: .65rem .8rem;
+            background: rgba(255,255,255,.025);
+            margin-bottom: .45rem;
+        }
+        .entity-list-item strong { display: block; margin-bottom: .06rem; }
+        .entity-list-item small  { color: var(--muted); }
+
+        /* ── Divider ────────────────────────────────────────────────── */
+        .soft-divider {
+            height: 1px;
+            background: var(--border);
+            margin: .6rem 0 .75rem;
         }
 
-        section[data-testid="stSidebar"] button[kind],
+        /* ── Sidebar ────────────────────────────────────────────────── */
+        .stSidebar { background: #060f1c; }
+        section[data-testid="stSidebar"] { border-right: 1px solid var(--border); }
+        section[data-testid="stSidebar"] .block-container {
+            padding-top: .8rem !important;
+            padding-left: .75rem !important;
+            padding-right: .75rem !important;
+        }
+
+        .sidebar-user {
+            padding: .8rem .85rem;
+            border-radius: var(--radius-lg);
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            margin-bottom: .7rem;
+        }
+        .sidebar-user .name { font-size: .92rem; font-weight: 700; margin-bottom: .12rem; }
+        .sidebar-user .meta { font-size: .73rem; color: var(--muted); }
+
+        .sidebar-section {
+            font-size: .65rem; text-transform: uppercase;
+            letter-spacing: .08em; color: var(--muted-2);
+            font-weight: 700; margin: .8rem .2rem .3rem;
+        }
+
+        /* Botões da sidebar — compactos, sem excessos */
         section[data-testid="stSidebar"] .stButton > button {
-            min-height:2.7rem;border-radius:14px !important;
-            border:1px solid rgba(255,255,255,.07) !important;
-            background:linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.02)) !important;
-            color:#e6eefc !important;font-size:.9rem !important;font-weight:600 !important;
-            box-shadow:none !important;transition:.18s ease;
+            min-height: 2.2rem;
+            border-radius: var(--radius) !important;
+            border: 1px solid transparent !important;
+            background: transparent !important;
+            color: var(--muted) !important;
+            font-size: .83rem !important;
+            font-weight: 500 !important;
+            box-shadow: none !important;
+            text-align: left !important;
+            transition: background .12s, color .12s;
+            padding: 0 .6rem !important;
         }
         section[data-testid="stSidebar"] .stButton > button:hover {
-            transform:translateY(-1px);background:rgba(255,255,255,.07) !important;
-            border-color:rgba(255,255,255,.12) !important;
+            background: rgba(255,255,255,.05) !important;
+            color: var(--text) !important;
+            border-color: var(--border) !important;
         }
         section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
-            background:linear-gradient(135deg, var(--brand), var(--brand-2)) !important;
-            color:white !important;border-color:transparent !important;
-            box-shadow:0 12px 24px rgba(47,109,246,.30) !important;
+            background: rgba(79,140,255,.14) !important;
+            color: #a8caff !important;
+            border-color: rgba(79,140,255,.22) !important;
         }
 
+        /* ── Botões gerais ──────────────────────────────────────────── */
         .stButton > button, .stDownloadButton > button {
-            border-radius:14px !important;min-height:2.6rem;
-            border:1px solid var(--line-strong) !important;
-            box-shadow:0 8px 18px rgba(0,0,0,.18) !important;font-weight:600 !important;
-            background:linear-gradient(180deg, rgba(19,35,58,.98), rgba(15,27,45,.98)) !important;
-            color:var(--text) !important;
+            border-radius: var(--radius) !important;
+            min-height: 2.2rem;
+            border: 1px solid var(--border-md) !important;
+            background: var(--surface-2) !important;
+            color: var(--text) !important;
+            font-weight: 600 !important;
+            font-size: .85rem !important;
+            box-shadow: none !important;
+            transition: border-color .12s, background .12s;
         }
         .stButton > button:hover, .stDownloadButton > button:hover {
-            border-color:rgba(79,140,255,.32) !important;
-            background:linear-gradient(180deg, rgba(22,40,66,.98), rgba(16,29,48,.98)) !important;
+            border-color: rgba(79,140,255,.30) !important;
+            background: rgba(79,140,255,.08) !important;
         }
-        .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"]{
-            background:linear-gradient(135deg, var(--brand), var(--brand-2)) !important;
-            border-color:transparent !important; color:#fff !important;
-            box-shadow:0 16px 32px rgba(47,109,246,.28) !important;
+        .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {
+            background: var(--brand) !important;
+            border-color: transparent !important;
+            color: #fff !important;
+        }
+        .stButton > button[kind="primary"]:hover {
+            background: var(--brand-2) !important;
         }
 
-        .stTextInput input, .stNumberInput input, .stTextArea textarea, .stDateInput input,
-        .stTimeInput input, [data-baseweb="input"] > div {
-            border-radius:14px !important;background:rgba(12,24,42,.92) !important;
-            color:var(--text) !important;border:1px solid var(--line) !important;
+        /* ── Inputs ─────────────────────────────────────────────────── */
+        .stTextInput input, .stNumberInput input, .stTextArea textarea,
+        .stDateInput input, .stTimeInput input {
+            border-radius: var(--radius) !important;
+            background: var(--surface-2) !important;
+            color: var(--text) !important;
+            border: 1px solid var(--border-md) !important;
+            font-size: .87rem !important;
         }
         .stSelectbox div[data-baseweb="select"] > div,
         .stMultiSelect div[data-baseweb="select"] > div {
-            border-radius:14px !important;background:rgba(12,24,42,.92) !important;
-            color:var(--text) !important;border:1px solid var(--line) !important;
+            border-radius: var(--radius) !important;
+            background: var(--surface-2) !important;
+            color: var(--text) !important;
+            border: 1px solid var(--border-md) !important;
+            font-size: .87rem !important;
         }
-        .stCheckbox label, .stRadio label {color: var(--text) !important;}
-        .stForm{
-            border:1px solid var(--line);border-radius:22px;padding:1rem 1rem .7rem 1rem;
-            background:linear-gradient(180deg, rgba(10,19,34,.92), rgba(15,27,45,.92));
-            box-shadow:var(--shadow);
+        .stCheckbox label, .stRadio label { color: var(--text) !important; font-size: .87rem !important; }
+
+        .stForm {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: .9rem .9rem .65rem;
+            background: var(--surface);
         }
 
-        label, .stMarkdown, p, span, div {color:inherit;}
-        h1, h2, h3 {letter-spacing:-0.02em;}
-
+        /* ── Métricas nativas ───────────────────────────────────────── */
         [data-testid="stMetric"] {
-            border:1px solid var(--line);border-radius:18px;padding:.95rem 1rem;
-            background:linear-gradient(180deg, rgba(15,27,45,.98), rgba(18,35,58,.98));
-            box-shadow:var(--shadow);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: .8rem .85rem;
+            background: var(--surface);
         }
-        [data-testid="stMetricLabel"], [data-testid="stMetricDelta"] {color:var(--muted) !important;}
-        [data-testid="stMetricValue"] {color:var(--text) !important;}
+        [data-testid="stMetricLabel"] { color: var(--muted) !important; font-size: .78rem !important; }
+        [data-testid="stMetricValue"] { color: var(--text) !important; font-size: 1.5rem !important; }
+        [data-testid="stMetricDelta"] { color: var(--muted) !important; }
 
+        /* ── DataFrames ─────────────────────────────────────────────── */
         [data-testid="stDataFrame"] {
-            border-radius:18px;overflow:hidden;border:1px solid var(--line);
-            box-shadow:var(--shadow);background:var(--surface);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            border: 1px solid var(--border);
+            background: var(--surface);
         }
         [data-testid="stDataFrame"] [role="columnheader"] {
-            background:linear-gradient(180deg, rgba(24,43,69,.98), rgba(18,35,58,.98)) !important;
-            color:#dbe9ff !important;border-bottom:1px solid rgba(148,163,184,.18) !important;
-            font-weight:700 !important;
+            background: var(--surface-2) !important;
+            color: var(--muted) !important;
+            border-bottom: 1px solid var(--border-md) !important;
+            font-weight: 700 !important;
+            font-size: .80rem !important;
+            text-transform: uppercase;
+            letter-spacing: .04em;
         }
         [data-testid="stDataFrame"] [role="gridcell"] {
-            background:rgba(11,22,40,.96) !important;
-            color:#e8f1ff !important;border-bottom:1px solid rgba(148,163,184,.08) !important;
+            background: var(--surface) !important;
+            color: var(--text) !important;
+            border-bottom: 1px solid var(--border) !important;
+            font-size: .85rem !important;
         }
-        [data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"] {background:rgba(20,36,59,.98) !important;}
-        [data-testid="stDataFrameResizable"] {border-radius:18px !important;}
+        [data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"] {
+            background: var(--surface-2) !important;
+        }
 
-        div[data-testid="stExpander"]{
-            border:1px solid var(--line);border-radius:18px !important;
-            background:linear-gradient(180deg, rgba(15,27,45,.98), rgba(18,35,58,.98));
-            box-shadow:var(--shadow);
+        /* ── Expander ───────────────────────────────────────────────── */
+        div[data-testid="stExpander"] {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg) !important;
+            background: var(--surface);
         }
-        .js-plotly-plot .plotly .main-svg, .js-plotly-plot .plotly .bg {border-radius:18px;}
+
+        /* ── Alertas ────────────────────────────────────────────────── */
         [data-testid="stAlert"] {
-            border-radius:18px !important;border:1px solid var(--line) !important;
-            background:linear-gradient(180deg, rgba(15,27,45,.96), rgba(18,35,58,.96)) !important;
+            border-radius: var(--radius-lg) !important;
+            border: 1px solid var(--border) !important;
+            background: var(--surface) !important;
         }
-        .stTabs [data-baseweb="tab-list"] {gap:.35rem;}
-        .stTabs [data-baseweb="tab"] {border-radius:12px 12px 0 0;background:rgba(255,255,255,.03);}
-        .stCaption {color:var(--muted) !important;}
+
+        /* ── Tabs ───────────────────────────────────────────────────── */
+        .stTabs [data-baseweb="tab-list"] { gap: .25rem; }
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 8px 8px 0 0;
+            background: transparent;
+            font-size: .85rem;
+        }
+
+        /* ── Misc ───────────────────────────────────────────────────── */
+        .stCaption { color: var(--muted-2) !important; font-size: .78rem !important; }
+        label, .stMarkdown, p, span, div { color: inherit; }
+        h1, h2, h3 { letter-spacing: -.018em; }
 
         @media (max-width: 768px) {
-            .block-container {padding-left:.9rem !important;padding-right:.9rem !important;}
-            [data-testid="column"] {min-width:48% !important;}
-            .stDataFrame {font-size:.78rem;}
-            .app-topbar,.page-hero{padding:.78rem .85rem;border-radius:18px;}
-            .app-topbar .title-icon{width:2.15rem;height:2.15rem;border-radius:12px;}
+            .block-container { padding-left: .8rem !important; padding-right: .8rem !important; }
         }
         </style>
         """,
@@ -262,12 +326,7 @@ def apply_global_theme() -> None:
 
 
 def render_sidebar_user(usuario_or_nome, perfil: str | None = None, email: str | None = None) -> None:
-    """Compatível com chamadas antigas e novas.
-
-    Aceita:
-    - render_sidebar_user(usuario_dict, role_label)
-    - render_sidebar_user(nome, perfil, email)
-    """
+    """Compatível com chamadas antigas e novas."""
     if isinstance(usuario_or_nome, dict):
         usuario = usuario_or_nome
         nome = usuario.get("nome") or "Usuário"
@@ -299,12 +358,7 @@ def render_sidebar_user(usuario_or_nome, perfil: str | None = None, email: str |
 
 
 def render_topbar(title_or_usuario, subtitle: str = "") -> None:
-    """Compatível com chamadas antigas e novas.
-
-    Aceita:
-    - render_topbar(titulo, subtitulo)
-    - render_topbar(usuario_dict, pagina_atual)
-    """
+    """Compatível com chamadas antigas e novas."""
     if isinstance(title_or_usuario, dict):
         usuario = title_or_usuario
         title = subtitle or "Dashboard"
