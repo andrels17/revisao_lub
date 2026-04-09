@@ -334,7 +334,8 @@ def render_topbar(title_or_usuario, subtitle: str = "") -> None:
     )
 
 
-def render_page_intro(title: str, description: str, chip: str | None = None) -> None:
+def render_page_intro(title: str, description: str, chip: str | None = None, badge: str | None = None) -> None:
+    chip = chip or badge
     title = html.escape(str(title))
     description = html.escape(str(description))
     chip_html = f"<span class='section-chip'>{html.escape(str(chip))}</span>" if chip else ""
