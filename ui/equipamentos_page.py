@@ -21,88 +21,75 @@ def _inject_css():
         """
         <style>
         /* ── Equipamentos ──────────────────────────────────────────── */
-
-        /* KPI strip */
         .eq-kpi-strip {
             display: grid;
             grid-template-columns: repeat(4, minmax(0,1fr));
-            gap: .6rem;
-            margin-bottom: .75rem;
+            gap: .55rem;
+            margin-bottom: 1rem;
         }
         .eq-kpi {
             border: 1px solid rgba(148,163,184,.12);
-            border-radius: 12px;
-            padding: .75rem .85rem;
+            border-radius: 10px;
+            padding: .65rem .85rem;
             background: #0d1929;
         }
-        .eq-kpi .lbl  { font-size: .73rem; color: #8fa4c0; font-weight: 600; margin-bottom: .2rem; }
-        .eq-kpi .val  { font-size: 1.55rem; font-weight: 800; line-height: 1; color: #e8f1ff; }
-        .eq-kpi .hint { font-size: .68rem; color: #6b84a0; margin-top: .18rem; }
+        .eq-kpi .lbl  { font-size: .70rem; color: #6b84a0; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin-bottom: .22rem; }
+        .eq-kpi .val  { font-size: 1.45rem; font-weight: 700; line-height: 1; color: #e8f1ff; }
+        .eq-kpi .val.ok     { color: #86efac; }
+        .eq-kpi .val.warn   { color: #fcd34d; }
+        .eq-kpi .val.danger { color: #fca5a5; }
 
-        /* Barra de filtros */
-        .eq-filters {
-            border: 1px solid rgba(148,163,184,.12);
-            border-radius: 12px;
-            padding: .7rem .85rem .15rem;
-            background: #0d1929;
-            margin-bottom: .7rem;
-        }
-
-        /* Card de equipamento */
         .eq-card {
             border: 1px solid rgba(148,163,184,.12);
             border-radius: 12px;
-            padding: .8rem .9rem;
+            padding: .8rem 1rem;
             background: #0d1929;
-            margin-bottom: .6rem;
+            margin-bottom: .5rem;
+            transition: border-color .15s;
         }
-        .eq-card-title { font-size: .95rem; font-weight: 700; color: #e8f1ff; margin: 0; }
-        .eq-card-meta  { font-size: .78rem; color: #8fa4c0; margin-top: .12rem; }
-        .eq-card-badges { margin-top: .38rem; }
+        .eq-card:hover { border-color: rgba(148,163,184,.24); }
+        .eq-card-code  { font-size: .70rem; color: #6b84a0; font-weight: 600; letter-spacing: .04em; margin-bottom: .08rem; }
+        .eq-card-title { font-size: .95rem; font-weight: 700; color: #e8f1ff; }
+        .eq-card-meta  { font-size: .78rem; color: #8fa4c0; margin-top: .14rem; }
+        .eq-card-badges { margin-top: .42rem; display: flex; flex-wrap: wrap; gap: .3rem; }
 
-        /* Badges */
+        .eq-score-wrap {
+            position: relative; width: 44px; height: 44px; flex-shrink: 0;
+        }
+        .eq-score-num {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: .65rem; font-weight: 700;
+        }
+
         .eq-b {
             display: inline-block;
-            padding: .15rem .48rem;
+            padding: .14rem .45rem;
             border-radius: 999px;
-            font-size: .70rem; font-weight: 700;
-            margin-right: .28rem;
+            font-size: .69rem; font-weight: 700;
         }
-        .eq-ok      { background: rgba(34,197,94,.12);  color: #86efac; }
-        .eq-warn    { background: rgba(245,158,11,.12); color: #fcd34d; }
-        .eq-danger  { background: rgba(239,68,68,.12);  color: #fca5a5; }
-        .eq-neutral { background: rgba(148,163,184,.10); color: #c8d8f0; }
+        .eq-ok      { background: rgba(34,197,94,.10);  color: #86efac; }
+        .eq-warn    { background: rgba(245,158,11,.10); color: #fcd34d; }
+        .eq-danger  { background: rgba(239,68,68,.10);  color: #fca5a5; }
+        .eq-neutral { background: rgba(148,163,184,.09); color: #94a8c4; }
 
-        /* Linha de campos inline */
-        .eq-fields-row {
-            display: grid;
-            gap: .55rem;
-            margin-top: .65rem;
-            padding-top: .65rem;
-            border-top: 1px solid rgba(148,163,184,.10);
-        }
-
-        /* Painel de detalhe */
         .eq-detalhe {
-            border: 1px solid rgba(148,163,184,.12);
+            border: 1px solid rgba(148,163,184,.18);
             border-radius: 12px;
-            padding: .85rem .9rem;
+            padding: .9rem 1rem;
             background: #0d1929;
             margin-bottom: .75rem;
         }
-        .eq-detalhe-title {
-            font-size: .95rem; font-weight: 700; color: #e8f1ff; margin-bottom: .6rem;
-        }
+        .eq-detalhe-title { font-size: .95rem; font-weight: 700; color: #e8f1ff; margin-bottom: .65rem; }
 
-        /* Info inline KM/Horas */
         .eq-info-box {
-            border: 1px solid rgba(148,163,184,.12);
+            border: 1px solid rgba(148,163,184,.10);
             border-radius: 8px;
-            padding: .5rem .7rem;
-            background: rgba(255,255,255,.025);
+            padding: .45rem .65rem;
+            background: rgba(255,255,255,.02);
             font-size: .82rem; color: #c8d8f0;
         }
-        .eq-info-box strong { display: block; font-size: .68rem; color: #6b84a0; margin-bottom: .12rem; font-weight: 600; }
+        .eq-info-box strong { display: block; font-size: .67rem; color: #6b84a0; margin-bottom: .1rem; font-weight: 600; }
 
         @media (max-width: 900px) {
             .eq-kpi-strip { grid-template-columns: repeat(2,minmax(0,1fr)); }
@@ -113,15 +100,9 @@ def _inject_css():
     )
 
 
-def _kpi(label: str, value, hint: str = ""):
+def _kpi(label: str, value, css_class: str = ""):
     st.markdown(
-        f"""
-        <div class="eq-kpi">
-            <div class="lbl">{label}</div>
-            <div class="val">{value}</div>
-            <div class="hint">{hint}</div>
-        </div>
-        """,
+        f'<div class="eq-kpi"><div class="lbl">{label}</div><div class="val {css_class}">{value}</div></div>',
         unsafe_allow_html=True,
     )
 
@@ -136,7 +117,24 @@ def _badge(saude: str) -> str:
     return f'<span class="{css}">{saude}</span>'
 
 
-def _build_export_df(rows: list[dict]) -> pd.DataFrame:
+def _score_ring(score: int) -> str:
+    radius = 18
+    circumference = 2 * 3.14159 * radius
+    dash = circumference * score / 100
+    color = "#22c55e" if score >= 80 else ("#f59e0b" if score >= 50 else "#ef4444")
+    return (
+        f'<div class="eq-score-wrap">'
+        f'<svg viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg" style="position:absolute;inset:0;width:44px;height:44px">'
+        f'<circle cx="22" cy="22" r="{radius}" fill="none" stroke="rgba(148,163,184,.15)" stroke-width="3.5"/>'
+        f'<circle cx="22" cy="22" r="{radius}" fill="none" stroke="{color}" stroke-width="3.5" '
+        f'stroke-dasharray="{dash:.1f} {circumference:.1f}" stroke-linecap="round" transform="rotate(-90 22 22)"/>'
+        f'</svg>'
+        f'<div class="eq-score-num" style="color:{color}">{score}%</div>'
+        f'</div>'
+    )
+
+
+def _build_export_df(rows):
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame([{
@@ -155,7 +153,7 @@ def _build_export_df(rows: list[dict]) -> pd.DataFrame:
     } for row in rows])
 
 
-def _csv_bytes(df: pd.DataFrame) -> bytes:
+def _csv_bytes(df):
     return df.to_csv(index=False).encode("utf-8-sig")
 
 
@@ -177,22 +175,17 @@ def _filtrar(rows, termo, setores_filtro, status_filtro, tipo_filtro, saude_filt
 
 
 def _render_summary(rows):
-    total    = len(rows)
-    ativos   = sum(1 for r in rows if r.get("ativo"))
-    criticos = sum(1 for r in rows if r.get("saude") == "Crítico")
-    atencao  = sum(1 for r in rows if r.get("saude") == "Atenção")
+    total     = len(rows)
+    ativos    = sum(1 for r in rows if r.get("ativo"))
+    criticos  = sum(1 for r in rows if r.get("saude") == "Crítico")
     sem_plano = sum(1 for r in rows if r.get("saude") == "Sem plano")
 
     st.markdown('<div class="eq-kpi-strip">', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4, gap="small")
-    with c1:
-        _kpi("Equipamentos", total, "Base filtrada")
-    with c2:
-        _kpi("Ativos", ativos, "Disponíveis no sistema")
-    with c3:
-        _kpi("Críticos / atenção", f"{criticos} / {atencao}", "Prioridade operacional")
-    with c4:
-        _kpi("Sem plano", sem_plano, "Sem template vinculado")
+    with c1: _kpi("Total", total)
+    with c2: _kpi("Ativos", ativos, "ok")
+    with c3: _kpi("Críticos", criticos, "danger" if criticos else "")
+    with c4: _kpi("Sem plano", sem_plano, "warn" if sem_plano else "")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -225,120 +218,56 @@ def _responsavel_options():
     return {str(r["id"]): r.get("nome", "-") for r in _responsaveis_ativos()}
 
 
-def _render_inline_row(row: dict, setor_map: dict, responsavel_map: dict):
-    st.markdown('<div class="eq-card">', unsafe_allow_html=True)
+def _render_card(row: dict):
+    venc  = int(row.get("vencidos", 0) or 0)
+    prox  = int(row.get("proximos", 0) or 0)
+    score = int(row.get("score_saude", 0) or 0)
+    ativo = row.get("ativo")
 
-    # ── Cabeçalho do card ──────────────────────────────────────────
-    h_left, h_right = st.columns([5, 1])
-    with h_left:
-        venc = int(row.get("vencidos", 0) or 0)
-        prox = int(row.get("proximos", 0) or 0)
-        score = int(row.get("score_saude", 0) or 0)
+    km  = float(row.get("km_atual") or 0)
+    hrs = float(row.get("horas_atual") or 0)
+    medidor = f"{km:,.0f} km" if km else (f"{hrs:,.0f} h" if hrs else "—")
+
+    badge_saude  = _badge(row.get("saude", "-"))
+    badge_venc   = f'<span class="eq-b {"eq-danger" if venc else "eq-neutral"}">{venc} vencida{"s" if venc != 1 else ""}</span>'
+    badge_prox   = f'<span class="eq-b {"eq-warn" if prox else "eq-neutral"}">{prox} próxima{"s" if prox != 1 else ""}</span>'
+    badge_status = f'<span class="eq-b {"eq-ok" if ativo else "eq-neutral"}">{"Ativo" if ativo else "Inativo"}</span>'
+
+    col_info, col_score, col_btn = st.columns([6, 1, 1], gap="small")
+    with col_info:
         st.markdown(
-            f"""
-            <div class="eq-card-title">{row.get("codigo", "-")} — {row.get("nome", "-")}</div>
-            <div class="eq-card-meta">{row.get("setor_nome", "-")} · {row.get("tipo", "-")} · {row.get("responsavel_principal_nome") or "sem responsável"}</div>
-            <div class="eq-card-badges">
-                {_badge(row.get("saude", "-"))}
-                <span class="eq-b eq-neutral">Score {score}%</span>
-                <span class="eq-b {'eq-danger' if venc else 'eq-neutral'}">{venc} vencido(s)</span>
-                <span class="eq-b {'eq-warn' if prox else 'eq-neutral'}">{prox} próximo(s)</span>
-            </div>
-            """,
+            f'<div class="eq-card-code">{row.get("codigo", "-")}</div>'
+            f'<div class="eq-card-title">{row.get("nome", "-")}</div>'
+            f'<div class="eq-card-meta">{row.get("setor_nome", "-")} · {row.get("tipo", "-")} · {medidor}</div>'
+            f'<div class="eq-card-badges">{badge_saude}{badge_venc}{badge_prox}{badge_status}</div>',
             unsafe_allow_html=True,
         )
-    with h_right:
+    with col_score:
+        st.markdown(_score_ring(score), unsafe_allow_html=True)
+    with col_btn:
         if st.button("Detalhes", key=f"det_{row['id']}", use_container_width=True):
             st.session_state["eq_detalhe_id"] = row["id"]
 
-    # ── Campos de edição ───────────────────────────────────────────
-    st.markdown('<div class="eq-fields-row" style="grid-template-columns:2fr 1.3fr 1.7fr auto auto">', unsafe_allow_html=True)
-    c1, c2, c3, c4, c5 = st.columns([2.2, 1.3, 1.7, .85, .85])
 
-    with c1:
-        nome = st.text_input("Nome", value=row.get("nome", ""), key=f"nome_{row['id']}", label_visibility="collapsed", placeholder="Nome")
-    with c2:
-        tipo = st.selectbox(
-            "Tipo", options=list(TIPOS_EQUIPAMENTO),
-            index=max(0, list(TIPOS_EQUIPAMENTO).index(row.get("tipo"))) if row.get("tipo") in TIPOS_EQUIPAMENTO else 0,
-            key=f"tipo_{row['id']}", label_visibility="collapsed",
-        )
-
-    setor_ids = list(setor_map.keys())
-    setor_labels = [setor_map[k] for k in setor_ids]
-    setor_atual = str(row.get("setor_id") or "")
-    setor_index = setor_ids.index(setor_atual) if setor_atual in setor_ids else 0
-    with c3:
-        setor_idx = st.selectbox(
-            "Setor", options=range(len(setor_ids)), index=setor_index,
-            format_func=lambda i: setor_labels[i],
-            key=f"setor_{row['id']}", label_visibility="collapsed",
-        )
-    with c4:
-        ativo = st.checkbox("Ativo", value=bool(row.get("ativo")), key=f"ativo_{row['id']}")
-    with c5:
-        if st.button("Salvar", key=f"salvar_{row['id']}", use_container_width=True, type="primary"):
-            equipamentos_service.atualizar_inline(
-                row["id"],
-                nome=nome.strip() or row.get("nome"),
-                tipo=tipo,
-                setor_id=setor_ids[setor_idx],
-                ativo=ativo,
-            )
-            st.success(f'{row.get("codigo")} atualizado.')
-            st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # ── Responsável + KM/Horas ─────────────────────────────────────
-    resp_ids = [""] + list(responsavel_map.keys())
-    resp_labels = ["— sem principal —"] + list(responsavel_map.values())
-    resp_atual = str(row.get("responsavel_principal_id") or "")
-    resp_index = resp_ids.index(resp_atual) if resp_atual in resp_ids else 0
-
-    r1, r2, r3, r4 = st.columns([2.6, 1, 1, 1.2])
-    with r1:
-        resp_idx = st.selectbox(
-            "Responsável principal",
-            options=range(len(resp_ids)), index=resp_index,
-            format_func=lambda i: resp_labels[i],
-            key=f"resp_{row['id']}",
-        )
-    with r2:
-        st.markdown(
-            f'<div class="eq-info-box"><strong>KM atual</strong>{float(row.get("km_atual", 0) or 0):.0f}</div>',
-            unsafe_allow_html=True,
-        )
-    with r3:
-        st.markdown(
-            f'<div class="eq-info-box"><strong>Horas</strong>{float(row.get("horas_atual", 0) or 0):.0f}</div>',
-            unsafe_allow_html=True,
-        )
-    with r4:
-        if st.button("Aplicar responsável", key=f"resp_save_{row['id']}"):
-            equipamentos_service.definir_responsavel_principal(row["id"], resp_ids[resp_idx] or None)
-            st.success("Responsável atualizado.")
-            st.rerun()
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-def _render_detalhe():
+def _render_detalhe(setor_map: dict, responsavel_map: dict):
     eq_id = st.session_state.get("eq_detalhe_id")
     if not eq_id:
         return
+
     equipamento = equipamentos_service.obter(eq_id)
     if not equipamento:
         st.warning("Equipamento não encontrado.")
         return
 
     st.markdown('<div class="eq-detalhe">', unsafe_allow_html=True)
-    d_left, d_right = st.columns([5, 1])
-    with d_left:
+
+    hdr_l, hdr_r = st.columns([5, 1])
+    with hdr_l:
         st.markdown(
-            f'<div class="eq-detalhe-title">Painel rápido · {equipamento.get("codigo")} — {equipamento.get("nome")}</div>',
+            f'<div class="eq-detalhe-title">{equipamento.get("codigo")} — {equipamento.get("nome")}</div>',
             unsafe_allow_html=True,
         )
-    with d_right:
+    with hdr_r:
         if st.button("Fechar", key="eq_detalhe_fechar", use_container_width=True):
             st.session_state.pop("eq_detalhe_id", None)
             st.rerun()
@@ -354,12 +283,13 @@ def _render_detalhe():
         pass
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Vencidos", sum(1 for x in rev + lub if x.get("status") == "VENCIDO"))
-    m2.metric("Próximos", sum(1 for x in rev + lub if x.get("status") == "PROXIMO"))
-    m3.metric("Revisões", len(rev))
+    m1.metric("Vencidos",      sum(1 for x in rev + lub if x.get("status") == "VENCIDO"))
+    m2.metric("Próximos",      sum(1 for x in rev + lub if x.get("status") == "PROXIMO"))
+    m3.metric("Revisões",      len(rev))
     m4.metric("Lubrificações", len(lub))
 
-    tab1, tab2 = st.tabs(["Revisões", "Lubrificações"])
+    tab1, tab2, tab3 = st.tabs(["Revisões", "Lubrificações", "Editar"])
+
     with tab1:
         if rev:
             df = pd.DataFrame(rev)[["etapa","tipo_controle","atual","proximo_vencimento","diferenca","status"]].rename(columns={
@@ -370,6 +300,7 @@ def _render_detalhe():
             st.dataframe(df, use_container_width=True, hide_index=True)
         else:
             st.info("Nenhuma revisão encontrada.")
+
     with tab2:
         if lub:
             df = pd.DataFrame(lub)[["item","tipo_controle","atual","vencimento","diferenca","status"]].rename(columns={
@@ -381,18 +312,86 @@ def _render_detalhe():
         else:
             st.info("Nenhuma lubrificação encontrada.")
 
+    with tab3:
+        e1, e2, e3 = st.columns([2.5, 1.5, 1])
+        with e1:
+            nome_edit = st.text_input("Nome", value=equipamento.get("nome", ""), key=f"edit_nome_{eq_id}")
+        with e2:
+            tipos_list = list(TIPOS_EQUIPAMENTO)
+            tipo_edit = st.selectbox(
+                "Tipo", options=tipos_list,
+                index=max(0, tipos_list.index(equipamento.get("tipo"))) if equipamento.get("tipo") in tipos_list else 0,
+                key=f"edit_tipo_{eq_id}",
+            )
+        with e3:
+            ativo_edit = st.checkbox("Ativo", value=bool(equipamento.get("ativo")), key=f"edit_ativo_{eq_id}")
+
+        setor_ids    = list(setor_map.keys())
+        setor_labels = [setor_map[k] for k in setor_ids]
+        setor_atual  = str(equipamento.get("setor_id") or "")
+        setor_index  = setor_ids.index(setor_atual) if setor_atual in setor_ids else 0
+
+        e4, e5 = st.columns([3, 1])
+        with e4:
+            setor_idx = st.selectbox(
+                "Setor", options=range(len(setor_ids)), index=setor_index,
+                format_func=lambda i: setor_labels[i],
+                key=f"edit_setor_{eq_id}",
+            )
+        with e5:
+            st.write("")
+            if st.button("Salvar alterações", key=f"edit_salvar_{eq_id}", use_container_width=True, type="primary"):
+                equipamentos_service.atualizar_inline(
+                    eq_id,
+                    nome=nome_edit.strip() or equipamento.get("nome"),
+                    tipo=tipo_edit,
+                    setor_id=setor_ids[setor_idx],
+                    ativo=ativo_edit,
+                )
+                st.success("Equipamento atualizado.")
+                st.rerun()
+
+        resp_ids    = [""] + list(responsavel_map.keys())
+        resp_labels = ["— sem principal —"] + list(responsavel_map.values())
+        resp_atual  = str(equipamento.get("responsavel_principal_id") or "")
+        resp_index  = resp_ids.index(resp_atual) if resp_atual in resp_ids else 0
+
+        r1, r2, r3, r4 = st.columns([3, 1, 1, 1.2])
+        with r1:
+            resp_idx = st.selectbox(
+                "Responsável principal",
+                options=range(len(resp_ids)), index=resp_index,
+                format_func=lambda i: resp_labels[i],
+                key=f"edit_resp_{eq_id}",
+            )
+        with r2:
+            st.markdown(
+                f'<div class="eq-info-box"><strong>KM atual</strong>{float(equipamento.get("km_atual", 0) or 0):.0f}</div>',
+                unsafe_allow_html=True,
+            )
+        with r3:
+            st.markdown(
+                f'<div class="eq-info-box"><strong>Horas</strong>{float(equipamento.get("horas_atual", 0) or 0):.0f}</div>',
+                unsafe_allow_html=True,
+            )
+        with r4:
+            st.write("")
+            if st.button("Aplicar responsável", key=f"edit_resp_save_{eq_id}"):
+                equipamentos_service.definir_responsavel_principal(eq_id, resp_ids[resp_idx] or None)
+                st.success("Responsável atualizado.")
+                st.rerun()
+
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render():
     _inject_css()
 
-    # ── Cabeçalho ──────────────────────────────────────────────────
     h_left, h_right = st.columns([5, 1])
     with h_left:
         render_page_intro(
             "Equipamentos",
-            "Cadastre, pesquise e gerencie a frota com edição direta.",
+            "Cadastre, pesquise e gerencie a frota.",
             "Cadastros",
         )
     with h_right:
@@ -407,8 +406,7 @@ def render():
         st.info("Nenhum equipamento cadastrado.")
         return
 
-    # ── Filtros ─────────────────────────────────────────────────────
-    st.markdown('<div class="eq-filters">', unsafe_allow_html=True)
+    # ── Filtros ──────────────────────────────────────────────────────
     setores_disp = sorted({r.get("setor_nome") or "-" for r in rows})
     tipos_disp   = ["Todos"] + list(TIPOS_EQUIPAMENTO)
 
@@ -416,26 +414,25 @@ def render():
     with f1:
         termo = st.text_input("Buscar", placeholder="Código, nome, setor ou responsável", label_visibility="collapsed")
     with f2:
-        setores_filtro = st.multiselect("Setor", setores_disp, placeholder="Setor")
+        setores_filtro = st.multiselect("Setor", setores_disp, placeholder="Setor", label_visibility="collapsed")
     with f3:
-        status_filtro = st.selectbox("Status", ["Todos", "Ativos", "Inativos"])
+        status_filtro = st.selectbox("Status", ["Todos", "Ativos", "Inativos"], label_visibility="collapsed")
     with f4:
-        tipo_filtro = st.selectbox("Tipo", tipos_disp)
+        tipo_filtro = st.selectbox("Tipo", tipos_disp, label_visibility="collapsed")
     with f5:
-        saude_filtro = st.selectbox("Saúde", ["Todas", "Crítico", "Atenção", "Saudável", "Sem plano"])
-    st.markdown("</div>", unsafe_allow_html=True)
+        saude_filtro = st.selectbox("Saúde", ["Todas", "Crítico", "Atenção", "Saudável", "Sem plano"], label_visibility="collapsed")
 
     filtrados = _filtrar(rows, termo, setores_filtro, status_filtro, tipo_filtro, saude_filtro)
 
-    # ── KPIs ────────────────────────────────────────────────────────
+    # ── KPIs ─────────────────────────────────────────────────────────
     _render_summary(filtrados)
 
-    # ── Barra de paginação / exportação ────────────────────────────
-    bar1, bar2, bar3 = st.columns([3, 1.2, 1.2], gap="small")
+    # ── Barra de paginação / exportação ─────────────────────────────
+    bar1, bar2, bar3 = st.columns([3, 1, 1.2], gap="small")
     with bar1:
-        st.caption(f"{len(filtrados)} equipamento(s) após filtros")
+        st.caption(f"{len(filtrados)} equipamento(s)")
     with bar2:
-        page_size = st.selectbox("Itens/página", [8, 12, 20, 30], index=1, label_visibility="collapsed")
+        page_size = st.selectbox("Itens/pág", [8, 12, 20, 30], index=1, label_visibility="collapsed")
     with bar3:
         export_df = _build_export_df(filtrados)
         st.download_button(
@@ -451,20 +448,19 @@ def render():
         return
 
     total_pages = max(1, math.ceil(len(filtrados) / page_size))
-    nav1, nav2, nav3 = st.columns([1, 1, 4], gap="small")
-    with nav1:
-        page = st.number_input("Página", min_value=1, max_value=total_pages, value=1, step=1, label_visibility="collapsed")
-    with nav2:
-        criticos = sum(1 for r in filtrados if r.get("saude") == "Crítico")
-        st.metric("Críticos", criticos)
-    with nav3:
-        st.caption("Apenas os itens da página atual são renderizados para manter a tela leve.")
+    if total_pages > 1:
+        nav1, _ = st.columns([1, 5])
+        with nav1:
+            page = st.number_input("Página", min_value=1, max_value=total_pages, value=1, step=1, label_visibility="collapsed")
+    else:
+        page = 1
 
-    # ── Lista de equipamentos ────────────────────────────────────────
     setor_map = _setor_options()
     resp_map  = _responsavel_options()
 
     for row in _slice(filtrados, int(page), int(page_size)):
-        _render_inline_row(row, setor_map, resp_map)
+        st.markdown('<div class="eq-card">', unsafe_allow_html=True)
+        _render_card(row)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    _render_detalhe()
+    _render_detalhe(setor_map, resp_map)
