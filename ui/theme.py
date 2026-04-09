@@ -35,7 +35,7 @@ def apply_global_theme() -> None:
         }
         [data-testid="stAppViewContainer"] { background: transparent; }
         .block-container {
-            padding-top: 1.2rem !important;
+            padding-top: 1.6rem !important;
             padding-bottom: 1.5rem !important;
             max-width: 1440px;
         }
@@ -70,14 +70,22 @@ def apply_global_theme() -> None:
 
         /* ── Page hero ──────────────────────────────────────────────── */
         .page-hero {
-            padding: .8rem .95rem;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            background: var(--surface);
-            margin-bottom: .85rem;
+            margin: .15rem 0 1rem;
         }
-        .page-hero h2   { margin: .08rem 0 0; font-size: 1.1rem; font-weight: 700; }
-        .page-hero p    { margin: .28rem 0 0; color: var(--muted); font-size: .85rem; }
+        .page-hero h2 {
+            margin: .16rem 0 0;
+            font-size: 2rem;
+            line-height: 1.08;
+            font-weight: 800;
+            letter-spacing: -.03em;
+            color: var(--text);
+        }
+        .page-hero p {
+            margin: .42rem 0 0;
+            color: var(--muted);
+            font-size: .92rem;
+            max-width: 900px;
+        }
 
         /* ── Chip / badge inline ────────────────────────────────────── */
         .app-chip, .section-chip {
@@ -87,8 +95,12 @@ def apply_global_theme() -> None:
             background: rgba(79,140,255,.10);
             border: 1px solid rgba(79,140,255,.16);
             color: #cde0ff;
-            font-size: .70rem; font-weight: 700;
+            font-size: .70rem;
+            font-weight: 700;
             margin-right: .3rem;
+        }
+        .page-hero .section-chip {
+            margin-bottom: .2rem;
         }
 
         /* ── KPI card ───────────────────────────────────────────────── */
@@ -393,12 +405,13 @@ def render_page_intro(title: str, description: str, chip: str | None = None, bad
     title = html.escape(str(title))
     description = html.escape(str(description))
     chip_html = f"<span class='section-chip'>{html.escape(str(chip))}</span>" if chip else ""
+    desc_html = f"<p>{description}</p>" if description else ""
     st.markdown(
         f"""
         <div class="page-hero">
             {chip_html}
             <h2>{title}</h2>
-            <p>{description}</p>
+            {desc_html}
         </div>
         """,
         unsafe_allow_html=True,
