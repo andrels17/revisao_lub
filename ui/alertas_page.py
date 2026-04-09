@@ -531,6 +531,156 @@ def _render_queue_card(item: dict):
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+
+
+def _render_envio_lote_assistido(fila: dict, pendencias_rev: list, pendencias_lub: list, mapa_operacionais: dict, mapa_gestao: dict):
+    st.markdown("<div class='section-card'><h3>Envio em lote assistido</h3><p>Selecione itens prontos, agrupe por destinatário e abra cada lote com a mensagem consolidada no WhatsApp.</p></div>", unsafe_allow_html=True)
+
+    fila_revisao = {(_queue_item_key(i)): i for i in fila.get("revisao", [])}
+    fila_lubrificacao = {(_queue_item_key(i)): i for i in fila.get("lubrificacao", [])}
+    candidatos = []
+
+    for payload in pendencias_rev:
+        eqp = payload["eqp"]
+        item = payload["item"]
+        fila_item = fila_revisao.get(f"revisao|{eqp.get('id')}|{_item_titulo(item)}")
+        if not fila_item:
+            continue
+        if fila_item.get("bloqueado_cooldown") or not fila_item.get("tem_operacional"):
+            continue
+        destinatario = _destinatario_principal(eqp, mapa_operacionais, mapa_gestao, preferencia="operacional")
+        if not destinatario or not destinatario.get("telefone"):
+            continue
+        candidatos.append({
+            "tipo": "revisao",
+            "eqp": eqp,
+            "item": item,
+            "fila": fila_item,
+            "destinatario": destinatario,
+            "key": _payload_key("revisao", eqp, item),
+        })
+
+    for payload in pendencias_lub:
+        eqp = payload["eqp"]
+        item = payload["item"]
+        fila_item = fila_lubrificacao.get(f"lubrificacao|{eqp.get('id')}|{_item_titulo(item)}")
+        if not fila_item:
+            continue
+        if fila_item.get("bloqueado_cooldown") or not fila_item.get("tem_operacional"):
+            continue
+        destinatario = _destinatario_principal(eqp, mapa_operacionais, mapa_gestao, preferencia="operacional")
+        if not destinatario or not destinatario.get("telefone"):
+            continue
+        candidatos.append({
+            "tipo": "lubrificacao",
+            "eqp": eqp,
+            "item": item,
+            "fila": fila_item,
+            "destinatario": destinatario,
+            "key": _payload_key("lubrificacao", eqp, item),
+        })
+
+    if not candidatos:
+        st.markdown("<div class='alert-empty'>Ainda não há itens prontos para lote assistido. Ajuste vínculos, telefones ou aguarde o cooldown.</div>", unsafe_allow_html=True)
+        return
+
+    st.markdown("<div class='batch-box'>", unsafe_allow_html=True)
+    top1, top2, top3 = st.columns([1.1, 1.1, 2.2])
+    with top1:
+        tipo_filtro = st.selectbox("Tipo do lote", ["Todos", "revisao", "lubrificacao"], key="batch_tipo")
+    with top2:
+        limite_por_dest = st.number_input("Máx. por destinatário", min_value=1, max_value=20, value=6, step=1, key="batch_limite")
+    with top3:
+        busca = st.text_input("Buscar equipamento / setor / destinatário", key="batch_busca")
+
+    base = candidatos
+    if tipo_filtro != "Todos":
+        base = [c for c in base if c["tipo"] == tipo_filtro]
+    busca_norm = (busca or "").strip().lower()
+    if busca_norm:
+        base = [
+            c for c in base
+            if busca_norm in f"{c['eqp'].get('codigo','')} {c['eqp'].get('nome','')} {c['eqp'].get('setor_nome','')} {c['destinatario'].get('nome','')}".lower()
+        ]
+
+    if not base:
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.info("Nenhum item corresponde aos filtros do lote assistido.")
+        return
+
+    st.caption("Marque os itens que deseja consolidar. O agrupamento é feito por destinatário principal operacional.")
+
+    for candidato in base:
+        eqp = candidato["eqp"]
+        item = candidato["item"]
+        dest = candidato["destinatario"]
+        status = STATUS_LABEL.get(item.get("status"), item.get("status"))
+        falta = float(item.get("diferenca", item.get("falta", 0)) or 0)
+        unidade = "h" if item.get("tipo_controle") == "horas" else "km"
+        label = (
+            f"{eqp.get('codigo', '-')} - {eqp.get('nome', '-')} • {_item_titulo(item)} • "
+            f"{status} • {falta:.0f} {unidade} • {dest.get('nome', '-') }"
+        )
+        st.checkbox(label, value=False, key=f"batch_sel_{candidato['key']}")
+
+    selecionados = [c for c in base if st.session_state.get(f"batch_sel_{c['key']}", False)]
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if not selecionados:
+        st.info("Selecione um ou mais itens para montar os lotes de envio.")
+        return
+
+    grupos = {}
+    for item in selecionados:
+        dest = item["destinatario"]
+        group_key = (dest.get("nome") or "-", dest.get("telefone") or "", dest.get("responsavel_id"), dest.get("papel") or "Operacional")
+        grupos.setdefault(group_key, []).append(item)
+
+    st.caption(f"{len(selecionados)} item(ns) selecionado(s), agrupado(s) em {len(grupos)} destinatário(s).")
+
+    for idx, (group_key, itens) in enumerate(sorted(grupos.items(), key=lambda kv: (kv[0][0], kv[0][1]))):
+        nome, telefone, responsavel_id, papel = group_key
+        itens = sorted(itens, key=lambda x: (x["tipo"], x["eqp"].get("codigo") or "", _item_titulo(x["item"])))[: int(limite_por_dest)]
+        mensagem = _batch_message(nome, itens)
+        link = alertas_service.gerar_link_whatsapp(telefone, mensagem) if telefone else ""
+
+        st.markdown("<div class='batch-recipient'>", unsafe_allow_html=True)
+        st.markdown(f"<div class='title'>{nome}</div><div class='sub'>{papel} • {telefone or 'sem telefone'}</div>", unsafe_allow_html=True)
+        linhas = []
+        for item in itens:
+            eqp = item["eqp"]
+            detalhe = item["item"]
+            status = STATUS_LABEL.get(detalhe.get("status"), detalhe.get("status"))
+            linhas.append(f"• {eqp.get('codigo', '-')} - {_item_titulo(detalhe)} ({status})")
+        st.markdown(f"<div class='batch-lines'>{'<br>'.join(linhas)}</div>", unsafe_allow_html=True)
+
+        c1, c2 = st.columns([1.2, 1])
+        with c1:
+            if link:
+                st.link_button("Abrir lote no WhatsApp", link, use_container_width=True)
+            else:
+                st.button("Sem telefone configurado", disabled=True, use_container_width=True, key=f"no_phone_{idx}")
+        with c2:
+            if st.button("Registrar lote preparado", key=f"registrar_lote_{idx}", use_container_width=True):
+                payload = []
+                for item in itens:
+                    payload.append({
+                        "equipamento_id": item["eqp"].get("id"),
+                        "responsavel_id": responsavel_id,
+                        "tipo_alerta": item["tipo"],
+                        "mensagem": mensagem,
+                    })
+                try:
+                    enviados = alertas_service.registrar_alerta_lote(payload, perfil=(papel or "operacional").lower(), observacao="lote_assistido")
+                    st.success(f"Lote registrado com {enviados} item(ns).")
+                    _refresh_central()
+                except Exception as exc:
+                    st.error(f"Não foi possível registrar o lote: {exc}")
+
+        with st.expander("Prévia da mensagem", expanded=False):
+            st.code(mensagem)
+        st.markdown("</div>", unsafe_allow_html=True)
+
 def _render_fila_sugerida(fila: dict):
     resumo = fila.get("resumo", {})
     cobertura = fila.get("cobertura", {})
