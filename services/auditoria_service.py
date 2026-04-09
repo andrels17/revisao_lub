@@ -4,7 +4,7 @@ import json
 from datetime import date, datetime
 from decimal import Decimal
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from services import auth_service
 
 
@@ -66,7 +66,7 @@ def registrar(acao: str, entidade: str, entidade_id=None, valor_antigo=None, val
         except Exception:
             pass
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def registrar_no_conn(conn, acao: str, entidade: str, entidade_id=None, valor_antigo=None, valor_novo=None):

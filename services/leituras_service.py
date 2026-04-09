@@ -1,6 +1,6 @@
 from psycopg2 import errors
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from services import auditoria_service, validacoes_service
 
 
@@ -66,7 +66,7 @@ def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
         conn.commit()
         return leitura_id
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def listar_por_equipamento(equipamento_id, limite=20):
@@ -127,4 +127,4 @@ def listar_por_equipamento(equipamento_id, limite=20):
             for r in rows
         ]
     finally:
-        conn.close()
+        release_conn(conn)

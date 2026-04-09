@@ -2,7 +2,9 @@ import math
 import re
 from collections import defaultdict
 
-from database.connection import get_conn
+import streamlit as st
+
+from database.connection import get_conn, release_conn
 from services import configuracoes_service
 
 try:
@@ -26,10 +28,10 @@ def _normalizar_numero(valor):
     return float(valor or 0)
 
 
-def _status_por_diferenca(diff):
+def _status_por_diferenca(diff, tolerancia):
     if diff <= 0:
         return "VENCIDO"
-    if diff <= configuracoes_service.get_tolerancia_padrao():
+    if diff <= tolerancia:
         return "PROXIMO"
     return "EM DIA"
 
@@ -132,7 +134,7 @@ def _agrupar_execucoes_por_etapa(exec_rows, tipo_por_equipamento):
     return agrupado
 
 
-def _montar_item_controle(base, execucoes_por_etapa, modo="dashboard"):
+def _montar_item_controle(base, execucoes_por_etapa, tolerancia, modo="dashboard"):
     tipo_controle = (base["tipo_controle"] or "km").lower()
     leitura_atual = _normalizar_numero(base["horas_atual"] if tipo_controle == "horas" else base["km_atual"])
     gatilho = _normalizar_numero(base["gatilho_valor"])
@@ -155,12 +157,12 @@ def _montar_item_controle(base, execucoes_por_etapa, modo="dashboard"):
             proximo_vencimento = inicio_ciclo + ciclo + gatilho
         else:
             diferenca = vencimento_ciclo - leitura_atual
-            status = _status_por_diferenca(diferenca)
+            status = _status_por_diferenca(diferenca, tolerancia)
             proximo_vencimento = vencimento_ciclo
     else:
         proximo_vencimento = inicio_ciclo + ciclo + gatilho if realizado_no_ciclo else vencimento_ciclo
         diferenca = proximo_vencimento - leitura_atual
-        status = _status_por_diferenca(diferenca)
+        status = _status_por_diferenca(diferenca, tolerancia)
 
     item = {
         "equipamento_id": base["equipamento_id"],
@@ -249,22 +251,25 @@ def _construir_controles(modo="dashboard"):
 
         exec_rows = _carregar_execucoes_revisao(cur)
         execucoes = _agrupar_execucoes_por_etapa(exec_rows, tipo_por_equipamento)
+        tolerancia = configuracoes_service.get_tolerancia_padrao()
 
         itens = []
         for base in bases:
             base["ciclo_maximo"] = ciclo_por_template.get(base["template_id"], base["gatilho_valor"])
-            itens.append(_montar_item_controle(base, execucoes.get(base["equipamento_id"], {}), modo=modo))
+            itens.append(_montar_item_controle(base, execucoes.get(base["equipamento_id"], {}), tolerancia, modo=modo))
 
         itens.sort(key=lambda x: (STATUS_ORDEM.get(x["status"], 99), x["diferenca"], x["codigo"], x["etapa"]))
         return itens
     finally:
-        conn.close()
+        release_conn(conn)
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def listar_controle_revisoes():
     return _construir_controles(modo="dashboard")
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def listar_controle_revisoes_por_equipamento():
     agrupado = defaultdict(list)
     for item in listar_controle_revisoes():
@@ -272,6 +277,7 @@ def listar_controle_revisoes_por_equipamento():
     return dict(agrupado)
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def listar_controle_revisoes_painel(equipamento_id=None):
     itens = _construir_controles(modo="painel")
     if equipamento_id is None:

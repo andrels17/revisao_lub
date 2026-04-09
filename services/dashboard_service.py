@@ -5,7 +5,7 @@ import streamlit as st
 from services import equipamentos_service, lubrificacoes_service, revisoes_service
 
 STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2, "REALIZADO": 3}
-TTL_ALERTAS = 60  # segundos
+TTL_ALERTAS = 120  # segundos
 
 
 @st.cache_data(ttl=TTL_ALERTAS, show_spinner="Carregando alertas…")

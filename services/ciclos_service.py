@@ -8,7 +8,7 @@ from typing import Any
 import streamlit as st
 from psycopg2.extras import RealDictCursor
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from services import lubrificacoes_service, revisoes_service
 
 
@@ -55,10 +55,10 @@ def diagnostico_schema() -> dict[str, Any]:
             'tem_ciclo_leituras': ('leituras', 'ciclo_id') in colunas,
         }
     finally:
-        conn.close()
+        release_conn(conn)
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def listar_ciclos(limite: int = 50) -> list[dict[str, Any]]:
     diag = diagnostico_schema()
     if not diag.get('tem_ciclos'):
@@ -87,10 +87,10 @@ def listar_ciclos(limite: int = 50) -> list[dict[str, Any]]:
         )
         return [dict(r) for r in cur.fetchall()]
     finally:
-        conn.close()
+        release_conn(conn)
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def obter_ciclo_aberto(tipo: str | None = None) -> dict[str, Any] | None:
     diag = diagnostico_schema()
     if not diag.get('tem_ciclos'):
@@ -122,7 +122,7 @@ def obter_ciclo_aberto(tipo: str | None = None) -> dict[str, Any] | None:
         row = cur.fetchone()
         return dict(row) if row else None
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def _intervalo_semana_base(ref: dt.date | None = None) -> tuple[dt.date, dt.date]:
@@ -181,7 +181,7 @@ def abrir_ciclo(*, tipo: str, data_inicio: dt.date, data_fim: dt.date, criado_po
         conn.rollback()
         return False, f'Erro ao abrir ciclo: {exc}', None
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def _contar_execucoes(cur, tabela: str, campo_tipo: str | None, ciclo_id: str, tipo_valor: str | None = None) -> int:
@@ -263,7 +263,7 @@ def resumo_ciclo(ciclo_id: str) -> dict[str, Any]:
 
         return resumo
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def fechar_ciclo(ciclo_id: str, fechado_por: str | None = None, observacoes: str | None = None) -> tuple[bool, str]:
@@ -319,7 +319,7 @@ def fechar_ciclo(ciclo_id: str, fechado_por: str | None = None, observacoes: str
         conn.rollback()
         return False, f'Erro ao fechar ciclo: {exc}'
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def reabrir_ciclo(ciclo_id: str, usuario_id: str | None = None) -> tuple[bool, str]:
@@ -348,7 +348,7 @@ Reaberto por ' || %s else '' end
         conn.rollback()
         return False, f'Erro ao reabrir ciclo: {exc}'
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def obter_ciclo_id_para_registro(tipo: str) -> str | None:

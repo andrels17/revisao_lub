@@ -1,5 +1,5 @@
 import re
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from services import auditoria_service, validacoes_service
 
 try:
@@ -132,7 +132,7 @@ def listar_itens_execucao(execucao_id):
             for r in rows
         ]
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 
@@ -220,7 +220,7 @@ def criar_execucao(dados):
         conn.commit()
         return execucao_id
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 
@@ -297,7 +297,7 @@ def listar_revisoes_por_equipamento(equipamento_id, limite=20):
             for r in rows
         ]
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 

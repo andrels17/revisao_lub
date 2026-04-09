@@ -1,4 +1,4 @@
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from services import escopo_service
 
 
@@ -14,7 +14,7 @@ def listar():
         ]
         return escopo_service.filtrar_setores(itens)
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def criar(nome, tipo_nivel="setor", setor_pai_id=None, ativo=True):
@@ -33,4 +33,4 @@ def criar(nome, tipo_nivel="setor", setor_pai_id=None, ativo=True):
         conn.commit()
         return setor_id
     finally:
-        conn.close()
+        release_conn(conn)

@@ -1,6 +1,6 @@
 from psycopg2 import errors
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 
 
 # ── Vínculos por Equipamento (operacional) ───────────────────
@@ -36,7 +36,7 @@ def listar_por_equipamento(equipamento_id):
         conn.rollback()
         return []
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def criar_vinculo_equipamento(equipamento_id, responsavel_id, tipo_vinculo="lubrificador", principal=False):
@@ -58,7 +58,7 @@ def criar_vinculo_equipamento(equipamento_id, responsavel_id, tipo_vinculo="lubr
         conn.commit()
         return vid
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def remover_vinculo_equipamento(vinculo_id):
@@ -71,7 +71,7 @@ def remover_vinculo_equipamento(vinculo_id):
         )
         conn.commit()
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 # ── Vínculos por Setor (gestão) ──────────────────────────────
@@ -107,7 +107,7 @@ def listar_por_setor(setor_id):
         conn.rollback()
         return []
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def criar_vinculo_setor(setor_id, responsavel_id, tipo_responsabilidade="gestor", principal=False):
@@ -129,7 +129,7 @@ def criar_vinculo_setor(setor_id, responsavel_id, tipo_responsabilidade="gestor"
         conn.commit()
         return vid
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def remover_vinculo_setor(vinculo_id):
@@ -142,7 +142,7 @@ def remover_vinculo_setor(vinculo_id):
         )
         conn.commit()
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 # ── Consultas para alertas ───────────────────────────────────
@@ -169,4 +169,4 @@ def responsavel_gestao_setor(setor_id):
         conn.rollback()
         return None
     finally:
-        conn.close()
+        release_conn(conn)

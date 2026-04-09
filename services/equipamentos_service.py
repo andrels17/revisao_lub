@@ -4,7 +4,7 @@ from typing import Any
 
 import streamlit as st
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from services import (
     auditoria_service,
     escopo_service,
@@ -13,15 +13,11 @@ from services import (
 )
 
 
-TTL_EQ = 60
+TTL_EQ = 120
 
 
 def _safe_close(conn) -> None:
-    try:
-        if conn and not conn.closed:
-            conn.close()
-    except Exception:
-        pass
+    release_conn(conn)
 
 
 @st.cache_data(ttl=TTL_EQ, show_spinner=False)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 
 
 class ValidacaoNegocioError(ValueError):
@@ -46,7 +46,7 @@ def obter_equipamento_contexto(equipamento_id) -> dict | None:
             "setor_nome": row[7],
         }
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def validar_leitura(equipamento_id, tipo_leitura: str, km_valor=None, horas_valor=None, permitir_regressao: bool = False):
@@ -98,7 +98,7 @@ def validar_execucao_revisao(equipamento_id, data_execucao, km_execucao=None, ho
         if cur.fetchone():
             raise ValidacaoNegocioError("Já existe uma execução de revisão idêntica para este equipamento.")
     finally:
-        conn.close()
+        release_conn(conn)
     return eqp
 
 
@@ -128,5 +128,5 @@ def validar_execucao_lubrificacao(equipamento_id, item_id, data_execucao, km_exe
         if cur.fetchone():
             raise ValidacaoNegocioError("Já existe uma execução de lubrificação idêntica para este item/equipamento.")
     finally:
-        conn.close()
+        release_conn(conn)
     return eqp

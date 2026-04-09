@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 
 TABLE_NAME = "itens_template_lubrificacao"
 
@@ -37,7 +37,7 @@ def listar():
             for r in rows
         ]
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 
@@ -95,7 +95,7 @@ def listar_com_itens():
                 )
         return list(templates.values())
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 
@@ -111,7 +111,7 @@ def criar(nome, tipo_controle):
         conn.commit()
         return template_id
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 
@@ -151,7 +151,7 @@ def adicionar_item(template_id, nome_item, tipo_produto, intervalo_valor):
         conn.commit()
         return item_id
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 
@@ -170,7 +170,7 @@ def atualizar_template(template_id, nome, tipo_controle):
         )
         conn.commit()
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 
@@ -202,4 +202,4 @@ def atualizar_item(item_id, nome_item, tipo_produto, intervalo_valor):
         )
         conn.commit()
     finally:
-        conn.close()
+        release_conn(conn)

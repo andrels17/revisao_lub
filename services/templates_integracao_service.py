@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from services import equipamentos_service, templates_lubrificacao_service, templates_revisao_service
 
 try:
@@ -36,7 +36,7 @@ create table if not exists public.vinculos_templates_manutencao_etapas (
 def _close(conn) -> None:
     try:
         if conn and not conn.closed:
-            conn.close()
+            release_conn(conn)
     except Exception:
         pass
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from services import auditoria_service, auth_service
 
 
@@ -30,7 +30,7 @@ def garantir_tabela():
         except Exception:
             pass
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def _autor_atual() -> tuple[str | None, str | None]:
@@ -63,7 +63,7 @@ def listar_por_equipamento(equipamento_id: str, limite: int = 50) -> list[dict]:
             pass
         return []
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def criar(equipamento_id: str, comentario: str) -> tuple[bool, str]:
@@ -101,4 +101,4 @@ def criar(equipamento_id: str, comentario: str) -> tuple[bool, str]:
             pass
         return False, f'Erro ao registrar comentário: {exc}'
     finally:
-        conn.close()
+        release_conn(conn)

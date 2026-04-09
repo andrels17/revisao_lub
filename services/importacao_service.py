@@ -2,7 +2,7 @@ import io
 
 import pandas as pd
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from services import auditoria_service, equipamentos_service, setores_service
 
 COLUNAS_OBRIGATORIAS = ["codigo", "nome"]
@@ -306,4 +306,4 @@ def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, preencher_va
             ]
         )
     finally:
-        conn.close()
+        release_conn(conn)

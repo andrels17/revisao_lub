@@ -18,12 +18,12 @@ PLOTLY_COLORS = {
 }
 
 
-@st.cache_data(ttl=45, show_spinner=False)
+@st.cache_data(ttl=90, show_spinner=False)
 def _carregar_base():
     return equipamentos_service.listar(), responsaveis_service.listar()
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=90, show_spinner=False)
 def _carregar_historico(equipamento_id: str, limite: int = 100):
     return leituras_service.listar_por_equipamento(equipamento_id, limite=limite)
 

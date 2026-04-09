@@ -1,4 +1,4 @@
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 
 
 def listar():
@@ -14,7 +14,7 @@ def listar():
             for r in rows
         ]
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def listar_com_etapas():
@@ -49,7 +49,7 @@ def listar_com_etapas():
                 )
         return list(templates.values())
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def criar(nome, tipo_controle, etapas=None):
@@ -72,7 +72,7 @@ def criar(nome, tipo_controle, etapas=None):
         conn.commit()
         return template_id
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def adicionar_etapa(template_id, nome_etapa, gatilho_valor):
@@ -90,7 +90,7 @@ def adicionar_etapa(template_id, nome_etapa, gatilho_valor):
         conn.commit()
         return etapa_id
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 
@@ -109,7 +109,7 @@ def atualizar_template(template_id, nome, tipo_controle):
         )
         conn.commit()
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def atualizar_etapa(etapa_id, nome_etapa, gatilho_valor):
@@ -127,4 +127,4 @@ def atualizar_etapa(etapa_id, nome_etapa, gatilho_valor):
         )
         conn.commit()
     finally:
-        conn.close()
+        release_conn(conn)

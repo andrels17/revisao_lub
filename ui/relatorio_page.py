@@ -7,7 +7,7 @@ import datetime
 import pandas as pd
 import streamlit as st
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from ui.exportacao import botao_exportar_excel
 
 try:
@@ -26,7 +26,7 @@ PLOTLY_COLORS = {
 }
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def _carregar_revisoes(data_ini, data_fim, setor_id=None, equipamento_id=None):
     conn = get_conn()
     cur = conn.cursor()
@@ -78,10 +78,10 @@ def _carregar_revisoes(data_ini, data_fim, setor_id=None, equipamento_id=None):
             ],
         )
     finally:
-        conn.close()
+        release_conn(conn)
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def _carregar_lubrificacoes(data_ini, data_fim, setor_id=None, equipamento_id=None):
     conn = get_conn()
     cur = conn.cursor()
@@ -149,7 +149,7 @@ def _carregar_lubrificacoes(data_ini, data_fim, setor_id=None, equipamento_id=No
             ],
         )
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def _carregar_setores():
@@ -159,7 +159,7 @@ def _carregar_setores():
         cur.execute("select id, nome from setores where ativo = true order by nome")
         return cur.fetchall()
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def _carregar_equipamentos(setor_id=None):
@@ -175,7 +175,7 @@ def _carregar_equipamentos(setor_id=None):
             cur.execute("select id, codigo, nome from equipamentos where ativo = true order by codigo")
         return cur.fetchall()
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def _render_page_header() -> None:

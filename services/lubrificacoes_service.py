@@ -1,13 +1,13 @@
 from collections import defaultdict
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 import psycopg2
 from services import configuracoes_service
 
 
 # ── helpers de status ────────────────────────────────────────────────────────
 
-def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo):
+def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia):
     if intervalo <= 0:
         return "EM DIA", max(0.0, leitura_atual), max(0.0, leitura_atual), 0.0
 
@@ -26,7 +26,7 @@ def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo):
     falta = proximo_vencimento - leitura_atual
     if leitura_atual >= proximo_vencimento:
         return "VENCIDO", inicio_ciclo, proximo_vencimento, falta
-    if falta <= configuracoes_service.get_tolerancia_padrao():
+    if falta <= tolerancia:
         return "PROXIMO", inicio_ciclo, proximo_vencimento, falta
     return "EM DIA", inicio_ciclo, proximo_vencimento, falta
 
@@ -105,12 +105,13 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
 
         STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2, "REALIZADO": 3}
         resultado = defaultdict(list)
+        tolerancia = configuracoes_service.get_tolerancia_padrao()
 
         for eqp_id, km_atual, horas_atual, tipo_controle, item_id, nome_item, tipo_produto, intervalo in rows:
             leitura_atual = float(horas_atual if tipo_controle == "horas" else km_atual)
             ultima = ultimas.get(eqp_id, {}).get(item_id, 0.0)
 
-            status, ref_ciclo, prox_venc, diff = _status_item_ciclo(leitura_atual, ultima, float(intervalo or 0))
+            status, ref_ciclo, prox_venc, diff = _status_item_ciclo(leitura_atual, ultima, float(intervalo or 0), tolerancia)
 
             resultado[eqp_id].append({
                 "item_id":          item_id,
@@ -138,7 +139,7 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
         conn.rollback()
         return {}
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def calcular_proximas_lubrificacoes(equipamento_id):
@@ -207,7 +208,7 @@ def registrar_execucao(dados):
         conn.commit()
         return execucao_id
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 # ── leitura ──────────────────────────────────────────────────────────────────
@@ -246,7 +247,7 @@ def listar_por_equipamento(equipamento_id):
         conn.rollback()
         return []
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def listar_todos():
@@ -289,4 +290,4 @@ def listar_todos():
         conn.rollback()
         return []
     finally:
-        conn.close()
+        release_conn(conn)

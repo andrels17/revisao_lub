@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import streamlit as st
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from services import auth_service
 
 

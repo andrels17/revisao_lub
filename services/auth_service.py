@@ -5,7 +5,7 @@ Todos os IDs são UUID — lidos como str (::text) e escritos com cast ::uuid.
 from __future__ import annotations
 import bcrypt
 import streamlit as st
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 
 ROLE_LABELS = {
     "admin":        "Administrador",

@@ -1,4 +1,4 @@
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 
 
 def listar():
@@ -19,7 +19,7 @@ def listar():
             for r in rows
         ]
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 
@@ -39,4 +39,4 @@ def criar(nome, funcao_principal=None, telefone=None, email=None, ativo=True):
         conn.commit()
         return responsavel_id
     finally:
-        conn.close()
+        release_conn(conn)

@@ -1,7 +1,7 @@
 import datetime
 import urllib.parse
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from services import configuracoes_service
 
 
@@ -95,7 +95,7 @@ def ja_enviado_hoje(equipamento_id, tipo_alerta: str) -> bool:
         )
         return cur.fetchone() is not None
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def alertas_enviados_hoje_batch(equipamento_ids: list) -> dict:
@@ -116,7 +116,7 @@ def alertas_enviados_hoje_batch(equipamento_ids: list) -> dict:
         )
         return {(r[0], r[1]): True for r in cur.fetchall()}
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def ultimos_alertas_batch(equipamento_ids: list) -> dict:
@@ -140,7 +140,7 @@ def ultimos_alertas_batch(equipamento_ids: list) -> dict:
         conn.rollback()
         return {}
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def registrar_alerta(equipamento_id, responsavel_id, tipo_alerta, perfil, mensagem):
@@ -160,7 +160,7 @@ def registrar_alerta(equipamento_id, responsavel_id, tipo_alerta, perfil, mensag
         conn.commit()
         return alerta_id
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def registrar_alerta_lote(itens: list, perfil: str, observacao: str = "envio_em_lote") -> int:
@@ -192,7 +192,7 @@ def registrar_alerta_lote(itens: list, perfil: str, observacao: str = "envio_em_
         conn.rollback()
         raise
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def listar_historico(limite=200, data_inicio=None, data_fim=None, tipo=None, perfil=None):
@@ -243,7 +243,7 @@ def listar_historico(limite=200, data_inicio=None, data_fim=None, tipo=None, per
             for r in rows
         ]
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def listar_historico_por_equipamento(equipamento_id, limite=50):
@@ -279,7 +279,7 @@ def listar_historico_por_equipamento(equipamento_id, limite=50):
         conn.rollback()
         return []
     finally:
-        conn.close()
+        release_conn(conn)
 
 
 def _prioridade_item(status: str, falta: float, tem_operacional: bool, tem_gestao: bool, bloqueado: bool) -> int:

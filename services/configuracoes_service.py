@@ -4,7 +4,7 @@ import streamlit as st
 import psycopg2
 from psycopg2 import OperationalError, InterfaceError
 
-from database.connection import get_conn
+from database.connection import get_conn, release_conn
 from ui import constants as ui_constants
 
 CONFIG_DEFAULTS = {
@@ -29,12 +29,8 @@ def _safe_rollback(conn):
         pass
 
 
-def _safe_close(conn):
-    try:
-        if conn and not conn.closed:
-            conn.close()
-    except Exception:
-        pass
+def _safe_close(conn) -> None:
+    release_conn(conn)
 
 
 def _parse_int(value, default: int) -> int:
