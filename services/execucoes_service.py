@@ -1,3 +1,4 @@
+from collections import defaultdict
 import re
 
 import streamlit as st
@@ -29,25 +30,10 @@ def _formatar_resultado_execucao(km_execucao, horas_execucao):
     return "Realizado"
 
 
-def _itens_execucao_disponiveis(cur) -> bool:
-    try:
-        cur.execute(
-            """
-            select 1
-            from information_schema.tables
-            where table_schema = 'public'
-              and table_name = 'execucao_manutencao_itens'
-            limit 1
-            """
-        )
-        return cur.fetchone() is not None
-    except Exception:
-        return False
-
-
-def _colunas_execucao_itens(cur):
-    if not _itens_execucao_disponiveis(cur):
-        return set()
+@st.cache_data(ttl=600, show_spinner=False)
+def _itens_execucao_schema() -> tuple[str, ...]:
+    conn = get_conn()
+    cur = conn.cursor()
     try:
         cur.execute(
             """
@@ -57,7 +43,24 @@ def _colunas_execucao_itens(cur):
               and table_name = 'execucao_manutencao_itens'
             """
         )
-        return {r[0] for r in cur.fetchall()}
+        return tuple(sorted(r[0] for r in cur.fetchall()))
+    except Exception:
+        return tuple()
+    finally:
+        release_conn(conn)
+
+
+def _itens_execucao_disponiveis(cur) -> bool:
+    try:
+        return bool(_itens_execucao_schema())
+    except Exception:
+        return False
+
+
+def _colunas_execucao_itens(cur):
+    try:
+        cols = _itens_execucao_schema()
+        return set(cols) if cols else set()
     except Exception:
         return set()
 
@@ -100,43 +103,54 @@ def salvar_itens_execucao_no_conn(cur, execucao_id, itens_executados):
         cur.execute(sql, tuple(values))
 
 
+
+
 @st.cache_data(ttl=180, show_spinner=False)
-def listar_itens_execucao(execucao_id):
+def listar_itens_execucao_batch(execucao_ids):
+    execucao_ids = [eid for eid in (execucao_ids or []) if eid]
+    if not execucao_ids:
+        return {}
+
     conn = get_conn()
     cur = conn.cursor()
     try:
         colunas = _colunas_execucao_itens(cur)
         if not colunas:
-            return []
+            return {}
 
-        select_cols = ["id"]
+        select_cols = ["execucao_id", "id"]
         select_cols.append("item_id_referencia" if "item_id_referencia" in colunas else "NULL as item_id_referencia")
         select_cols.append("item_nome" if "item_nome" in colunas else "NULL as item_nome")
         select_cols.append("produto" if "produto" in colunas else "NULL as produto")
         select_cols.append("intervalo_valor" if "intervalo_valor" in colunas else "NULL as intervalo_valor")
         select_cols.append("marcado" if "marcado" in colunas else "TRUE as marcado")
 
+        placeholders = ", ".join(["%s"] * len(execucao_ids))
         sql = f"""
             select {', '.join(select_cols)}
             from execucao_manutencao_itens
-            where execucao_id = %s
-            order by 3 nulls last
+            where execucao_id in ({placeholders})
+            order by execucao_id, 4 nulls last
         """
-        cur.execute(sql, (execucao_id,))
-        rows = cur.fetchall()
-        return [
-            {
-                "id": r[0],
-                "item_id_referencia": r[1],
-                "item_nome": r[2] or "Item",
-                "produto": r[3],
-                "intervalo_valor": float(r[4] or 0),
-                "marcado": bool(r[5]),
-            }
-            for r in rows
-        ]
+        cur.execute(sql, tuple(execucao_ids))
+        agrupado = defaultdict(list)
+        for r in cur.fetchall():
+            agrupado[r[0]].append({
+                "id": r[1],
+                "item_id_referencia": r[2],
+                "item_nome": r[3] or "Item",
+                "produto": r[4],
+                "intervalo_valor": float(r[5] or 0),
+                "marcado": bool(r[6]),
+            })
+        return dict(agrupado)
     finally:
         release_conn(conn)
+
+
+@st.cache_data(ttl=180, show_spinner=False)
+def listar_itens_execucao(execucao_id):
+    return listar_itens_execucao_batch([execucao_id]).get(execucao_id, [])
 
 
 
@@ -224,6 +238,10 @@ def criar_execucao(dados):
         conn.commit()
         cache_service.invalidate_planejamento()
         cache_service.invalidate_execucoes()
+        try:
+            _itens_execucao_schema.clear()
+        except Exception:
+            pass
         return execucao_id
     finally:
         release_conn(conn)
@@ -288,6 +306,7 @@ def listar_revisoes_por_equipamento(equipamento_id, limite=20):
                 return []
 
         rows = cur.fetchall()
+        itens_por_execucao = listar_itens_execucao_batch([r[0] for r in rows])
         return [
             {
                 "id": r[0],
@@ -299,7 +318,7 @@ def listar_revisoes_por_equipamento(equipamento_id, limite=20):
                 "observacoes": r[6] or "",
                 "resultado": _formatar_resultado_execucao(r[2], r[3]),
                 "etapa_referencia": _extrair_etapa(r[6]),
-                "itens_executados": listar_itens_execucao(r[0]),
+                "itens_executados": itens_por_execucao.get(r[0], []),
             }
             for r in rows
         ]

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import streamlit as st
+
 from database.connection import get_conn, release_conn
-from services import equipamentos_service, templates_lubrificacao_service, templates_revisao_service
+from services import cache_service, equipamentos_service, templates_lubrificacao_service, templates_revisao_service
 
 try:
     import psycopg2
@@ -63,6 +65,7 @@ def _id_key(value: Any) -> str | None:
 
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def listar_vinculos() -> list[dict[str, Any]]:
     conn = get_conn()
     cur = conn.cursor()
@@ -150,12 +153,14 @@ def salvar_vinculo(template_revisao_id: Any, template_lubrificacao_id: Any, obse
         )
         vinculo_id = cur.fetchone()[0]
         conn.commit()
+        cache_service.invalidate_templates()
         return vinculo_id
     finally:
         _close(conn)
 
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def listar_overrides_etapas(vinculo_id: Any) -> dict[str, bool]:
     conn = get_conn()
     cur = conn.cursor()
@@ -300,6 +305,7 @@ def analisar_compatibilidade(
 
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def sugerir_vinculos_automaticos() -> list[dict[str, Any]]:
     revisoes = templates_revisao_service.listar_com_etapas()
     lubrificacoes = templates_lubrificacao_service.listar_com_itens()
@@ -354,6 +360,7 @@ def sugerir_vinculos_automaticos() -> list[dict[str, Any]]:
 
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def obter_mapa_vinculos_por_template_revisao() -> dict[str, dict[str, Any]]:
     return {
         key: v
@@ -461,5 +468,6 @@ def atualizar_vinculo(vinculo_id: Any, *, ativo: bool | None = None, observacoes
             tuple(params),
         )
         conn.commit()
+        cache_service.invalidate_templates()
     finally:
         _close(conn)

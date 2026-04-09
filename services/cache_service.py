@@ -22,6 +22,7 @@ def invalidate_planejamento() -> None:
     from services import dashboard_service, equipamentos_service, lubrificacoes_service, revisoes_service
 
     _clear_attr(equipamentos_service, "listar")
+    _clear_attr(equipamentos_service, "obter")
     _clear_attr(equipamentos_service, "listar_responsaveis_principais")
     _clear_attr(equipamentos_service, "carregar_snapshot_equipamentos")
 
@@ -50,3 +51,33 @@ def invalidate_configuracoes() -> None:
     from services import configuracoes_service
 
     _clear_attr(configuracoes_service, "carregar_todas")
+
+
+
+def invalidate_templates() -> None:
+    from services import templates_integracao_service, templates_lubrificacao_service, templates_revisao_service
+
+    _clear_attr(templates_revisao_service, "listar")
+    _clear_attr(templates_revisao_service, "listar_com_etapas")
+
+    _clear_attr(templates_lubrificacao_service, "listar")
+    _clear_attr(templates_lubrificacao_service, "listar_com_itens")
+    _clear_attr(templates_lubrificacao_service, "_get_table_columns_cached")
+
+    _clear_attr(templates_integracao_service, "listar_vinculos")
+    _clear_attr(templates_integracao_service, "listar_overrides_etapas")
+    _clear_attr(templates_integracao_service, "obter_mapa_vinculos_por_template_revisao")
+    _clear_attr(templates_integracao_service, "sugerir_vinculos_automaticos")
+
+
+def invalidate_vinculos() -> None:
+    from services import equipamentos_service, vinculos_service
+
+    _clear_attr(vinculos_service, "listar_por_equipamento")
+    _clear_attr(vinculos_service, "listar_por_setor")
+    _clear_attr(vinculos_service, "responsavel_gestao_setor")
+    _clear_attr(vinculos_service, "mapa_responsaveis_operacionais")
+    _clear_attr(vinculos_service, "mapa_responsaveis_gestao")
+
+    _clear_attr(equipamentos_service, "listar_responsaveis_principais")
+    _clear_attr(equipamentos_service, "carregar_snapshot_equipamentos")

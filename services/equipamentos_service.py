@@ -89,6 +89,7 @@ def buscar(termo: str = "", somente_ativos: bool = False) -> list[dict[str, Any]
     return [item for item in itens if _match(item)]
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def obter(equipamento_id):
     conn = get_conn()
     cur = conn.cursor()

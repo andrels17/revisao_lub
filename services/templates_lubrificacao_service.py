@@ -1,11 +1,38 @@
 from __future__ import annotations
 
+import streamlit as st
+
 from database.connection import get_conn, release_conn
+from services import cache_service
 
 TABLE_NAME = "itens_template_lubrificacao"
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _get_table_columns_cached(table_name: str) -> tuple[str, ...]:
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            select column_name
+            from information_schema.columns
+            where table_schema = 'public' and table_name = %s
+            """,
+            (table_name,),
+        )
+        return tuple(sorted(r[0] for r in cur.fetchall()))
+    finally:
+        release_conn(conn)
+
+
 def _get_table_columns(cur, table_name: str) -> set[str]:
+    try:
+        cached = _get_table_columns_cached(table_name)
+        if cached:
+            return set(cached)
+    except Exception:
+        pass
     cur.execute(
         """
         select column_name
@@ -24,6 +51,7 @@ def _pick_column(columns: set[str], *candidates: str) -> str | None:
     return None
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def listar():
     conn = get_conn()
     cur = conn.cursor()
@@ -41,6 +69,7 @@ def listar():
 
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def listar_com_itens():
     conn = get_conn()
     cur = conn.cursor()
@@ -109,6 +138,7 @@ def criar(nome, tipo_controle):
         )
         template_id = cur.fetchone()[0]
         conn.commit()
+        cache_service.invalidate_templates()
         return template_id
     finally:
         release_conn(conn)
@@ -149,6 +179,7 @@ def adicionar_item(template_id, nome_item, tipo_produto, intervalo_valor):
         )
         item_id = cur.fetchone()[0]
         conn.commit()
+        cache_service.invalidate_templates()
         return item_id
     finally:
         release_conn(conn)
@@ -169,6 +200,7 @@ def atualizar_template(template_id, nome, tipo_controle):
             (nome, tipo_controle, template_id),
         )
         conn.commit()
+        cache_service.invalidate_templates()
     finally:
         release_conn(conn)
 
@@ -201,5 +233,6 @@ def atualizar_item(item_id, nome_item, tipo_produto, intervalo_valor):
             tuple(params),
         )
         conn.commit()
+        cache_service.invalidate_templates()
     finally:
         release_conn(conn)

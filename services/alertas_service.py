@@ -327,11 +327,13 @@ def gerar_fila_sugerida(max_por_tipo=None):
     filas = {"revisao": [], "lubrificacao": []}
     cooldown_horas = max(1, int(configuracoes_service.get_alerta_cooldown_horas()))
     agora = datetime.datetime.now(datetime.timezone.utc)
+    mapa_operacionais = vinculos_service.mapa_responsaveis_operacionais()
+    mapa_gestao = vinculos_service.mapa_responsaveis_gestao()
 
     for eqp_id in ids:
         eqp = eqp_map[eqp_id]
-        responsaveis = vinculos_service.listar_por_equipamento(eqp_id)
-        gestor = vinculos_service.responsavel_gestao_setor(eqp.get("setor_id")) if eqp.get("setor_id") else None
+        responsaveis = mapa_operacionais.get(eqp_id, [])
+        gestor = mapa_gestao.get(eqp.get("setor_id")) if eqp.get("setor_id") else None
 
         for tipo, itens in (("revisao", rev_idx.get(eqp_id, [])), ("lubrificacao", lub_idx.get(eqp_id, []))):
             for item in itens:

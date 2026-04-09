@@ -1,6 +1,10 @@
+import streamlit as st
+
 from database.connection import get_conn, release_conn
+from services import cache_service
 
 
+@st.cache_data(ttl=180, show_spinner=False)
 def listar():
     conn = get_conn()
     cur = conn.cursor()
@@ -22,7 +26,6 @@ def listar():
         release_conn(conn)
 
 
-
 def criar(nome, funcao_principal=None, telefone=None, email=None, ativo=True):
     conn = get_conn()
     cur = conn.cursor()
@@ -37,6 +40,11 @@ def criar(nome, funcao_principal=None, telefone=None, email=None, ativo=True):
         )
         responsavel_id = cur.fetchone()[0]
         conn.commit()
+        try:
+            listar.clear()
+        except Exception:
+            pass
+        cache_service.invalidate_vinculos()
         return responsavel_id
     finally:
         release_conn(conn)

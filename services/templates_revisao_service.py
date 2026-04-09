@@ -1,6 +1,10 @@
+import streamlit as st
+
 from database.connection import get_conn, release_conn
+from services import cache_service
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def listar():
     conn = get_conn()
     cur = conn.cursor()
@@ -17,6 +21,7 @@ def listar():
         release_conn(conn)
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def listar_com_etapas():
     conn = get_conn()
     cur = conn.cursor()
@@ -70,6 +75,7 @@ def criar(nome, tipo_controle, etapas=None):
                 (template_id, etapa["nome_etapa"], etapa["gatilho_valor"]),
             )
         conn.commit()
+        cache_service.invalidate_templates()
         return template_id
     finally:
         release_conn(conn)
@@ -88,6 +94,7 @@ def adicionar_etapa(template_id, nome_etapa, gatilho_valor):
         )
         etapa_id = cur.fetchone()[0]
         conn.commit()
+        cache_service.invalidate_templates()
         return etapa_id
     finally:
         release_conn(conn)
@@ -108,6 +115,7 @@ def atualizar_template(template_id, nome, tipo_controle):
             (nome, tipo_controle, template_id),
         )
         conn.commit()
+        cache_service.invalidate_templates()
     finally:
         release_conn(conn)
 
@@ -126,5 +134,6 @@ def atualizar_etapa(etapa_id, nome_etapa, gatilho_valor):
             (nome_etapa, gatilho_valor, etapa_id),
         )
         conn.commit()
+        cache_service.invalidate_templates()
     finally:
         release_conn(conn)
