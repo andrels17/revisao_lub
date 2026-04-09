@@ -102,7 +102,7 @@ for secao, paginas in SECOES.items():
 paginas_map = {nome: mod for sec in secoes_filtradas.values() for nome, mod in sec.items()}
 
 with st.sidebar:
-    render_sidebar_user(usuario, role_label)
+    render_sidebar_user(usuario.get("nome"), role_label, usuario.get("email"))
 
     if st.button("🚪 Sair", use_container_width=True):
         auth_service.logout()
@@ -135,7 +135,7 @@ pagina_atual = st.session_state.get("pagina_atual", "")
 if not pagina_atual or pagina_atual not in paginas_map:
     st.warning("Selecione uma página no menu lateral.")
 else:
-    render_topbar(usuario, pagina_atual)
+    render_topbar(pagina_atual, f"{usuario.get('nome') or 'Usuário'} · {role_label}")
     try:
         paginas_map[pagina_atual].render()
     except Exception as exc:

@@ -5,6 +5,7 @@ import streamlit as st
 
 from ui.constants  import STATUS_LABEL, STATUS_ORDEM
 from ui.exportacao import botao_exportar_excel
+from ui.theme import render_page_intro
 from services import (
     equipamentos_service,
     lubrificacoes_service,

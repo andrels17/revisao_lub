@@ -5,6 +5,7 @@ import streamlit as st
 
 from ui.constants  import STATUS_LABEL, STATUS_ORDEM
 from ui.exportacao import botao_exportar_excel
+from ui.theme import render_page_intro
 
 from services import (
     equipamentos_service,
@@ -191,13 +192,12 @@ def _card_pendencia(item, idx):
 # ── página principal ─────────────────────────────────────────────────────────
 
 def render():
-    col_t, col_b = st.columns([5, 1])
+    col_t, col_b = st.columns([6, 1], vertical_alignment="bottom")
     with col_t:
         render_page_intro("Controle de revisões", "Acompanhe pendências e registre execuções com uma interface mais organizada e padronizada.", "Operação")
         st.caption("Acompanhe o ciclo de revisões de cada equipamento e registre execuções diretamente desta página.")
     with col_b:
-        st.write("")
-        if st.button("🔄 Atualizar"):
+        if st.button("🔄 Atualizar", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
 

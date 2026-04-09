@@ -5,6 +5,7 @@ import streamlit as st
 
 from services import equipamentos_service, responsaveis_service, leituras_service
 from ui.exportacao import botao_exportar_excel
+from ui.theme import render_page_intro
 
 
 def _fmt_eqp(e):

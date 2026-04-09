@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+
 import streamlit as st
 
 
@@ -44,16 +46,24 @@ def apply_global_theme() -> None:
             padding-bottom: 1.35rem !important;
             max-width: 1500px;
         }
-        .app-shell{padding:.15rem 0 .85rem 0;}
+        .app-shell{padding:.05rem 0 .7rem 0;}
 
         .app-topbar{
             display:flex;align-items:center;justify-content:space-between;gap:1rem;
-            padding:1rem 1.1rem;border:1px solid var(--line);border-radius:24px;
-            background: linear-gradient(135deg, rgba(12,24,42,.96), rgba(18,35,58,.94));
-            box-shadow:var(--shadow-strong);color:var(--text);margin-bottom:.95rem;
+            padding:.8rem .95rem;border:1px solid var(--line);border-radius:22px;
+            background: linear-gradient(135deg, rgba(10,20,36,.92), rgba(14,29,48,.9));
+            box-shadow:0 14px 32px rgba(0,0,0,.2);color:var(--text);margin-bottom:.75rem;
+            backdrop-filter:blur(10px);
         }
-        .app-topbar h1{margin:0;font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;}
-        .app-topbar p{margin:.22rem 0 0 0;color:#c0d0e6;font-size:.9rem;}
+        .app-topbar .title-wrap{display:flex;align-items:center;gap:.8rem;min-width:0;}
+        .app-topbar .title-icon{
+            width:2.4rem;height:2.4rem;border-radius:14px;display:flex;align-items:center;justify-content:center;
+            background:linear-gradient(135deg, rgba(79,140,255,.18), rgba(47,109,246,.24));
+            border:1px solid rgba(79,140,255,.18);font-size:1.05rem;box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+        }
+        .app-topbar .eyebrow{margin:0 0 .12rem 0;color:#8fa4c0;font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;}
+        .app-topbar h1{margin:0;font-size:1.08rem;font-weight:800;letter-spacing:-0.02em;line-height:1.1;}
+        .app-topbar p{margin:.16rem 0 0 0;color:#b6c7df;font-size:.82rem;line-height:1.2;}
 
         .app-chip,.section-chip{
             display:inline-block;padding:.24rem .62rem;border-radius:999px;
@@ -62,15 +72,15 @@ def apply_global_theme() -> None:
         }
 
         .page-hero{
-            padding:1.1rem 1.15rem;border:1px solid var(--line);border-radius:24px;
-            background:linear-gradient(135deg, rgba(12,24,42,.96), rgba(18,35,58,.94));
-            box-shadow:var(--shadow);margin-bottom:1rem;
+            padding:.95rem 1rem;border:1px solid var(--line);border-radius:22px;
+            background:linear-gradient(135deg, rgba(12,24,42,.94), rgba(18,35,58,.9));
+            box-shadow:0 14px 28px rgba(0,0,0,.18);margin-bottom:.8rem;
         }
-        .page-hero h2{margin:0;font-size:1.3rem;font-weight:800;letter-spacing:-0.02em;}
-        .page-hero p{margin:.42rem 0 0 0;color:#c0d0e6;font-size:.92rem;}
+        .page-hero h2{margin:.12rem 0 0 0;font-size:1.15rem;font-weight:800;letter-spacing:-0.02em;line-height:1.15;}
+        .page-hero p{margin:.34rem 0 0 0;color:#c0d0e6;font-size:.88rem;line-height:1.4;}
 
         .section-card{
-            border:1px solid var(--line);border-radius:22px;padding:1rem 1rem .95rem 1rem;
+            border:1px solid var(--line);border-radius:20px;padding:.9rem .95rem .85rem .95rem;
             background:linear-gradient(180deg, rgba(15,27,45,.98), rgba(18,35,58,.98));
             box-shadow:var(--shadow);margin-bottom:.95rem;
         }
@@ -204,7 +214,8 @@ def apply_global_theme() -> None:
             .block-container {padding-left:.9rem !important;padding-right:.9rem !important;}
             [data-testid="column"] {min-width:48% !important;}
             .stDataFrame {font-size:.78rem;}
-            .app-topbar,.page-hero{padding:.9rem 1rem;border-radius:20px;}
+            .app-topbar,.page-hero{padding:.78rem .85rem;border-radius:18px;}
+            .app-topbar .title-icon{width:2.15rem;height:2.15rem;border-radius:12px;}
         }
         </style>
         """,
@@ -228,6 +239,10 @@ def render_sidebar_user(usuario_or_nome, perfil: str | None = None, email: str |
         nome = str(usuario_or_nome or "Usuário")
         email_final = email
         perfil_final = perfil or "Usuário"
+
+    nome = html.escape(str(nome))
+    perfil_final = html.escape(str(perfil_final))
+    email_final = html.escape(str(email_final)) if email_final else ""
 
     email_html = (
         f"<div class='meta'>{perfil_final} · {email_final}</div>"
@@ -261,13 +276,19 @@ def render_topbar(title_or_usuario, subtitle: str = "") -> None:
     else:
         title = str(title_or_usuario or "")
 
+    title = html.escape(title)
+    subtitle = html.escape(subtitle) if subtitle else ""
     subt_html = f"<p>{subtitle}</p>" if subtitle else ""
     st.markdown(
         f"""
         <div class="app-topbar">
-            <div>
-                <h1>{title}</h1>
-                {subt_html}
+            <div class="title-wrap">
+                <div class="title-icon">🧭</div>
+                <div>
+                    <div class="eyebrow">Área atual</div>
+                    <h1>{title}</h1>
+                    {subt_html}
+                </div>
             </div>
         </div>
         """,
@@ -276,7 +297,9 @@ def render_topbar(title_or_usuario, subtitle: str = "") -> None:
 
 
 def render_page_intro(title: str, description: str, chip: str | None = None) -> None:
-    chip_html = f"<span class='section-chip'>{chip}</span>" if chip else ""
+    title = html.escape(str(title))
+    description = html.escape(str(description))
+    chip_html = f"<span class='section-chip'>{html.escape(str(chip))}</span>" if chip else ""
     st.markdown(
         f"""
         <div class="page-hero">
