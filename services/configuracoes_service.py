@@ -5,6 +5,7 @@ import psycopg2
 from psycopg2 import OperationalError, InterfaceError
 
 from database.connection import get_conn, release_conn
+from services import cache_service
 from ui import constants as ui_constants
 
 CONFIG_DEFAULTS = {
@@ -97,6 +98,7 @@ def garantir_tabela() -> bool:
 # =========================
 # CARREGAR CONFIG (CORRIGIDO)
 # =========================
+@st.cache_data(ttl=300, show_spinner=False)
 def carregar_todas() -> dict:
     tabela_ok = garantir_tabela()
     if not tabela_ok:
@@ -176,6 +178,7 @@ def salvar(configs: dict):
     finally:
         _safe_close(conn)
 
+    cache_service.invalidate_configuracoes()
     aplicar_no_session_state()
 
 
@@ -203,6 +206,7 @@ def resetar():
     finally:
         _safe_close(conn)
 
+    cache_service.invalidate_configuracoes()
     aplicar_no_session_state()
 
 

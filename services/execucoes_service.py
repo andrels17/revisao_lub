@@ -1,6 +1,9 @@
 import re
+
+import streamlit as st
+
 from database.connection import get_conn, release_conn
-from services import auditoria_service, validacoes_service
+from services import auditoria_service, cache_service, validacoes_service
 
 try:
     import psycopg2
@@ -97,6 +100,7 @@ def salvar_itens_execucao_no_conn(cur, execucao_id, itens_executados):
         cur.execute(sql, tuple(values))
 
 
+@st.cache_data(ttl=180, show_spinner=False)
 def listar_itens_execucao(execucao_id):
     conn = get_conn()
     cur = conn.cursor()
@@ -218,12 +222,15 @@ def criar_execucao(dados):
         )
 
         conn.commit()
+        cache_service.invalidate_planejamento()
+        cache_service.invalidate_execucoes()
         return execucao_id
     finally:
         release_conn(conn)
 
 
 
+@st.cache_data(ttl=90, show_spinner=False)
 def listar_revisoes_por_equipamento(equipamento_id, limite=20):
     conn = get_conn()
     cur = conn.cursor()
@@ -301,6 +308,7 @@ def listar_revisoes_por_equipamento(equipamento_id, limite=20):
 
 
 
+@st.cache_data(ttl=90, show_spinner=False)
 def resumo_revisoes_por_equipamento(equipamento_id):
     historico = listar_revisoes_por_equipamento(equipamento_id, limite=200)
     if not historico:

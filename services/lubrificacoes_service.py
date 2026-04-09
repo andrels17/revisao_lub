@@ -1,8 +1,10 @@
 from collections import defaultdict
 
-from database.connection import get_conn, release_conn
+import streamlit as st
 import psycopg2
-from services import configuracoes_service
+
+from database.connection import get_conn, release_conn
+from services import cache_service, configuracoes_service
 
 
 # ── helpers de status ────────────────────────────────────────────────────────
@@ -64,6 +66,7 @@ def _carregar_ultimas_execucoes_batch(cur, equipamento_ids):
     return resultado
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def calcular_proximas_lubrificacoes_batch(equipamento_ids):
     """
     Calcula lubrificações para VÁRIOS equipamentos de uma só vez.
@@ -206,6 +209,7 @@ def registrar_execucao(dados):
             valor_novo=dados,
         )
         conn.commit()
+        cache_service.invalidate_planejamento()
         return execucao_id
     finally:
         release_conn(conn)
@@ -213,6 +217,7 @@ def registrar_execucao(dados):
 
 # ── leitura ──────────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=90, show_spinner=False)
 def listar_por_equipamento(equipamento_id):
     conn = get_conn()
     cur  = conn.cursor()
@@ -250,6 +255,7 @@ def listar_por_equipamento(equipamento_id):
         release_conn(conn)
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def listar_todos():
     conn = get_conn()
     cur  = conn.cursor()

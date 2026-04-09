@@ -9,6 +9,7 @@ from ui.exportacao import botao_exportar_excel
 
 from services import (
     equipamentos_service,
+    cache_service,
     execucoes_service,
     responsaveis_service,
     revisoes_service,
@@ -419,7 +420,8 @@ def _form_registrar(item, key_suffix, integracao=None):
             })
             if hasattr(revisoes_service, "listar_controle_revisoes"):
                 try:
-                    st.cache_data.clear()
+                    cache_service.invalidate_planejamento()
+                    cache_service.invalidate_execucoes()
                 except Exception:
                     pass
             st.success("Revisão registrada com sucesso!")
@@ -518,7 +520,8 @@ def render():
     with head_r:
         st.markdown("<div style='height:.35rem'></div>", unsafe_allow_html=True)
         if st.button("Atualizar", use_container_width=True):
-            st.cache_data.clear()
+            cache_service.invalidate_planejamento()
+            cache_service.invalidate_execucoes()
             st.rerun()
 
     dados = revisoes_service.listar_controle_revisoes()

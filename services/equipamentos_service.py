@@ -7,6 +7,7 @@ import streamlit as st
 from database.connection import get_conn, release_conn
 from services import (
     auditoria_service,
+    cache_service,
     escopo_service,
     lubrificacoes_service,
     revisoes_service,
@@ -400,18 +401,7 @@ def definir_responsavel_principal(equipamento_id, responsavel_id):
 
 
 def limpar_cache() -> None:
-    try:
-        listar.clear()
-    except Exception:
-        pass
-    try:
-        listar_responsaveis_principais.clear()
-    except Exception:
-        pass
-    try:
-        carregar_snapshot_equipamentos.clear()
-    except Exception:
-        pass
+    cache_service.invalidate_planejamento()
 
 
 def aplicar_templates_em_lote(equipamento_ids, template_revisao_id=None, template_lubrificacao_id=None):
