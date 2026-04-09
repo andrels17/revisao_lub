@@ -416,3 +416,40 @@ def limpar_cache() -> None:
         carregar_snapshot_equipamentos.clear()
     except Exception:
         pass
+
+
+def aplicar_templates_em_lote(equipamento_ids, template_revisao_id=None, template_lubrificacao_id=None):
+    ids = [eid for eid in (equipamento_ids or []) if eid]
+    if not ids:
+        return 0
+
+    set_parts = []
+    params = []
+    if template_revisao_id is not None:
+        set_parts.append("template_revisao_id = %s")
+        params.append(template_revisao_id)
+    if template_lubrificacao_id is not None:
+        set_parts.append("template_lubrificacao_id = %s")
+        params.append(template_lubrificacao_id)
+    if not set_parts:
+        return 0
+
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        placeholders = ",".join(["%s"] * len(ids))
+        params.extend(ids)
+        cur.execute(
+            f"""
+            update equipamentos
+               set {', '.join(set_parts)}
+             where id in ({placeholders})
+            """,
+            tuple(params),
+        )
+        updated = cur.rowcount
+        conn.commit()
+        limpar_cache()
+        return updated
+    finally:
+        _safe_close(conn)

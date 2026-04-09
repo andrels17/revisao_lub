@@ -91,3 +91,40 @@ def adicionar_etapa(template_id, nome_etapa, gatilho_valor):
         return etapa_id
     finally:
         conn.close()
+
+
+
+def atualizar_template(template_id, nome, tipo_controle):
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            update templates_revisao
+               set nome = %s,
+                   tipo_controle = %s
+             where id = %s
+            """,
+            (nome, tipo_controle, template_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def atualizar_etapa(etapa_id, nome_etapa, gatilho_valor):
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            update etapas_template_revisao
+               set nome_etapa = %s,
+                   gatilho_valor = %s
+             where id = %s
+            """,
+            (nome_etapa, gatilho_valor, etapa_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()

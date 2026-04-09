@@ -68,6 +68,7 @@ def listar_vinculos() -> list[dict[str, Any]]:
                 tl.nome,
                 tl.tipo_controle,
                 v.observacoes,
+                coalesce(v.ativo, true) as ativo,
                 v.created_at,
                 count(e.id) filter (
                     where e.template_revisao_id = tr.id
@@ -79,7 +80,7 @@ def listar_vinculos() -> list[dict[str, Any]]:
             join templates_lubrificacao tl on tl.id = v.template_lubrificacao_id
             left join equipamentos e on e.template_revisao_id = tr.id and e.template_lubrificacao_id = tl.id
             where coalesce(v.ativo, true) = true
-            group by v.id, tr.id, tr.nome, tr.tipo_controle, tl.id, tl.nome, tl.tipo_controle, v.observacoes, v.created_at
+            group by v.id, tr.id, tr.nome, tr.tipo_controle, tl.id, tl.nome, tl.tipo_controle, v.observacoes, v.ativo, v.created_at
             order by tr.nome, tl.nome
             """
         )
@@ -93,8 +94,9 @@ def listar_vinculos() -> list[dict[str, Any]]:
                 "template_lubrificacao_id": r[4],
                 "template_lubrificacao_nome": r[5],
                 "observacoes": r[7] or "",
-                "created_at": r[8],
-                "equipamentos_vinculados": int(r[9] or 0),
+                "ativo": bool(r[8]),
+                "created_at": r[9],
+                "equipamentos_vinculados": int(r[10] or 0),
             }
             for r in rows
         ]
@@ -320,3 +322,28 @@ def obter_integracao_automatica_por_item(item: dict[str, Any], mapa_vinculos: di
         "itens_acionados": linha.get("itens_acionados") or "—",
         "qtd_itens": int(linha.get("qtd_itens") or 0),
     }
+
+
+
+def atualizar_vinculo(vinculo_id: Any, *, ativo: bool | None = None, observacoes: str | None = None) -> None:
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        campos = []
+        params = []
+        if ativo is not None:
+            campos.append("ativo = %s")
+            params.append(bool(ativo))
+        if observacoes is not None:
+            campos.append("observacoes = %s")
+            params.append(observacoes)
+        if not campos:
+            return
+        params.append(vinculo_id)
+        cur.execute(
+            f"update vinculos_templates_manutencao set {', '.join(campos)} where id = %s",
+            tuple(params),
+        )
+        conn.commit()
+    finally:
+        _close(conn)
