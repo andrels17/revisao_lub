@@ -5,7 +5,8 @@ import streamlit as st
 
 from ui.constants  import STATUS_LABEL, STATUS_ORDEM
 from ui.exportacao import botao_exportar_excel
-from ui.theme import render_page_intro
+import html
+
 from services import (
     equipamentos_service,
     lubrificacoes_service,
@@ -21,6 +22,34 @@ def _fmt_eqp(e):
 
 def _fmt_unidade(tipo_controle):
     return "h" if tipo_controle == "horas" else "km"
+
+
+def _render_page_header() -> None:
+    st.markdown(
+        """
+        <div class="page-header-card">
+            <div class="eyebrow">🛢️ Operação</div>
+            <h2>Controle de lubrificações</h2>
+            <p>Priorize itens críticos, acompanhe o ciclo por equipamento e registre execuções com uma leitura mais limpa e objetiva.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_kpi_cards(contagem: dict[str, int]) -> None:
+    cards = [
+        ("status-danger", "🔴 Vencidos", contagem.get("VENCIDO", 0), "Trocas urgentes"),
+        ("status-warning", "🟡 Próximos", contagem.get("PROXIMO", 0), "Janela de atenção"),
+        ("status-success", "🟢 Em dia", contagem.get("EM DIA", 0), "Dentro do ciclo"),
+        ("status-info", "✅ Realizados", contagem.get("REALIZADO", 0), "Execuções registradas"),
+    ]
+    html_cards = []
+    for css, label, value, sub in cards:
+        html_cards.append(
+            f"<div class='status-kpi {css}'><div class='label'>{html.escape(str(label))}</div><div class='value'>{int(value)}</div><div class='sub'>{html.escape(str(sub))}</div></div>"
+        )
+    st.markdown(f"<div class='status-kpi-grid'>{''.join(html_cards)}</div>", unsafe_allow_html=True)
 
 
 # ── batch de pendências (evita N+1) ──────────────────────────────────────────
@@ -149,42 +178,42 @@ def _form_rapido(eqp, item, key_suffix):
 # ── aba de pendências com cards ───────────────────────────────────────────────
 
 def _render_pendencias():
-    with st.spinner("Carregando pendências…"):
-        pendencias, _ = _carregar_pendencias_batch()
-
+    pendencias, _ = _carregar_pendencias_batch()
     if not pendencias:
-        st.info("Nenhuma lubrificação configurada. Vincule um template de lubrificação aos equipamentos.")
+        st.success("Nenhuma lubrificação pendente no momento.")
         return
 
-    # KPIs rápidos
-    from collections import Counter
-    contagem = Counter(p["item"]["status"] for p in pendencias)
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("🔴 Vencidos",  contagem.get("VENCIDO",   0))
-    k2.metric("🟡 Próximos",  contagem.get("PROXIMO",   0))
-    k3.metric("🟢 Em dia",    contagem.get("EM DIA",    0))
-    k4.metric("✅ Realizados", contagem.get("REALIZADO", 0))
+    setores = sorted({p["eqp"].get("setor_nome", "-") for p in pendencias})
+    eqps = sorted({f"{p['eqp']['codigo']} — {p['eqp']['nome']}" for p in pendencias})
+    status_opts = ["Todos", "VENCIDO", "PROXIMO", "EM DIA", "REALIZADO"]
+
+    st.markdown("<div class='filters-shell'><div class='filters-title'>Filtros operacionais</div>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        setor_f = st.multiselect("Setor", setores, key="lub_setor")
+    with col2:
+        eqp_f = st.multiselect("Equipamento", eqps, key="lub_eqp")
+    with col3:
+        status_f = st.selectbox("Status", status_opts, key="lub_status")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    filtradas = pendencias
+    if setor_f:
+        filtradas = [p for p in filtradas if p["eqp"].get("setor_nome", "-") in setor_f]
+    if eqp_f:
+        codigos_sel = {e.split(" — ", 1)[0] for e in eqp_f}
+        filtradas = [p for p in filtradas if p["eqp"]["codigo"] in codigos_sel]
+    if status_f != "Todos":
+        filtradas = [p for p in filtradas if p["item"]["status"] == status_f]
+
+    contagem = {s: sum(1 for p in filtradas if p["item"]["status"] == s) for s in STATUS_ORDEM}
+    _render_kpi_cards(contagem)
 
     st.divider()
 
-    # Filtros
-    setores = sorted({p["eqp"].get("setor_nome") or "-" for p in pendencias})
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        setores_sel   = st.multiselect("Filtrar por setor", setores, key="lub_setor")
-    with c2:
-        status_filtro = st.selectbox("Status", ["Todos", "VENCIDO", "PROXIMO", "EM DIA", "REALIZADO"], key="lub_status")
-
-    filtradas = pendencias
-    if setores_sel:
-        filtradas = [p for p in filtradas if p["eqp"].get("setor_nome", "-") in setores_sel]
-    if status_filtro != "Todos":
-        filtradas = [p for p in filtradas if p["item"]["status"] == status_filtro]
-
-    # Tabs por status
-    vencidos   = [p for p in filtradas if p["item"]["status"] == "VENCIDO"]
-    proximos   = [p for p in filtradas if p["item"]["status"] == "PROXIMO"]
-    em_dia     = [p for p in filtradas if p["item"]["status"] == "EM DIA"]
+    vencidos = [p for p in filtradas if p["item"]["status"] == "VENCIDO"]
+    proximos = [p for p in filtradas if p["item"]["status"] == "PROXIMO"]
+    em_dia = [p for p in filtradas if p["item"]["status"] == "EM DIA"]
     realizados = [p for p in filtradas if p["item"]["status"] == "REALIZADO"]
 
     tab_v, tab_p, tab_d, tab_r, tab_tabela = st.tabs([
@@ -192,7 +221,7 @@ def _render_pendencias():
         f"🟡 Próximos ({len(proximos)})",
         f"🟢 Em dia ({len(em_dia)})",
         f"✅ Realizados ({len(realizados)})",
-        "📋 Tabela",
+        "📋 Tabela completa",
     ])
 
     with tab_v:
@@ -218,34 +247,8 @@ def _render_pendencias():
         _render_tabela([p for p in realizados], "Realizados neste ciclo")
 
     with tab_tabela:
+        st.caption("Visão consolidada de todos os itens filtrados.")
         _render_tabela(filtradas, "Todos os itens")
-
-
-def _render_tabela(pendencias, titulo):
-    if not pendencias:
-        st.info(f"Nenhum item em '{titulo}'.")
-        return
-    rows = []
-    for p in pendencias:
-        eqp, item = p["eqp"], p["item"]
-        rows.append({
-            "Equipamento":  f"{eqp['codigo']} — {eqp['nome']}",
-            "Setor":        eqp.get("setor_nome") or "-",
-            "Item":         item["item"],
-            "Produto":      item.get("tipo_produto") or "-",
-            "Controle":     item.get("tipo_controle", "-"),
-            "Atual":        float(item.get("atual", 0)),
-            "Última troca": float(item.get("ultima_execucao", 0) or 0),
-            "Próxima troca":float(item.get("vencimento", 0)),
-            "Falta":        float(item.get("diferenca", 0)),
-            "Status":       STATUS_LABEL.get(item["status"], item["status"]),
-        })
-    df = pd.DataFrame(rows)
-    col_exp = st.columns([5, 1])[1]
-    with col_exp:
-        botao_exportar_excel(df, f"lub_{titulo[:6]}", label="⬇️ Excel",
-                             key=f"exp_lub_{titulo[:6]}")
-    st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 # ── aba de registro manual ────────────────────────────────────────────────────
@@ -348,15 +351,16 @@ def _render_historico():
 # ── página ────────────────────────────────────────────────────────────────────
 
 def render():
-    col_t, col_b = st.columns([5, 1])
-    with col_t:
-        render_page_intro("Controle de lubrificações", "Gerencie trocas e execuções com um layout mais leve, consistente e confortável no tema escuro.", "Operação")
-        st.caption("Acompanhe e registre lubrificações por equipamento.")
-    with col_b:
-        st.write("")
-        if st.button("🔄 Atualizar"):
+    head_l, head_r = st.columns([6, 1], vertical_alignment="center")
+    with head_l:
+        _render_page_header()
+    with head_r:
+        st.markdown("<div style='height:.35rem'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Atualizar", use_container_width=True):
             _carregar_pendencias_batch.clear()
             st.rerun()
+
+    st.markdown("<div class='section-caption'>Acompanhe e registre lubrificações por equipamento em um fluxo mais direto e menos poluído visualmente.</div>", unsafe_allow_html=True)
 
     tab1, tab2, tab3 = st.tabs(["Pendências", "Registrar", "Histórico"])
     with tab1:

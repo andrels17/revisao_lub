@@ -5,7 +5,8 @@ import streamlit as st
 
 from ui.constants  import STATUS_LABEL, STATUS_ORDEM
 from ui.exportacao import botao_exportar_excel
-from ui.theme import render_page_intro
+import html
+
 
 from services import (
     equipamentos_service,
@@ -34,6 +35,34 @@ def _barra_progresso(leitura_atual, inicio_ciclo, fim_ciclo):
         return 100
     prog = (leitura_atual - inicio_ciclo) / span * 100
     return max(0, min(100, prog))
+
+
+def _render_page_header() -> None:
+    st.markdown(
+        """
+        <div class="page-header-card">
+            <div class="eyebrow">🔧 Operação</div>
+            <h2>Controle de revisões</h2>
+            <p>Acompanhe pendências, priorize itens vencidos e registre execuções com menos ruído visual e mais foco operacional.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_kpi_cards(contagem: dict[str, int]) -> None:
+    cards = [
+        ("status-danger", "🔴 Vencidos", contagem.get("VENCIDO", 0), "Exigem ação imediata"),
+        ("status-warning", "🟡 Próximos", contagem.get("PROXIMO", 0), "Janela de atenção"),
+        ("status-success", "🟢 Em dia", contagem.get("EM DIA", 0), "Dentro do ciclo"),
+        ("status-info", "✅ Realizados", contagem.get("REALIZADO", 0), "Execuções registradas"),
+    ]
+    html_cards = []
+    for css, label, value, sub in cards:
+        html_cards.append(
+            f"<div class='status-kpi {css}'><div class='label'>{html.escape(str(label))}</div><div class='value'>{int(value)}</div><div class='sub'>{html.escape(str(sub))}</div></div>"
+        )
+    st.markdown(f"<div class='status-kpi-grid'>{''.join(html_cards)}</div>", unsafe_allow_html=True)
 
 
 # ── tabela de pendências ─────────────────────────────────────────────────────
@@ -192,14 +221,16 @@ def _card_pendencia(item, idx):
 # ── página principal ─────────────────────────────────────────────────────────
 
 def render():
-    col_t, col_b = st.columns([6, 1], vertical_alignment="bottom")
-    with col_t:
-        render_page_intro("Controle de revisões", "Acompanhe pendências e registre execuções com uma interface mais organizada e padronizada.", "Operação")
-        st.caption("Acompanhe o ciclo de revisões de cada equipamento e registre execuções diretamente desta página.")
-    with col_b:
+    head_l, head_r = st.columns([6, 1], vertical_alignment="center")
+    with head_l:
+        _render_page_header()
+    with head_r:
+        st.markdown("<div style='height:.35rem'></div>", unsafe_allow_html=True)
         if st.button("🔄 Atualizar", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
+
+    st.markdown("<div class='section-caption'>Acompanhe o ciclo de revisões de cada equipamento e registre execuções diretamente desta página.</div>", unsafe_allow_html=True)
 
     dados = revisoes_service.listar_controle_revisoes()
 
@@ -212,6 +243,7 @@ def render():
     eqps     = sorted({f"{d['codigo']} — {d['equipamento_nome']}" for d in dados})
     status_opts = ["Todos", "VENCIDO", "PROXIMO", "EM DIA", "REALIZADO"]
 
+    st.markdown("<div class='filters-shell'><div class='filters-title'>Filtros operacionais</div>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
         setor_f  = st.multiselect("Setor",        setores,     key="rev_setor")
@@ -219,6 +251,7 @@ def render():
         eqp_f    = st.multiselect("Equipamento",  eqps,        key="rev_eqp")
     with col3:
         status_f = st.selectbox("Status",         status_opts, key="rev_status")
+    st.markdown("</div>", unsafe_allow_html=True)
 
     filtrados = dados
     if setor_f:
@@ -231,11 +264,7 @@ def render():
 
     # ── KPIs rápidos ─────────────────────────────────────────────────────────
     contagem = {s: sum(1 for d in filtrados if d["status"] == s) for s in STATUS_ORDEM}
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("🔴 Vencidos",   contagem.get("VENCIDO",   0))
-    k2.metric("🟡 Próximos",   contagem.get("PROXIMO",   0))
-    k3.metric("🟢 Em dia",     contagem.get("EM DIA",    0))
-    k4.metric("✅ Realizados", contagem.get("REALIZADO", 0))
+    _render_kpi_cards(contagem)
 
     st.divider()
 
