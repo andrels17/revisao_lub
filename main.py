@@ -135,7 +135,6 @@ pagina_atual = st.session_state.get("pagina_atual", "")
 if not pagina_atual or pagina_atual not in paginas_map:
     st.warning("Selecione uma página no menu lateral.")
 else:
-    render_topbar(pagina_atual, f"{usuario.get('nome') or 'Usuário'} · {role_label}")
     try:
         paginas_map[pagina_atual].render()
     except Exception as exc:
