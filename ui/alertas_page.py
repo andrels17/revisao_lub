@@ -1,5 +1,6 @@
 import datetime
 import math
+from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
