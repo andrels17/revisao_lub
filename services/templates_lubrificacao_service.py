@@ -1,6 +1,28 @@
 from database.connection import get_conn
 
 
+TABLE_NAME = "itens_template_lubrificacao"
+
+
+def _get_table_columns(cur, table_name: str) -> set[str]:
+    cur.execute(
+        """
+        select column_name
+        from information_schema.columns
+        where table_schema = 'public' and table_name = %s
+        """,
+        (table_name,),
+    )
+    return {r[0] for r in cur.fetchall()}
+
+
+def _pick_column(columns: set[str], *candidates: str) -> str | None:
+    for candidate in candidates:
+        if candidate in columns:
+            return candidate
+    return None
+
+
 def listar():
     conn = get_conn()
     cur = conn.cursor()
@@ -17,21 +39,46 @@ def listar():
         conn.close()
 
 
+
 def listar_com_itens():
     conn = get_conn()
     cur = conn.cursor()
     try:
-        cur.execute(
-            """
+        columns = _get_table_columns(cur, TABLE_NAME)
+        name_col = _pick_column(columns, "nome_item", "nome", "item", "descricao")
+        product_col = _pick_column(columns, "tipo_produto", "produto", "tipo", "nome_produto")
+        interval_col = _pick_column(columns, "intervalo_valor", "intervalo", "valor_intervalo")
+        active_col = _pick_column(columns, "ativo")
+
+        if not name_col:
+            name_expr = "null::text"
+        else:
+            name_expr = f"i.{name_col}"
+
+        if not product_col:
+            product_expr = "null::text"
+        else:
+            product_expr = f"i.{product_col}"
+
+        if not interval_col:
+            interval_expr = "0::numeric"
+        else:
+            interval_expr = f"coalesce(i.{interval_col}, 0)"
+
+        join_extra = f" and i.{active_col} = true" if active_col else ""
+
+        query = f"""
             select t.id, t.nome, t.tipo_controle,
-                   i.id as item_id, i.nome_item, i.tipo_produto, i.intervalo_valor
+                   i.id as item_id, {name_expr} as nome_item,
+                   {product_expr} as tipo_produto,
+                   {interval_expr} as intervalo_valor
             from templates_lubrificacao t
-            left join itens_template_lubrificacao i
-                   on i.template_id = t.id and i.ativo = true
+            left join {TABLE_NAME} i
+                   on i.template_id = t.id{join_extra}
             where t.ativo = true
-            order by t.nome, i.intervalo_valor
-            """
-        )
+            order by t.nome, {interval_expr}
+        """
+        cur.execute(query)
         rows = cur.fetchall()
         templates = {}
         for r in rows:
@@ -44,17 +91,22 @@ def listar_com_itens():
                     "itens": [],
                 }
             if r[3]:
+                try:
+                    intervalo = float(r[6] or 0)
+                except Exception:
+                    intervalo = 0.0
                 templates[tid]["itens"].append(
                     {
                         "id": r[3],
-                        "nome_item": r[4],
+                        "nome_item": r[4] or "Item sem nome",
                         "tipo_produto": r[5] or "-",
-                        "intervalo_valor": float(r[6]),
+                        "intervalo_valor": intervalo,
                     }
                 )
         return list(templates.values())
     finally:
         conn.close()
+
 
 
 def criar(nome, tipo_controle):
@@ -72,17 +124,49 @@ def criar(nome, tipo_controle):
         conn.close()
 
 
+
 def adicionar_item(template_id, nome_item, tipo_produto, intervalo_valor):
     conn = get_conn()
     cur = conn.cursor()
     try:
+        columns = _get_table_columns(cur, TABLE_NAME)
+        name_col = _pick_column(columns, "nome_item", "nome", "item", "descricao")
+        product_col = _pick_column(columns, "tipo_produto", "produto", "tipo", "nome_produto")
+        interval_col = _pick_column(columns, "intervalo_valor", "intervalo", "valor_intervalo")
+        active_col = _pick_column(columns, "ativo")
+        created_col = _pick_column(columns, "created_at")
+
+        if not name_col or not interval_col:
+            raise RuntimeError(
+                "A tabela de itens de lubrificação não possui as colunas mínimas esperadas."
+            )
+
+        cols = ["template_id", name_col, interval_col]
+        vals = [template_id, nome_item, intervalo_valor]
+
+        if product_col:
+            cols.append(product_col)
+            vals.append(tipo_produto)
+        if active_col:
+            cols.append(active_col)
+            vals.append(True)
+        if created_col:
+            cols.append(created_col)
+            vals.append(None)  # deixa o default do banco atuar se houver
+
+        placeholders = ", ".join(["%s"] * len(cols))
+        columns_sql = ", ".join(cols)
+
+        # remove created_at se vier None para evitar sobrescrever default em schemas variáveis
+        if created_col:
+            cols = [c for c in cols if c != created_col]
+            vals = vals[:-1]
+            placeholders = ", ".join(["%s"] * len(cols))
+            columns_sql = ", ".join(cols)
+
         cur.execute(
-            """
-            insert into itens_template_lubrificacao
-                (template_id, nome_item, tipo_produto, intervalo_valor)
-            values (%s, %s, %s, %s) returning id
-            """,
-            (template_id, nome_item, tipo_produto, intervalo_valor),
+            f"insert into {TABLE_NAME} ({columns_sql}) values ({placeholders}) returning id",
+            tuple(vals),
         )
         item_id = cur.fetchone()[0]
         conn.commit()
