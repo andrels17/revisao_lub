@@ -279,7 +279,6 @@ def render():
 
     kpis = dashboard_service.resumo_kpis(alertas, total_equipamentos)
 
-    _hero(kpis["total_alertas"])
     _render_cards(kpis)
 
     if not alertas:
