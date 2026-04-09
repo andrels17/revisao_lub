@@ -42,54 +42,89 @@ def _itens_execucao_disponiveis(cur) -> bool:
         return False
 
 
-def salvar_itens_execucao_no_conn(cur, execucao_id, itens_executados):
-    if not itens_executados or not _itens_execucao_disponiveis(cur):
-        return
-    for item in itens_executados:
+def _colunas_execucao_itens(cur):
+    if not _itens_execucao_disponiveis(cur):
+        return set()
+    try:
         cur.execute(
             """
-            insert into execucao_manutencao_itens (
-                execucao_id,
-                item_id_referencia,
-                item_nome,
-                produto,
-                intervalo_valor,
-                marcado
-            )
-            values (%s, %s, %s, %s, %s, %s)
-            """,
-            (
-                execucao_id,
-                item.get("id"),
-                item.get("nome_item") or item.get("item_nome") or "Item sem nome",
-                item.get("tipo_produto") or item.get("produto"),
-                item.get("intervalo_valor"),
-                True,
-            ),
+            select column_name
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'execucao_manutencao_itens'
+            """
         )
+        return {r[0] for r in cur.fetchall()}
+    except Exception:
+        return set()
+
+
+def salvar_itens_execucao_no_conn(cur, execucao_id, itens_executados):
+    if not itens_executados:
+        return
+    colunas = _colunas_execucao_itens(cur)
+    if not colunas:
+        return
+
+    insert_cols = ["execucao_id"]
+    if "item_id_referencia" in colunas:
+        insert_cols.append("item_id_referencia")
+    if "item_nome" in colunas:
+        insert_cols.append("item_nome")
+    if "produto" in colunas:
+        insert_cols.append("produto")
+    if "intervalo_valor" in colunas:
+        insert_cols.append("intervalo_valor")
+    if "marcado" in colunas:
+        insert_cols.append("marcado")
+
+    placeholders = ", ".join(["%s"] * len(insert_cols))
+    cols_sql = ", ".join(insert_cols)
+    sql = f"insert into execucao_manutencao_itens ({cols_sql}) values ({placeholders})"
+
+    for item in itens_executados:
+        values = [execucao_id]
+        if "item_id_referencia" in colunas:
+            values.append(item.get("id"))
+        if "item_nome" in colunas:
+            values.append(item.get("nome_item") or item.get("item_nome") or "Item sem nome")
+        if "produto" in colunas:
+            values.append(item.get("tipo_produto") or item.get("produto"))
+        if "intervalo_valor" in colunas:
+            values.append(item.get("intervalo_valor"))
+        if "marcado" in colunas:
+            values.append(True)
+        cur.execute(sql, tuple(values))
 
 
 def listar_itens_execucao(execucao_id):
     conn = get_conn()
     cur = conn.cursor()
     try:
-        if not _itens_execucao_disponiveis(cur):
+        colunas = _colunas_execucao_itens(cur)
+        if not colunas:
             return []
-        cur.execute(
-            """
-            select id, item_id_referencia, item_nome, produto, intervalo_valor, marcado
+
+        select_cols = ["id"]
+        select_cols.append("item_id_referencia" if "item_id_referencia" in colunas else "NULL as item_id_referencia")
+        select_cols.append("item_nome" if "item_nome" in colunas else "NULL as item_nome")
+        select_cols.append("produto" if "produto" in colunas else "NULL as produto")
+        select_cols.append("intervalo_valor" if "intervalo_valor" in colunas else "NULL as intervalo_valor")
+        select_cols.append("marcado" if "marcado" in colunas else "TRUE as marcado")
+
+        sql = f"""
+            select {', '.join(select_cols)}
             from execucao_manutencao_itens
             where execucao_id = %s
-            order by item_nome
-            """,
-            (execucao_id,),
-        )
+            order by 3 nulls last
+        """
+        cur.execute(sql, (execucao_id,))
         rows = cur.fetchall()
         return [
             {
                 "id": r[0],
                 "item_id_referencia": r[1],
-                "item_nome": r[2],
+                "item_nome": r[2] or "Item",
                 "produto": r[3],
                 "intervalo_valor": float(r[4] or 0),
                 "marcado": bool(r[5]),
