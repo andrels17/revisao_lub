@@ -1,6 +1,6 @@
 import re
 from database.connection import get_conn
-from services import auditoria_service, ciclos_service, validacoes_service
+from services import auditoria_service, validacoes_service
 
 try:
     import psycopg2
@@ -46,66 +46,32 @@ def criar_execucao(dados):
     conn = get_conn()
     cur = conn.cursor()
     try:
-        ciclo_id = None
-        if ciclos_service.tabela_tem_ciclo_id("execucoes_manutencao"):
-            ciclo_id = ciclos_service.obter_ciclo_id_para_registro(dados["tipo"])
-
-        if ciclo_id:
-            cur.execute(
-                """
-                insert into execucoes_manutencao (
-                    equipamento_id,
-                    responsavel_id,
-                    tipo,
-                    data_execucao,
-                    km_execucao,
-                    horas_execucao,
-                    observacoes,
-                    status,
-                    ciclo_id
-                )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s::uuid)
-                returning id
-                """,
-                (
-                    dados["equipamento_id"],
-                    dados.get("responsavel_id"),
-                    dados["tipo"],
-                    dados["data_execucao"],
-                    km_execucao,
-                    horas_execucao,
-                    dados.get("observacoes"),
-                    dados.get("status", "concluida"),
-                    ciclo_id,
-                ),
+        cur.execute(
+            """
+            insert into execucoes_manutencao (
+                equipamento_id,
+                responsavel_id,
+                tipo,
+                data_execucao,
+                km_execucao,
+                horas_execucao,
+                observacoes,
+                status
             )
-        else:
-            cur.execute(
-                """
-                insert into execucoes_manutencao (
-                    equipamento_id,
-                    responsavel_id,
-                    tipo,
-                    data_execucao,
-                    km_execucao,
-                    horas_execucao,
-                    observacoes,
-                    status
-                )
-                values (%s, %s, %s, %s, %s, %s, %s, %s)
-                returning id
-                """,
-                (
-                    dados["equipamento_id"],
-                    dados.get("responsavel_id"),
-                    dados["tipo"],
-                    dados["data_execucao"],
-                    km_execucao,
-                    horas_execucao,
-                    dados.get("observacoes"),
-                    dados.get("status", "concluida"),
-                ),
-            )
+            values (%s, %s, %s, %s, %s, %s, %s, %s)
+            returning id
+            """,
+            (
+                dados["equipamento_id"],
+                dados.get("responsavel_id"),
+                dados["tipo"],
+                dados["data_execucao"],
+                km_execucao,
+                horas_execucao,
+                dados.get("observacoes"),
+                dados.get("status", "concluida"),
+            ),
+        )
         execucao_id = cur.fetchone()[0]
 
         if dados["tipo"] == "revisao":

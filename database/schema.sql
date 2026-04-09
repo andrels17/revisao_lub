@@ -183,6 +183,18 @@ CREATE INDEX IF NOT EXISTS idx_execucoes_lub_eqp ON execucoes_lubrificacao(equip
 CREATE INDEX IF NOT EXISTS idx_leituras_eqp ON leituras(equipamento_id);
 
 
+-- Vínculos entre template de revisão e template de lubrificação
+CREATE TABLE IF NOT EXISTS vinculos_templates_manutencao (
+    id uuid primary key default gen_random_uuid(),
+    template_revisao_id uuid not null references templates_revisao(id) on delete cascade,
+    template_lubrificacao_id uuid not null references templates_lubrificacao(id) on delete cascade,
+    observacoes TEXT,
+    ativo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (template_revisao_id, template_lubrificacao_id)
+);
+
+
 -- ============================================================
 -- FASE 1 — Auditoria e configurações persistentes
 -- ============================================================

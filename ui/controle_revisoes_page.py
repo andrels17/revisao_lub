@@ -13,6 +13,8 @@ from services import (
     execucoes_service,
     responsaveis_service,
     revisoes_service,
+    templates_integracao_service,
+    templates_lubrificacao_service,
     vinculos_service,
 )
 
@@ -40,6 +42,48 @@ def _barra_progresso(leitura_atual, inicio_ciclo, fim_ciclo):
 def _render_page_header() -> None:
     st.markdown(
         """
+        <style>
+        .integration-card {
+            border: 1px solid rgba(148,163,184,.16);
+            border-radius: 16px;
+            padding: .95rem 1rem;
+            background: rgba(15,23,42,.62);
+            margin: .65rem 0 .35rem 0;
+        }
+        .integration-card.status-warning {
+            border-color: rgba(245,158,11,.32);
+            background: linear-gradient(135deg, rgba(120,53,15,.22), rgba(15,23,42,.72));
+        }
+        .integration-card.status-muted {
+            border-color: rgba(148,163,184,.16);
+            background: linear-gradient(135deg, rgba(30,41,59,.55), rgba(15,23,42,.72));
+        }
+        .integration-head {
+            display:flex;
+            justify-content:space-between;
+            gap:.75rem;
+            align-items:center;
+            margin-bottom:.35rem;
+        }
+        .integration-title {
+            font-size:.82rem;
+            font-weight:800;
+            color:#e2e8f0;
+            letter-spacing:.01em;
+        }
+        .integration-pill {
+            font-size:.72rem;
+            font-weight:700;
+            padding:.2rem .55rem;
+            border-radius:999px;
+            background: rgba(255,255,255,.06);
+            color:#dbeafe;
+            white-space:nowrap;
+        }
+        .integration-name {font-size:.98rem;font-weight:800;color:#f8fafc;}
+        .integration-sub {font-size:.8rem;color:#94a3b8;margin-top:.18rem;}
+        .integration-items {font-size:.84rem;color:#e2e8f0;margin-top:.55rem;line-height:1.45;}
+        </style>
         <div class="page-header-card">
             <div class="eyebrow">🔧 Operação</div>
             <h2>Controle de revisões</h2>
@@ -63,6 +107,56 @@ def _render_kpi_cards(contagem: dict[str, int]) -> None:
             f"<div class='status-kpi {css}'><div class='label'>{html.escape(str(label))}</div><div class='value'>{int(value)}</div><div class='sub'>{html.escape(str(sub))}</div></div>"
         )
     st.markdown(f"<div class='status-kpi-grid'>{''.join(html_cards)}</div>", unsafe_allow_html=True)
+
+
+
+
+# ── integração revisão × lubrificação ────────────────────────────────────────
+
+def _normalizar_chave(texto):
+    return " ".join(str(texto or "").strip().lower().split())
+
+
+def _montar_contexto_integracao():
+    mapa_vinculos = templates_integracao_service.obter_mapa_vinculos_por_template_revisao()
+    templates_lub = {
+        str(t["id"]): t for t in templates_lubrificacao_service.listar_com_itens() if t.get("id") is not None
+    }
+    cache_analises = {}
+    return mapa_vinculos, templates_lub, cache_analises
+
+
+def _obter_integracao_item(item, mapa_vinculos, templates_lub, cache_analises):
+    return templates_integracao_service.obter_integracao_automatica_por_item(
+        item,
+        mapa_vinculos=mapa_vinculos,
+        templates_lub=templates_lub,
+        cache_analises=cache_analises,
+    )
+
+
+def _render_bloco_integracao_lubrificacao(item, integracao):
+    unidade = _fmt_unidade(item.get("tipo_controle"))
+    gatilho = float(item.get("gatilho_valor") or 0)
+    titulo = html.escape(str(integracao.get("template_lubrificacao_nome") or "Lubrificação vinculada"))
+    etiqueta = "🟠 Executar junto" if integracao.get("dispara") else "⚪ Não entra nesta etapa"
+    classe = "status-warning" if integracao.get("dispara") else "status-muted"
+    st.markdown(
+        f"""
+        <div class="integration-card {classe}">
+            <div class="integration-head">
+                <div class="integration-title">🛢️ Lubrificação vinculada</div>
+                <div class="integration-pill">{html.escape(etiqueta)}</div>
+            </div>
+            <div class="integration-name">{titulo}</div>
+            <div class="integration-sub">Etapa atual: {int(gatilho) if gatilho.is_integer() else gatilho:g} {unidade} · Equipamentos usando este par: {int(integracao.get('equipamentos_vinculados') or 0)}</div>
+            <div class="integration-items">{html.escape(str(integracao.get('itens_acionados') or '—'))}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if integracao.get("observacoes"):
+        st.caption(f"Observação do vínculo: {integracao['observacoes']}")
 
 
 # ── tabela de pendências ─────────────────────────────────────────────────────
@@ -177,7 +271,7 @@ def _form_registrar(item, key_suffix):
 
 # ── card de item pendente ────────────────────────────────────────────────────
 
-def _card_pendencia(item, idx):
+def _card_pendencia(item, idx, mapa_vinculos=None, templates_lub=None, cache_analises=None):
     tipo    = item["tipo_controle"]
     unidade = _fmt_unidade(tipo)
     badge   = _badge(item["status"])
@@ -213,6 +307,16 @@ def _card_pendencia(item, idx):
         else:
             st.caption("Sem execução registrada neste ciclo.")
 
+        integracao = _obter_integracao_item(
+            item,
+            mapa_vinculos or {},
+            templates_lub or {},
+            cache_analises or {},
+        )
+        if integracao:
+            st.divider()
+            _render_bloco_integracao_lubrificacao(item, integracao)
+
         st.divider()
         st.markdown("**Registrar execução agora**")
         _form_registrar(item, key_suffix=f"{item['equipamento_id']}_{item.get('etapa_id', idx)}")
@@ -233,6 +337,7 @@ def render():
     st.markdown("<div class='section-caption'>Acompanhe o ciclo de revisões de cada equipamento e registre execuções diretamente desta página.</div>", unsafe_allow_html=True)
 
     dados = revisoes_service.listar_controle_revisoes()
+    mapa_vinculos, templates_lub, cache_analises = _montar_contexto_integracao()
 
     if not dados:
         st.info("Nenhuma revisão encontrada. Verifique se os equipamentos possuem template de revisão configurado.")
@@ -265,6 +370,9 @@ def render():
     # ── KPIs rápidos ─────────────────────────────────────────────────────────
     contagem = {s: sum(1 for d in filtrados if d["status"] == s) for s in STATUS_ORDEM}
     _render_kpi_cards(contagem)
+    revisoes_com_lub = sum(1 for d in filtrados if _obter_integracao_item(d, mapa_vinculos, templates_lub, cache_analises))
+    if revisoes_com_lub:
+        st.caption(f"🛢️ {revisoes_com_lub} item(ns) filtrados possuem template de lubrificação vinculado. Ao expandir a etapa, o sistema mostra se a lubrificação entra junto nesta revisão.")
 
     st.divider()
 
@@ -288,7 +396,7 @@ def render():
         else:
             st.caption("Expanda um item para registrar a execução diretamente.")
             for i, item in enumerate(vencidos):
-                _card_pendencia(item, i)
+                _card_pendencia(item, i, mapa_vinculos, templates_lub, cache_analises)
 
     with tab_prox:
         if not proximos:
@@ -296,7 +404,7 @@ def render():
         else:
             st.caption("Expanda um item para registrar a execução diretamente.")
             for i, item in enumerate(proximos):
-                _card_pendencia(item, i)
+                _card_pendencia(item, i, mapa_vinculos, templates_lub, cache_analises)
 
     with tab_dia:
         _render_tabela(

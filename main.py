@@ -3,7 +3,6 @@ from ui import (
     alertas_page,
     auth_page,
     configuracoes_page,
-    ciclos_page,
     controle_revisoes_page,
     dashboard_page,
     equipamentos_page,
@@ -73,7 +72,6 @@ SECOES = {
         "📏 Leituras KM / Horas": leituras_page,
         "🔧 Controle de Revisões": controle_revisoes_page,
         "🛢️ Controle de Lubrificações": lubrificacoes_page,
-        "🔄 Ciclos Operacionais": ciclos_page,
     },
     "Comunicação": {
         "📱 Alertas WhatsApp": alertas_page,
