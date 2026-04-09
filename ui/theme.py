@@ -212,8 +212,28 @@ def apply_global_theme() -> None:
     )
 
 
-def render_sidebar_user(nome: str, perfil: str, email: str | None = None) -> None:
-    email_html = f"<div class='meta'>{perfil} · {email}</div>" if email else f"<div class='meta'>{perfil}</div>"
+def render_sidebar_user(usuario_or_nome, perfil: str | None = None, email: str | None = None) -> None:
+    """Compatível com chamadas antigas e novas.
+
+    Aceita:
+    - render_sidebar_user(usuario_dict, role_label)
+    - render_sidebar_user(nome, perfil, email)
+    """
+    if isinstance(usuario_or_nome, dict):
+        usuario = usuario_or_nome
+        nome = usuario.get("nome") or "Usuário"
+        email_final = usuario.get("email") or email
+        perfil_final = perfil or usuario.get("role_label") or usuario.get("role") or "Usuário"
+    else:
+        nome = str(usuario_or_nome or "Usuário")
+        email_final = email
+        perfil_final = perfil or "Usuário"
+
+    email_html = (
+        f"<div class='meta'>{perfil_final} · {email_final}</div>"
+        if email_final
+        else f"<div class='meta'>{perfil_final}</div>"
+    )
     st.sidebar.markdown(
         f"""
         <div class="sidebar-user">
@@ -225,7 +245,22 @@ def render_sidebar_user(nome: str, perfil: str, email: str | None = None) -> Non
     )
 
 
-def render_topbar(title: str, subtitle: str = "") -> None:
+def render_topbar(title_or_usuario, subtitle: str = "") -> None:
+    """Compatível com chamadas antigas e novas.
+
+    Aceita:
+    - render_topbar(titulo, subtitulo)
+    - render_topbar(usuario_dict, pagina_atual)
+    """
+    if isinstance(title_or_usuario, dict):
+        usuario = title_or_usuario
+        title = subtitle or "Dashboard"
+        nome = usuario.get("nome") or "Usuário"
+        role_label = usuario.get("role_label") or usuario.get("role") or "Usuário"
+        subtitle = f"{nome} · {role_label}"
+    else:
+        title = str(title_or_usuario or "")
+
     subt_html = f"<p>{subtitle}</p>" if subtitle else ""
     st.markdown(
         f"""
