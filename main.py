@@ -61,13 +61,6 @@ SECOES = {
     "Painel": {
         "📊 Dashboard": dashboard_page,
     },
-    "Cadastros": {
-        "🏢 Setores": setores_page,
-        "🚜 Equipamentos": equipamentos_page,
-        "👷 Responsáveis": responsaveis_page,
-        "🔗 Vínculos": vinculos_page,
-        "📋 Templates": templates_page,
-    },
     "Operação": {
         "📏 Leituras KM / Horas": leituras_page,
         "🔧 Controle de Revisões": controle_revisoes_page,
@@ -81,6 +74,13 @@ SECOES = {
         "📈 Relatório de Manutenção": relatorio_page,
         "⚙️ Configurações": configuracoes_page,
         "👥 Usuários": usuarios_page,
+    },
+    "Cadastros": {
+        "🏢 Setores": setores_page,
+        "🚜 Equipamentos": equipamentos_page,
+        "👷 Responsáveis": responsaveis_page,
+        "🔗 Vínculos": vinculos_page,
+        "📋 Templates": templates_page,
     },
 }
 
@@ -104,12 +104,6 @@ paginas_map = {nome: mod for sec in secoes_filtradas.values() for nome, mod in s
 with st.sidebar:
     render_sidebar_user(usuario.get("nome"), role_label, usuario.get("email"))
 
-    if st.button("🚪 Sair", use_container_width=True):
-        auth_service.logout()
-        st.rerun()
-
-    st.markdown("<div style='height:.2rem'></div>", unsafe_allow_html=True)
-
     if "pagina_atual" not in st.session_state:
         primeira = next(iter(paginas_map), None)
         st.session_state["pagina_atual"] = primeira or ""
@@ -129,6 +123,13 @@ with st.sidebar:
             ):
                 st.session_state["pagina_atual"] = nome_pagina
                 st.rerun()
+
+    st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='soft-divider'></div>", unsafe_allow_html=True)
+
+    if st.button("🚪 Sair", key="sidebar_logout", use_container_width=True):
+        auth_service.logout()
+        st.rerun()
 
 pagina_atual = st.session_state.get("pagina_atual", "")
 
