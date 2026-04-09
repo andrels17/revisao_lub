@@ -21,6 +21,15 @@ create table if not exists public.vinculos_templates_manutencao (
     created_at timestamptz not null default now(),
     unique (template_revisao_id, template_lubrificacao_id)
 );
+
+create table if not exists public.vinculos_templates_manutencao_etapas (
+    id uuid primary key default gen_random_uuid(),
+    vinculo_id uuid not null references public.vinculos_templates_manutencao(id) on delete cascade,
+    etapa_template_revisao_id text not null,
+    aplicar_lubrificacao boolean not null default true,
+    created_at timestamptz not null default now(),
+    unique (vinculo_id, etapa_template_revisao_id)
+);
 """.strip()
 
 
@@ -53,6 +62,7 @@ def _id_key(value: Any) -> str | None:
     return value or None
 
 
+
 def listar_vinculos() -> list[dict[str, Any]]:
     conn = get_conn()
     cur = conn.cursor()
@@ -79,7 +89,6 @@ def listar_vinculos() -> list[dict[str, Any]]:
             join templates_revisao tr on tr.id = v.template_revisao_id
             join templates_lubrificacao tl on tl.id = v.template_lubrificacao_id
             left join equipamentos e on e.template_revisao_id = tr.id and e.template_lubrificacao_id = tl.id
-            where coalesce(v.ativo, true) = true
             group by v.id, tr.id, tr.nome, tr.tipo_controle, tl.id, tl.nome, tl.tipo_controle, v.observacoes, v.ativo, v.created_at
             order by tr.nome, tl.nome
             """
@@ -110,6 +119,18 @@ def listar_vinculos() -> list[dict[str, Any]]:
 
 
 
+def obter_vinculo_por_par(template_revisao_id: Any, template_lubrificacao_id: Any) -> dict[str, Any] | None:
+    rev_key = _id_key(template_revisao_id)
+    lub_key = _id_key(template_lubrificacao_id)
+    if not rev_key or not lub_key:
+        return None
+    for vinculo in listar_vinculos():
+        if _id_key(vinculo.get("template_revisao_id")) == rev_key and _id_key(vinculo.get("template_lubrificacao_id")) == lub_key:
+            return vinculo
+    return None
+
+
+
 def salvar_vinculo(template_revisao_id: Any, template_lubrificacao_id: Any, observacoes: str | None = None) -> Any:
     conn = get_conn()
     cur = conn.cursor()
@@ -135,7 +156,64 @@ def salvar_vinculo(template_revisao_id: Any, template_lubrificacao_id: Any, obse
 
 
 
-def analisar_compatibilidade(template_revisao: dict[str, Any] | None, template_lubrificacao: dict[str, Any] | None) -> dict[str, Any]:
+def listar_overrides_etapas(vinculo_id: Any) -> dict[str, bool]:
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            select etapa_template_revisao_id, aplicar_lubrificacao
+            from vinculos_templates_manutencao_etapas
+            where vinculo_id = %s
+            """,
+            (vinculo_id,),
+        )
+        return {str(r[0]): bool(r[1]) for r in cur.fetchall()}
+    except Exception as exc:
+        if _eh_erro_estrutura(exc):
+            conn.rollback()
+            return {}
+        raise
+    finally:
+        _close(conn)
+
+
+
+def salvar_overrides_etapas(vinculo_id: Any, etapa_flags: dict[str, bool]) -> None:
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "delete from vinculos_templates_manutencao_etapas where vinculo_id = %s",
+            (vinculo_id,),
+        )
+        for etapa_id, aplicar in (etapa_flags or {}).items():
+            cur.execute(
+                """
+                insert into vinculos_templates_manutencao_etapas
+                    (vinculo_id, etapa_template_revisao_id, aplicar_lubrificacao)
+                values (%s, %s, %s)
+                """,
+                (vinculo_id, str(etapa_id), bool(aplicar)),
+            )
+        conn.commit()
+    except Exception as exc:
+        if _eh_erro_estrutura(exc):
+            conn.rollback()
+            raise RuntimeError(
+                "A tabela de overrides por etapa ainda não existe. Rode o SQL de migração de vínculos novamente."
+            ) from exc
+        raise
+    finally:
+        _close(conn)
+
+
+
+def analisar_compatibilidade(
+    template_revisao: dict[str, Any] | None,
+    template_lubrificacao: dict[str, Any] | None,
+    etapa_overrides: dict[str, bool] | None = None,
+) -> dict[str, Any]:
     if not template_revisao or not template_lubrificacao:
         return {"ok": False, "motivo": "Selecione um template de revisão e um de lubrificação."}
 
@@ -147,6 +225,7 @@ def analisar_compatibilidade(template_revisao: dict[str, Any] | None, template_l
             "motivo": f"Os templates usam controles diferentes ({tipo_rev} x {tipo_lub}).",
         }
 
+    etapa_overrides = {str(k): bool(v) for k, v in (etapa_overrides or {}).items()}
     etapas = sorted(template_revisao.get("etapas") or [], key=lambda x: float(x.get("gatilho_valor") or 0))
     itens = sorted(template_lubrificacao.get("itens") or [], key=lambda x: float(x.get("intervalo_valor") or 0))
     linhas: list[dict[str, Any]] = []
@@ -154,26 +233,35 @@ def analisar_compatibilidade(template_revisao: dict[str, Any] | None, template_l
     total_itens_acionados = 0
 
     for etapa in etapas:
+        etapa_id = str(etapa.get("id") or "")
         gatilho = float(etapa.get("gatilho_valor") or 0)
         itens_disparados = []
         for item in itens:
             intervalo = float(item.get("intervalo_valor") or 0)
             if intervalo > 0 and gatilho > 0 and abs(gatilho % intervalo) < 1e-9:
                 itens_disparados.append(item)
-        if itens_disparados:
+
+        aplica_automatico = bool(itens_disparados)
+        aplicar_lubrificacao = etapa_overrides.get(etapa_id, aplica_automatico)
+        if aplicar_lubrificacao and itens_disparados:
             total_match += 1
             total_itens_acionados += len(itens_disparados)
+
+        itens_texto = ", ".join(
+            f"{item.get('nome_item')} ({int(float(item.get('intervalo_valor') or 0))})"
+            for item in itens_disparados
+        ) or "—"
+
         linhas.append(
             {
+                "etapa_id": etapa_id,
                 "etapa": etapa.get("nome_etapa") or f"Etapa {int(gatilho)}",
                 "gatilho_valor": gatilho,
-                "dispara_lubrificacao": "Sim" if itens_disparados else "Não",
-                "itens_acionados": ", ".join(
-                    f"{item.get('nome_item')} ({int(float(item.get('intervalo_valor') or 0))})"
-                    for item in itens_disparados
-                )
-                or "—",
-                "qtd_itens": len(itens_disparados),
+                "aplica_automatico": aplica_automatico,
+                "aplicar_lubrificacao": aplicar_lubrificacao,
+                "dispara_lubrificacao": "Sim" if aplicar_lubrificacao else "Não",
+                "itens_acionados": itens_texto,
+                "qtd_itens": len(itens_disparados) if aplicar_lubrificacao else 0,
             }
         )
 
@@ -248,17 +336,20 @@ def sugerir_vinculos_automaticos() -> list[dict[str, Any]]:
 
 
 def obter_mapa_vinculos_por_template_revisao() -> dict[str, dict[str, Any]]:
-    """Retorna os vínculos ativos indexados pelo template de revisão."""
     return {
         key: v
         for v in listar_vinculos()
-        if (key := _id_key(v.get("template_revisao_id")))
+        if v.get("ativo", True) and (key := _id_key(v.get("template_revisao_id")))
     }
 
 
 
-def obter_integracao_automatica_por_item(item: dict[str, Any], mapa_vinculos: dict[str, dict[str, Any]] | None = None, templates_lub: dict[str, dict[str, Any]] | None = None, cache_analises: dict[tuple[str, str], dict[str, Any]] | None = None) -> dict[str, Any] | None:
-    """Retorna integração usando vínculo salvo e, na falta dele, o par real do equipamento."""
+def obter_integracao_automatica_por_item(
+    item: dict[str, Any],
+    mapa_vinculos: dict[str, dict[str, Any]] | None = None,
+    templates_lub: dict[str, dict[str, Any]] | None = None,
+    cache_analises: dict[tuple[str, str], dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     mapa_vinculos = mapa_vinculos or obter_mapa_vinculos_por_template_revisao()
     templates_lub = templates_lub or {
         _id_key(t.get("id")): t for t in templates_lubrificacao_service.listar_com_itens() if _id_key(t.get("id"))
@@ -272,9 +363,11 @@ def obter_integracao_automatica_por_item(item: dict[str, Any], mapa_vinculos: di
     vinculo = mapa_vinculos.get(template_rev_id)
     lub_template = None
     origem = "vinculo"
+    etapa_overrides = None
 
     if vinculo:
         lub_template = templates_lub.get(_id_key(vinculo.get("template_lubrificacao_id")))
+        etapa_overrides = listar_overrides_etapas(vinculo.get("id"))
 
     if not lub_template:
         equipamento = equipamentos_service.obter(item.get("equipamento_id")) or {}
@@ -292,8 +385,9 @@ def obter_integracao_automatica_por_item(item: dict[str, Any], mapa_vinculos: di
             "observacoes": "Integração automática usando os templates já associados ao equipamento.",
         }
         origem = "equipamento"
+        etapa_overrides = None
 
-    cache_key = (template_rev_id, _id_key(vinculo.get("template_lubrificacao_id")))
+    cache_key = (template_rev_id, _id_key(vinculo.get("template_lubrificacao_id")), str(item.get("etapa_id") or ""))
     analise = cache_analises.get(cache_key)
     if analise is None:
         revisao_stub = {
@@ -305,7 +399,7 @@ def obter_integracao_automatica_por_item(item: dict[str, Any], mapa_vinculos: di
                 "gatilho_valor": item.get("gatilho_valor"),
             }],
         }
-        analise = analisar_compatibilidade(revisao_stub, lub_template)
+        analise = analisar_compatibilidade(revisao_stub, lub_template, etapa_overrides=etapa_overrides)
         cache_analises[cache_key] = analise
     if not analise.get("ok"):
         return None
@@ -318,7 +412,8 @@ def obter_integracao_automatica_por_item(item: dict[str, Any], mapa_vinculos: di
         "template_lubrificacao_nome": vinculo.get("template_lubrificacao_nome") or lub_template.get("nome") or "Lubrificação vinculada",
         "equipamentos_vinculados": int(vinculo.get("equipamentos_vinculados") or 0),
         "observacoes": vinculo.get("observacoes") or "",
-        "dispara": (linha.get("dispara_lubrificacao") == "Sim"),
+        "dispara": bool(linha.get("aplicar_lubrificacao")),
+        "aplica_automatico": bool(linha.get("aplica_automatico")),
         "itens_acionados": linha.get("itens_acionados") or "—",
         "qtd_itens": int(linha.get("qtd_itens") or 0),
     }

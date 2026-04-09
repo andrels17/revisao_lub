@@ -83,6 +83,11 @@ def _render_page_header() -> None:
         .integration-name {font-size:.98rem;font-weight:800;color:#f8fafc;}
         .integration-sub {font-size:.8rem;color:#94a3b8;margin-top:.18rem;}
         .integration-items {font-size:.84rem;color:#e2e8f0;margin-top:.55rem;line-height:1.45;}
+        .integration-check-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.6rem;margin-top:.7rem;}
+        .integration-check {display:flex;align-items:center;gap:.55rem;padding:.65rem .75rem;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(255,255,255,.03);}
+        .integration-check input {width:16px;height:16px;accent-color:#60a5fa;}
+        .integration-check label {font-size:.82rem;color:#dbeafe;}
+        .integration-origin {font-size:.76rem;color:#93c5fd;margin-top:.4rem;font-weight:700;}
         </style>
         <div class="page-header-card">
             <div class="eyebrow">🔧 Operação</div>
@@ -141,6 +146,9 @@ def _render_bloco_integracao_lubrificacao(item, integracao):
     titulo = html.escape(str(integracao.get("template_lubrificacao_nome") or "Lubrificação vinculada"))
     etiqueta = "🟠 Executar junto" if integracao.get("dispara") else "⚪ Não entra nesta etapa"
     classe = "status-warning" if integracao.get("dispara") else "status-muted"
+    origem = "Vínculo salvo em Templates" if integracao.get("origem") == "vinculo" else "Associação automática pelo equipamento"
+    checked_etapa = "checked" if integracao.get("dispara") else ""
+    checked_auto = "checked" if integracao.get("aplica_automatico") else ""
     st.markdown(
         f"""
         <div class="integration-card {classe}">
@@ -150,6 +158,11 @@ def _render_bloco_integracao_lubrificacao(item, integracao):
             </div>
             <div class="integration-name">{titulo}</div>
             <div class="integration-sub">Etapa atual: {int(gatilho) if gatilho.is_integer() else gatilho:g} {unidade} · Equipamentos usando este par: {int(integracao.get('equipamentos_vinculados') or 0)}</div>
+            <div class="integration-origin">{html.escape(origem)}</div>
+            <div class="integration-check-grid">
+                <div class="integration-check"><input type="checkbox" disabled {checked_etapa}><label>Etapa marcada para puxar lubrificação</label></div>
+                <div class="integration-check"><input type="checkbox" disabled {checked_auto}><label>Compatibilidade automática pelo intervalo</label></div>
+            </div>
             <div class="integration-items">{html.escape(str(integracao.get('itens_acionados') or '—'))}</div>
         </div>
         """,

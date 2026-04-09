@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import pandas as pd
 import streamlit as st
+
 from services import (
     equipamentos_service,
     setores_service,
@@ -21,7 +24,7 @@ def _inject_templates_css():
     st.markdown(
         """
         <style>
-        .tmpl-note, .tmpl-link-card, .tmpl-distrib-card {
+        .tmpl-note, .tmpl-link-card, .tmpl-distrib-card, .tmpl-check-row {
             border: 1px solid rgba(148,163,184,.18);
             border-radius: 18px;
             padding: 1rem 1.05rem;
@@ -30,7 +33,7 @@ def _inject_templates_css():
             margin-bottom: .85rem;
         }
         .tmpl-link-card h4 {margin:0 0 .2rem 0;color:#ecf3ff;font-size:1rem;font-weight:800;}
-        .tmpl-link-card p, .tmpl-note p, .tmpl-distrib-card p {margin:.15rem 0 0 0;color:#9db0c7;font-size:.88rem;}
+        .tmpl-link-card p, .tmpl-note p, .tmpl-distrib-card p, .tmpl-check-row p {margin:.15rem 0 0 0;color:#9db0c7;font-size:.88rem;}
         .tmpl-chip {
             display:inline-block;
             padding:.2rem .55rem;
@@ -41,14 +44,17 @@ def _inject_templates_css():
             font-weight:700;
             margin-right:.35rem;
         }
+        .tmpl-mini-muted {color:#94a3b8;font-size:.83rem;}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
+
 def _fmt_unidade(tipo_controle: str) -> str:
     return "h" if (tipo_controle or "").lower() == "horas" else "km"
+
 
 
 def _render_templates_revisao():
@@ -149,9 +155,10 @@ def _render_templates_revisao():
                             st.error("Informe o nome.")
 
 
+
 def _render_templates_lubrificacao():
     st.markdown("### Templates de lubrificação")
-    st.caption("Cadastre itens com os intervalos de troca/coleta. Exemplo: troca e coleta de óleo a cada 10.000 km.")
+    st.caption("Agora a lubrificação também pode ser editada como a revisão: cabeçalho do template e itens sem precisar recriar tudo.")
     templates = templates_lubrificacao_service.listar_com_itens()
     tab_lista, tab_novo = st.tabs(["Existentes", "Novo template"])
 
@@ -176,10 +183,52 @@ def _render_templates_lubrificacao():
             unidade = _fmt_unidade(t["tipo_controle"])
             n = len(t["itens"])
             with st.expander(f"**{t['nome']}** — {n} item(ns) | {t['tipo_controle']}"):
+                with st.form(f"form_edit_tmpl_lub_{t['id']}"):
+                    c1, c2 = st.columns([2, 1])
+                    with c1:
+                        novo_nome = st.text_input("Nome do template", value=t["nome"], key=f"tmpl_lub_nome_{t['id']}")
+                    with c2:
+                        idx_tipo = 0 if t["tipo_controle"] == "horas" else 1
+                        novo_tipo = st.selectbox("Tipo de controle", TIPOS_CONTROLE, index=idx_tipo, key=f"tmpl_lub_tipo_{t['id']}")
+                    salvar_cabecalho = st.form_submit_button("Salvar dados do template", type="secondary")
+                if salvar_cabecalho:
+                    templates_lubrificacao_service.atualizar_template(t["id"], novo_nome.strip(), novo_tipo)
+                    st.success("Template atualizado.")
+                    st.rerun()
+
                 if t["itens"]:
-                    df = pd.DataFrame(t["itens"])[["nome_item", "tipo_produto", "intervalo_valor"]]
-                    df.columns = ["Item", "Produto", f"Intervalo ({unidade})"]
-                    st.dataframe(df, use_container_width=True, hide_index=True)
+                    st.markdown("**Itens do plano**")
+                    for item in t["itens"]:
+                        with st.form(f"form_edit_item_lub_{item['id']}"):
+                            c1, c2, c3, c4 = st.columns([2, 2, 1, 1])
+                            with c1:
+                                nome_item = st.text_input("Nome do item", value=item["nome_item"], key=f"item_nome_{item['id']}")
+                            with c2:
+                                produto = st.selectbox(
+                                    "Produto",
+                                    [""] + TIPOS_PRODUTO,
+                                    index=([""] + TIPOS_PRODUTO).index(item["tipo_produto"]) if item["tipo_produto"] in TIPOS_PRODUTO else 0,
+                                    key=f"item_prod_{item['id']}",
+                                )
+                            with c3:
+                                intervalo = st.number_input(
+                                    f"Intervalo ({unidade})",
+                                    min_value=1.0,
+                                    step=25.0,
+                                    value=float(item["intervalo_valor"]),
+                                    key=f"item_int_{item['id']}",
+                                )
+                            with c4:
+                                st.write("")
+                                st.write("")
+                                salvar = st.form_submit_button("Salvar item")
+                            if salvar:
+                                templates_lubrificacao_service.atualizar_item(item["id"], nome_item.strip(), produto or None, intervalo)
+                                st.success("Item atualizado.")
+                                st.rerun()
+                else:
+                    st.info("Este template ainda não possui itens.")
+
                 st.markdown("**Adicionar item**")
                 c1, c2, c3, c4 = st.columns([2, 2, 1, 1])
                 with c1:
@@ -200,9 +249,10 @@ def _render_templates_lubrificacao():
                             st.error("Informe o nome.")
 
 
+
 def _render_integracao_revisao_lubrificacao():
     st.markdown("### Integração revisão × lubrificação")
-    st.caption("Vincule os planos e visualize em quais etapas da revisão os itens de lubrificação entram juntos.")
+    st.caption("Agora cada etapa pode ser ligada ou desligada com checkbox. Isso resolve cenários como 5 mil sem óleo e 10 mil com óleo.")
     revisoes = templates_revisao_service.listar_com_etapas()
     lubrificacoes = templates_lubrificacao_service.listar_com_itens()
     vinculos = templates_integracao_service.listar_vinculos()
@@ -211,35 +261,30 @@ def _render_integracao_revisao_lubrificacao():
         """
         <div class="tmpl-note">
             <span class="tmpl-chip">Exemplo prático</span>
-            <p>Se a revisão tem etapas em 5.000 / 10.000 / 15.000 / 20.000 km e a troca/coleta de óleo acontece a cada 10.000 km,
-            o sistema mostra que os itens de lubrificação entram nas etapas de 10.000 e 20.000 km, mas não em 5.000 km.</p>
+            <p>Se a revisão tem etapas em 5.000 / 10.000 / 15.000 / 20.000 km e a troca/coleta de óleo ocorre a cada 10.000 km, você pode deixar marcado apenas nas etapas de 10k e 20k.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     if not revisoes or not lubrificacoes:
-        st.info("Cadastre ao menos um template de revisão e um de lubrificação para usar a integração.")
+        st.info("Cadastre ao menos um template de revisão e um de lubrificação para integrar.")
         return
 
-    opcoes_rev = {f"{t['nome']} ({t['tipo_controle']})": t for t in revisoes}
-    rev_label = st.selectbox("Template de revisão", list(opcoes_rev.keys()))
-    revisao = opcoes_rev[rev_label]
+    mapa_rev = {f"{t['nome']} ({t['tipo_controle']})": t for t in revisoes}
+    mapa_lub = {f"{t['nome']} ({t['tipo_controle']})": t for t in lubrificacoes}
 
-    lub_filtradas = [t for t in lubrificacoes if t.get("tipo_controle") == revisao.get("tipo_controle")]
-    if not lub_filtradas:
-        st.warning("Não há template de lubrificação compatível com o mesmo tipo de controle.")
-        return
-
-    opcoes_lub = {f"{t['nome']} ({t['tipo_controle']})": t for t in lub_filtradas}
-    lub_label = st.selectbox("Template de lubrificação complementar", list(opcoes_lub.keys()))
-    lubrificacao = opcoes_lub[lub_label]
+    revisao = mapa_rev[st.selectbox("Template de revisão", list(mapa_rev.keys()))]
+    lubrificacao = mapa_lub[st.selectbox("Template de lubrificação complementar", list(mapa_lub.keys()))]
     observacoes = st.text_input(
         "Observação opcional",
         placeholder="Ex: usar este par nos tratores da linha X",
     )
 
-    analise = templates_integracao_service.analisar_compatibilidade(revisao, lubrificacao)
+    vinculo_existente = templates_integracao_service.obter_vinculo_por_par(revisao["id"], lubrificacao["id"])
+    overrides_salvos = templates_integracao_service.listar_overrides_etapas(vinculo_existente["id"]) if vinculo_existente else {}
+    analise = templates_integracao_service.analisar_compatibilidade(revisao, lubrificacao, etapa_overrides=overrides_salvos)
+
     if not analise.get("ok"):
         st.warning(analise.get("motivo") or "Não foi possível analisar a compatibilidade.")
     else:
@@ -250,15 +295,33 @@ def _render_integracao_revisao_lubrificacao():
         c3.metric("Etapas com lubrificação", resumo["etapas_com_lubrificacao"])
         c4.metric("Etapas sem lubrificação", resumo["etapas_sem_lubrificacao"])
 
-        df = pd.DataFrame(analise["linhas"])[["etapa", "gatilho_valor", "dispara_lubrificacao", "itens_acionados"]]
-        unidade = _fmt_unidade(analise["tipo_controle"])
-        df.columns = ["Etapa de revisão", f"Gatilho ({unidade})", "Aciona lubrificação?", "Itens de lubrificação"]
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.markdown("#### Ajuste fino por etapa")
+        st.caption("Marque apenas as etapas que devem puxar a lubrificação. O valor padrão vem do cálculo automático, mas você pode sobrescrever.")
+        etapa_flags = {}
+        for linha in analise["linhas"]:
+            etapa_id = linha["etapa_id"]
+            c1, c2, c3, c4 = st.columns([1.1, 2.2, 1.2, 3.2])
+            with c1:
+                etapa_flags[etapa_id] = st.checkbox(
+                    "Aplicar",
+                    value=bool(linha["aplicar_lubrificacao"]),
+                    key=f"chk_vinc_{revisao['id']}_{lubrificacao['id']}_{etapa_id}",
+                )
+            with c2:
+                st.markdown(f"**{linha['etapa']}**")
+                st.caption(f"Gatilho: {int(linha['gatilho_valor']) if float(linha['gatilho_valor']).is_integer() else linha['gatilho_valor']} {_fmt_unidade(analise['tipo_controle'])}")
+            with c3:
+                st.markdown("<div class='tmpl-mini-muted'>Sugestão automática</div>", unsafe_allow_html=True)
+                st.write("Sim" if linha["aplica_automatico"] else "Não")
+            with c4:
+                st.markdown("<div class='tmpl-mini-muted'>Itens que entram se marcado</div>", unsafe_allow_html=True)
+                st.write(linha["itens_acionados"])
 
         if st.button("Salvar vínculo revisão × lubrificação", type="primary", use_container_width=True):
             try:
-                templates_integracao_service.salvar_vinculo(revisao["id"], lubrificacao["id"], observacoes)
-                st.success("Vínculo salvo.")
+                vinculo_id = templates_integracao_service.salvar_vinculo(revisao["id"], lubrificacao["id"], observacoes)
+                templates_integracao_service.salvar_overrides_etapas(vinculo_id, etapa_flags)
+                st.success("Vínculo salvo com as marcações por etapa.")
                 st.rerun()
             except Exception as exc:
                 st.error(f"Não foi possível salvar o vínculo: {exc}")
@@ -304,13 +367,9 @@ def _render_integracao_revisao_lubrificacao():
             c3.metric("Controle", vinculo.get("tipo_controle") or "-")
             st.caption(vinculo.get("observacoes") or "Sem observações.")
 
-            ativo_atual = bool(vinculo.get("ativo", True))
-            alvo = st.radio(
+            ativo = st.checkbox(
                 "Aplicar este vínculo na operação?",
-                options=[True, False],
-                format_func=lambda x: "Sim" if x else "Não",
-                index=0 if ativo_atual else 1,
-                horizontal=True,
+                value=bool(vinculo.get("ativo", True)),
                 key=f"ativo_vinc_{vinculo['id']}",
             )
             obs_edit = st.text_input(
@@ -318,15 +377,11 @@ def _render_integracao_revisao_lubrificacao():
                 value=vinculo.get("observacoes") or "",
                 key=f"obs_vinc_{vinculo['id']}",
             )
-            c4, c5 = st.columns(2)
-            if c4.button("Salvar vínculo", key=f"save_vinc_{vinculo['id']}", use_container_width=True):
-                templates_integracao_service.atualizar_vinculo(vinculo["id"], ativo=alvo, observacoes=obs_edit)
+            if st.button("Salvar vínculo", key=f"save_vinc_{vinculo['id']}", use_container_width=True):
+                templates_integracao_service.atualizar_vinculo(vinculo["id"], ativo=ativo, observacoes=obs_edit)
                 st.success("Vínculo atualizado.")
                 st.rerun()
-            if c5.button("Desativar", key=f"disable_vinc_{vinculo['id']}", use_container_width=True):
-                templates_integracao_service.atualizar_vinculo(vinculo["id"], ativo=False, observacoes=obs_edit)
-                st.success("Vínculo desativado.")
-                st.rerun()
+
 
 
 def _normalizar_hierarquia_setores(setores: list[dict]) -> dict:
@@ -346,6 +401,7 @@ def _normalizar_hierarquia_setores(setores: list[dict]) -> dict:
         grupo = caminho[1] if len(caminho) > 1 else "—"
         hier[str(s["id"])] = {"departamento": depto, "grupo": grupo, "setor": s.get("nome") or "-"}
     return hier
+
 
 
 def _render_distribuicao_templates():
@@ -398,7 +454,7 @@ def _render_distribuicao_templates():
     lub_label = c5.selectbox("Template de lubrificação para aplicar", list(lub_opcoes.keys()))
 
     st.markdown(
-        f"""
+        """
         <div class="tmpl-distrib-card">
             <span class="tmpl-chip">Ação em lote</span>
             <p>Você pode aplicar apenas revisão, apenas lubrificação ou os dois de uma vez. O filtro por departamento/grupo ajuda a popular rapidamente o sistema após o cadastro dos planos.</p>
@@ -435,6 +491,7 @@ def _render_distribuicao_templates():
     )
     if not preview.empty:
         st.dataframe(preview, use_container_width=True, hide_index=True)
+
 
 
 def render():
