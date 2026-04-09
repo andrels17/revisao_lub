@@ -139,10 +139,16 @@ def _inject_styles():
             align-items: center;
             justify-content: center;
             border-radius: 12px;
-            font-size: 1.05rem;
             background: rgba(255,255,255,.05);
             border: 1px solid rgba(255,255,255,.06);
             box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+        }
+        .dash-kpi .icon .orb {
+            width: 14px;
+            height: 14px;
+            border-radius: 999px;
+            background: var(--kpi-accent, #4f8cff);
+            box-shadow: 0 0 0 4px color-mix(in srgb, var(--kpi-accent, #4f8cff) 18%, transparent);
         }
         .dash-kpi.n  {
             --kpi-accent: #4f8cff;
@@ -220,7 +226,7 @@ def _hero(total_alertas: int):
     )
 
 
-def _kpi(label: str, value, hint: str = "", cls: str = "", icon: str = "📌", meta: str = ""):
+def _kpi(label: str, value, hint: str = "", cls: str = "", meta: str = ""):
     css = f"dash-kpi {cls}".strip()
     meta_html = f'<div class="meta">{meta}</div>' if meta else ""
     st.markdown(
@@ -233,7 +239,7 @@ def _kpi(label: str, value, hint: str = "", cls: str = "", icon: str = "📌", m
                     {meta_html}
                     <div class="hint">{hint}</div>
                 </div>
-                <div class="icon">{icon}</div>
+                <div class="icon"><span class="orb"></span></div>
             </div>
         </div>
         """,
@@ -252,23 +258,23 @@ def _render_cards(kpis):
     st.markdown('<div class="dash-kpi-grid">', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4, gap="small")
     with c1:
-        _kpi("Equipamentos", kpis["total_equipamentos"], "Base monitorada no dashboard", "n", "🛠️", "Visão geral")
+        _kpi("Equipamentos", kpis["total_equipamentos"], "Base monitorada no dashboard", "n", "Visão geral")
     with c2:
-        _kpi("Alertas vencidos", kpis["vencidos"], "Itens que já passaram do ponto de execução", "d", "🔴", f"{pct_vencidos}% dos alertas")
+        _kpi("Alertas vencidos", kpis["vencidos"], "Itens que já passaram do ponto de execução", "d", f"{pct_vencidos}% dos alertas")
     with c3:
-        _kpi("Alertas próximos", kpis["proximos"], "Itens entrando na janela de atenção", "w", "🟠", f"{pct_proximos}% dos alertas")
+        _kpi("Alertas próximos", kpis["proximos"], "Itens entrando na janela de atenção", "w", f"{pct_proximos}% dos alertas")
     with c4:
-        _kpi("Itens em dia", kpis["em_dia"], "Pendências saudáveis no ciclo atual", "s", "🟢", f"{pct_em_dia}% do total")
+        _kpi("Itens em dia", kpis["em_dia"], "Pendências saudáveis no ciclo atual", "s", f"{pct_em_dia}% do total")
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown('<div class="dash-kpi-grid three">', unsafe_allow_html=True)
     c5, c6, c7 = st.columns(3, gap="small")
     with c5:
-        _kpi("Equip. com alerta", kpis["equipamentos_com_alerta"], "Ao menos um item vencido ou próximo", "d", "⚠️", f"{pct_alerta}% da frota")
+        _kpi("Equip. com alerta", kpis["equipamentos_com_alerta"], "Ao menos um item vencido ou próximo", "d", f"{pct_alerta}% da frota")
     with c6:
-        _kpi("Equip. vencidos", kpis["equipamentos_vencidos"], "Equipamentos com criticidade imediata", "d", "⛔", "Ação prioritária")
+        _kpi("Equip. vencidos", kpis["equipamentos_vencidos"], "Equipamentos com criticidade imediata", "d", "Ação prioritária")
     with c7:
-        _kpi("Equip. próximos", kpis["equipamentos_proximos"], "Equipamentos que merecem acompanhamento", "w", "👀", "Prevenção operacional")
+        _kpi("Equip. próximos", kpis["equipamentos_proximos"], "Equipamentos que merecem acompanhamento", "w", "Prevenção operacional")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -362,10 +368,6 @@ def _grafico_setores(ranking):
             y=df["Setor"],
             orientation="h",
             marker=dict(color=PLOTLY_COLORS["proximos"]),
-            text=df["Próximos"].map(lambda v: str(int(v)) if v else ""),
-            textposition="inside",
-            textfont=dict(color="#0b1220", size=12),
-            insidetextanchor="middle",
             cliponaxis=False,
             hovertemplate="%{y}: %{x} próximo(s)<extra></extra>",
             offsetgroup="alertas",
@@ -376,10 +378,6 @@ def _grafico_setores(ranking):
             y=df["Setor"],
             orientation="h",
             marker=dict(color=PLOTLY_COLORS["vencidos"]),
-            text=df["Vencidos"].map(lambda v: str(int(v)) if v else ""),
-            textposition="inside",
-            textfont=dict(color="#f8fbff", size=12),
-            insidetextanchor="middle",
             cliponaxis=False,
             hovertemplate="%{y}: %{x} vencido(s)<extra></extra>",
             offsetgroup="alertas",
@@ -466,10 +464,11 @@ def render():
     # ── Cabeçalho ──────────────────────────────────────────────────
     col_h, col_btn = st.columns([5, 1])
     with col_h:
-        st.title("📊 Dashboard")
+        st.title("Dashboard")
     with col_btn:
         st.write("")
-        if st.button("↺ Atualizar", help="Recarrega dados do banco"):
+        if st.button("Atualizar", help="Recarrega dados do banco"):
+
             dashboard_service.carregar_alertas.clear()
             st.rerun()
 
