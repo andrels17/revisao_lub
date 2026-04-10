@@ -4,6 +4,11 @@ from typing import Any
 
 import streamlit as st
 
+try:
+    import psycopg2
+except Exception:  # pragma: no cover
+    psycopg2 = None
+
 from database.connection import get_conn, release_conn
 from services import (
     auditoria_service,
@@ -21,37 +26,17 @@ def _safe_close(conn) -> None:
     release_conn(conn)
 
 
-def _colunas_equipamentos(cur) -> set[str]:
-    cur.execute(
-        """
-        select column_name
-          from information_schema.columns
-         where table_schema = 'public'
-           and table_name = 'equipamentos'
-        """
-    )
-    return {str(r[0]) for r in cur.fetchall()}
-
-
-def _ensure_base_planejamento_columns(cur) -> set[str]:
-    colunas = _colunas_equipamentos(cur)
-    faltantes = [c for c in ("km_base_plano", "horas_base_plano") if c not in colunas]
-    if not faltantes:
-        return colunas
-    try:
-        for coluna in faltantes:
-            cur.execute(f"alter table equipamentos add column if not exists {coluna} numeric")
-        colunas = _colunas_equipamentos(cur)
-    except Exception:
-        cur.connection.rollback()
-        colunas = _colunas_equipamentos(cur)
-    return colunas
-
-
-def _expr_base(colunas: set[str], base_col: str, atual_col: str) -> str:
-    if base_col in colunas:
-        return f"coalesce(e.{base_col}, e.{atual_col}, 0)"
-    return f"coalesce(e.{atual_col}, 0)"
+def _garantir_colunas_plano(cur) -> None:
+    comandos = [
+        "alter table equipamentos add column if not exists km_inicial_plano double precision",
+        "alter table equipamentos add column if not exists horas_inicial_plano double precision",
+    ]
+    for sql in comandos:
+        try:
+            cur.execute(sql)
+        except Exception:
+            # Mantém retrocompatibilidade quando o usuário não tem permissão de ALTER TABLE.
+            pass
 
 
 @st.cache_data(ttl=TTL_EQ, show_spinner=False)
@@ -59,9 +44,8 @@ def listar() -> list[dict[str, Any]]:
     conn = get_conn()
     cur = conn.cursor()
     try:
-        colunas = _ensure_base_planejamento_columns(cur)
         cur.execute(
-            f"""
+            """
             select
                 e.id,
                 e.codigo,
@@ -69,9 +53,9 @@ def listar() -> list[dict[str, Any]]:
                 e.tipo,
                 coalesce(e.km_atual, 0),
                 coalesce(e.horas_atual, 0),
-                {_expr_base(colunas, 'km_base_plano', 'km_atual')} as km_base_plano,
-                {_expr_base(colunas, 'horas_base_plano', 'horas_atual')} as horas_base_plano,
                 e.template_revisao_id,
+                coalesce(e.km_inicial_plano, 0),
+                coalesce(e.horas_inicial_plano, 0),
                 e.setor_id,
                 coalesce(s.nome, '-') as setor_nome,
                 e.template_lubrificacao_id,
@@ -90,9 +74,9 @@ def listar() -> list[dict[str, Any]]:
                 "tipo": r[3],
                 "km_atual": float(r[4] or 0),
                 "horas_atual": float(r[5] or 0),
-                "km_base_plano": float(r[6] or 0),
-                "horas_base_plano": float(r[7] or 0),
-                "template_revisao_id": r[8],
+                "template_revisao_id": r[6],
+                "km_inicial_plano": float(r[7] or 0),
+                "horas_inicial_plano": float(r[8] or 0),
                 "setor_id": r[9],
                 "setor_nome": r[10],
                 "template_lubrificacao_id": r[11],
@@ -132,9 +116,8 @@ def obter(equipamento_id):
     conn = get_conn()
     cur = conn.cursor()
     try:
-        colunas = _ensure_base_planejamento_columns(cur)
         cur.execute(
-            f"""
+            """
             select
                 e.id,
                 e.codigo,
@@ -142,12 +125,12 @@ def obter(equipamento_id):
                 e.tipo,
                 coalesce(e.km_atual, 0),
                 coalesce(e.horas_atual, 0),
-                {_expr_base(colunas, 'km_base_plano', 'km_atual')} as km_base_plano,
-                {_expr_base(colunas, 'horas_base_plano', 'horas_atual')} as horas_base_plano,
                 e.template_revisao_id,
                 coalesce(tr.nome, '-') as template_revisao_nome,
                 e.template_lubrificacao_id,
                 coalesce(tl.nome, '-') as template_lubrificacao_nome,
+                coalesce(e.km_inicial_plano, 0),
+                coalesce(e.horas_inicial_plano, 0),
                 e.setor_id,
                 coalesce(s.nome, '-') as setor_nome,
                 coalesce(e.ativo, true) as ativo
@@ -169,12 +152,12 @@ def obter(equipamento_id):
             "tipo": r[3],
             "km_atual": float(r[4] or 0),
             "horas_atual": float(r[5] or 0),
-            "km_base_plano": float(r[6] or 0),
-            "horas_base_plano": float(r[7] or 0),
-            "template_revisao_id": r[8],
-            "template_revisao_nome": r[9],
-            "template_lubrificacao_id": r[10],
-            "template_lubrificacao_nome": r[11],
+            "template_revisao_id": r[6],
+            "template_revisao_nome": r[7],
+            "template_lubrificacao_id": r[8],
+            "template_lubrificacao_nome": r[9],
+            "km_inicial_plano": float(r[10] or 0),
+            "horas_inicial_plano": float(r[11] or 0),
             "setor_id": r[12],
             "setor_nome": r[13],
             "ativo": bool(r[14]),
@@ -282,7 +265,7 @@ def carregar_snapshot_equipamentos() -> list[dict[str, Any]]:
     return rows
 
 
-def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, ativo=True, km_base_plano=None, horas_base_plano=None):
+def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, ativo=True, km_inicial_plano=0, horas_inicial_plano=0):
     return criar_completo(
         codigo=codigo,
         nome=nome,
@@ -292,44 +275,40 @@ def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revi
         horas_atual=horas_atual,
         template_revisao_id=template_revisao_id,
         ativo=ativo,
-        km_base_plano=km_base_plano,
-        horas_base_plano=horas_base_plano,
+        km_inicial_plano=km_inicial_plano,
+        horas_inicial_plano=horas_inicial_plano,
     )
 
 
-def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, template_lubrificacao_id=None, ativo=True, km_base_plano=None, horas_base_plano=None):
+def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, template_lubrificacao_id=None, ativo=True, km_inicial_plano=0, horas_inicial_plano=0):
     conn = get_conn()
     cur = conn.cursor()
     try:
-        colunas = _ensure_base_planejamento_columns(cur)
-        km_base_plano = km_atual if km_base_plano is None else km_base_plano
-        horas_base_plano = horas_atual if horas_base_plano is None else horas_base_plano
-
-        insert_cols = [
-            "codigo", "nome", "tipo", "setor_id",
-            "km_atual", "horas_atual",
-            "template_revisao_id", "template_lubrificacao_id", "ativo",
-        ]
-        values = [
-            codigo, nome, tipo, setor_id,
-            km_atual, horas_atual,
-            template_revisao_id, template_lubrificacao_id, ativo,
-        ]
-        if "km_base_plano" in colunas:
-            insert_cols.append("km_base_plano")
-            values.append(km_base_plano)
-        if "horas_base_plano" in colunas:
-            insert_cols.append("horas_base_plano")
-            values.append(horas_base_plano)
-
-        placeholders = ", ".join(["%s"] * len(insert_cols))
+        _garantir_colunas_plano(cur)
         cur.execute(
-            f"""
-            insert into equipamentos ({', '.join(insert_cols)})
-            values ({placeholders})
+            """
+            insert into equipamentos (
+                codigo, nome, tipo, setor_id,
+                km_atual, horas_atual,
+                template_revisao_id, template_lubrificacao_id, ativo,
+                km_inicial_plano, horas_inicial_plano
+            )
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             returning id
             """,
-            values,
+            (
+                codigo,
+                nome,
+                tipo,
+                setor_id,
+                km_atual,
+                horas_atual,
+                template_revisao_id,
+                template_lubrificacao_id,
+                ativo,
+                km_inicial_plano,
+                horas_inicial_plano,
+            ),
         )
         equipamento_id = cur.fetchone()[0]
         auditoria_service.registrar_no_conn(
@@ -347,9 +326,9 @@ def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, temp
                 "horas_atual": horas_atual,
                 "template_revisao_id": template_revisao_id,
                 "template_lubrificacao_id": template_lubrificacao_id,
-                "km_base_plano": km_base_plano,
-                "horas_base_plano": horas_base_plano,
                 "ativo": ativo,
+                "km_inicial_plano": km_inicial_plano,
+                "horas_inicial_plano": horas_inicial_plano,
             },
         )
         conn.commit()
@@ -359,7 +338,7 @@ def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, temp
         _safe_close(conn)
 
 
-def atualizar_inline(equipamento_id, *, nome, tipo, setor_id, ativo, km_base_plano=None, horas_base_plano=None):
+def atualizar_inline(equipamento_id, *, nome, tipo, setor_id, ativo, km_inicial_plano=0, horas_inicial_plano=0):
     atual = obter(equipamento_id)
     if not atual:
         raise ValueError("Equipamento não encontrado ou fora do escopo.")
@@ -367,28 +346,19 @@ def atualizar_inline(equipamento_id, *, nome, tipo, setor_id, ativo, km_base_pla
     conn = get_conn()
     cur = conn.cursor()
     try:
-        colunas = _ensure_base_planejamento_columns(cur)
-        params = [nome, tipo, setor_id, bool(ativo)]
-        set_parts = [
-            "nome = %s",
-            "tipo = %s",
-            "setor_id = %s",
-            "ativo = %s",
-        ]
-        if "km_base_plano" in colunas:
-            set_parts.append("km_base_plano = %s")
-            params.append(km_base_plano)
-        if "horas_base_plano" in colunas:
-            set_parts.append("horas_base_plano = %s")
-            params.append(horas_base_plano)
-        params.append(equipamento_id)
+        _garantir_colunas_plano(cur)
         cur.execute(
-            f"""
+            """
             update equipamentos
-               set {', '.join(set_parts)}
+               set nome = %s,
+                   tipo = %s,
+                   setor_id = %s,
+                   ativo = %s,
+                   km_inicial_plano = %s,
+                   horas_inicial_plano = %s
              where id = %s
             """,
-            params,
+            (nome, tipo, setor_id, bool(ativo), km_inicial_plano, horas_inicial_plano, equipamento_id),
         )
         auditoria_service.registrar_no_conn(
             conn,
@@ -400,16 +370,16 @@ def atualizar_inline(equipamento_id, *, nome, tipo, setor_id, ativo, km_base_pla
                 "tipo": atual.get("tipo"),
                 "setor_id": atual.get("setor_id"),
                 "ativo": atual.get("ativo"),
-                "km_base_plano": atual.get("km_base_plano"),
-                "horas_base_plano": atual.get("horas_base_plano"),
+                "km_inicial_plano": atual.get("km_inicial_plano"),
+                "horas_inicial_plano": atual.get("horas_inicial_plano"),
             },
             valor_novo={
                 "nome": nome,
                 "tipo": tipo,
                 "setor_id": setor_id,
                 "ativo": bool(ativo),
-                "km_base_plano": km_base_plano,
-                "horas_base_plano": horas_base_plano,
+                "km_inicial_plano": km_inicial_plano,
+                "horas_inicial_plano": horas_inicial_plano,
             },
         )
         conn.commit()
