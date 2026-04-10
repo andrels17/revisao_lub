@@ -43,9 +43,17 @@ def _clamp_int(value: int, min_value: int, max_value: int) -> int:
     return max(min_value, min(int(value), max_value))
 
 
+def _cfg_defaults_with_legacy() -> dict:
+    cfg = dict(CONFIG_DEFAULTS)
+    cfg["tolerancia_padrao"] = int(cfg["tolerancia_proximo_km"])
+    return cfg
+
+
 def _apply_defaults_to_session() -> dict:
-    cfg = {k: int(v) for k, v in CONFIG_DEFAULTS.items()}
+    cfg = _cfg_defaults_with_legacy()
     for chave, valor in cfg.items():
+        if chave == "tolerancia_padrao":
+            continue
         st.session_state[f"{SESSION_PREFIX}{chave}"] = valor
     ui_constants.TOLERANCIA_PROXIMO_KM = int(cfg["tolerancia_proximo_km"])
     ui_constants.TOLERANCIA_PROXIMO_HORAS = int(cfg["tolerancia_proximo_horas"])
@@ -53,83 +61,41 @@ def _apply_defaults_to_session() -> dict:
     return cfg
 
 
-def garantir_tabela() -> bool:
-    conn = None
-    try:
-        conn = get_conn()
-        cur = conn.cursor()
-
-        cur.execute(
-            """
-            create table if not exists public.configuracoes_sistema (
-                chave varchar(100) primary key,
-                valor varchar(500) not null
-            )
-            """
+def _garantir_estrutura(cur) -> None:
+    cur.execute(
+        """
+        create table if not exists public.configuracoes_sistema (
+            chave varchar(100) primary key,
+            valor varchar(500) not null
         )
-
-        cur.execute(
-            """
-            alter table public.configuracoes_sistema
-            add column if not exists descricao text
-            """
-        )
-        cur.execute(
-            """
-            alter table public.configuracoes_sistema
-            add column if not exists atualizado_em timestamptz default now()
-            """
-        )
-
-        conn.commit()
-        return True
-
-    except (OperationalError, InterfaceError):
-        _safe_rollback(conn)
-        st.error("Erro de conexão ao preparar a tabela de configurações.")
-        return False
-    except psycopg2.Error as e:
-        _safe_rollback(conn)
-        st.error(f"Erro ao preparar a tabela de configurações: {e}")
-        return False
-    finally:
-        _safe_close(conn)
+        """
+    )
+    cur.execute(
+        """
+        alter table public.configuracoes_sistema
+        add column if not exists descricao text
+        """
+    )
+    cur.execute(
+        """
+        alter table public.configuracoes_sistema
+        add column if not exists atualizado_em timestamptz default now()
+        """
+    )
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def carregar_todas() -> dict:
-    tabela_ok = garantir_tabela()
-    if not tabela_ok:
-        cfg = dict(CONFIG_DEFAULTS)
-        cfg["tolerancia_padrao"] = int(cfg["tolerancia_proximo_km"])
-        return cfg
-
-    conn = None
-    try:
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("select chave, valor from public.configuracoes_sistema")
-        rows = cur.fetchall()
-
-    except (OperationalError, InterfaceError):
-        _safe_rollback(conn)
-        cfg = dict(CONFIG_DEFAULTS)
-        cfg["tolerancia_padrao"] = int(cfg["tolerancia_proximo_km"])
-        return cfg
-    except psycopg2.Error as e:
-        _safe_rollback(conn)
-        st.error(f"Erro ao carregar configurações: {e}")
-        cfg = dict(CONFIG_DEFAULTS)
-        cfg["tolerancia_padrao"] = int(cfg["tolerancia_proximo_km"])
-        return cfg
-    finally:
-        _safe_close(conn)
-
+def _normalizar_cfg(rows) -> dict:
     data = {k: v for k, v in rows}
     merged = {**CONFIG_DEFAULTS, **data}
 
-    tolerancia_km = merged.get("tolerancia_proximo_km", merged.get("tolerancia_padrao", CONFIG_DEFAULTS["tolerancia_proximo_km"]))
-    tolerancia_horas = merged.get("tolerancia_proximo_horas", CONFIG_DEFAULTS["tolerancia_proximo_horas"])
+    tolerancia_km = merged.get(
+        "tolerancia_proximo_km",
+        merged.get("tolerancia_padrao", CONFIG_DEFAULTS["tolerancia_proximo_km"]),
+    )
+    tolerancia_horas = merged.get(
+        "tolerancia_proximo_horas",
+        CONFIG_DEFAULTS["tolerancia_proximo_horas"],
+    )
 
     cfg = {
         "tolerancia_proximo_km": _clamp_int(_parse_int(tolerancia_km, CONFIG_DEFAULTS["tolerancia_proximo_km"]), 1, 5000),
@@ -139,9 +105,65 @@ def carregar_todas() -> dict:
         "alerta_cooldown_horas": _clamp_int(_parse_int(merged.get("alerta_cooldown_horas"), CONFIG_DEFAULTS["alerta_cooldown_horas"]), 1, 168),
         "fila_alertas_limite": _clamp_int(_parse_int(merged.get("fila_alertas_limite"), CONFIG_DEFAULTS["fila_alertas_limite"]), 20, 1000),
     }
-
     cfg["tolerancia_padrao"] = int(cfg["tolerancia_proximo_km"])
     return cfg
+
+
+def garantir_tabela() -> bool:
+    """
+    Garante a estrutura sem poluir a UI.
+    Só deve emitir erro quando chamado em ação explícita de escrita.
+    """
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        _garantir_estrutura(cur)
+        conn.commit()
+        return True
+    except Exception:
+        _safe_rollback(conn)
+        return False
+    finally:
+        _safe_close(conn)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def carregar_todas() -> dict:
+    """
+    Estratégia:
+    1) tenta ler direto da tabela existente;
+    2) se a tabela não existir, tenta criar/ajustar;
+    3) se ainda assim falhar, usa defaults sem mostrar erro visual.
+    """
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("select chave, valor from public.configuracoes_sistema")
+        rows = cur.fetchall()
+        return _normalizar_cfg(rows)
+
+    except Exception:
+        _safe_rollback(conn)
+    finally:
+        _safe_close(conn)
+
+    # Só tenta DDL se a leitura direta falhar.
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        _garantir_estrutura(cur)
+        conn.commit()
+        cur.execute("select chave, valor from public.configuracoes_sistema")
+        rows = cur.fetchall()
+        return _normalizar_cfg(rows)
+    except Exception:
+        _safe_rollback(conn)
+        return _cfg_defaults_with_legacy()
+    finally:
+        _safe_close(conn)
 
 
 def aplicar_no_session_state():
@@ -160,7 +182,7 @@ def salvar(configs: dict):
     tabela_ok = garantir_tabela()
     if not tabela_ok:
         _apply_defaults_to_session()
-        st.warning("Não foi possível salvar configurações no banco. Usando valores padrão nesta sessão.")
+        st.warning("Não foi possível preparar a tabela de configurações para salvar no banco.")
         return
 
     conn = None
@@ -184,9 +206,11 @@ def salvar(configs: dict):
     except (OperationalError, InterfaceError):
         _safe_rollback(conn)
         st.error("Erro de conexão ao salvar configurações.")
+        return
     except psycopg2.Error as e:
         _safe_rollback(conn)
         st.error(f"Erro ao salvar configurações: {e}")
+        return
     finally:
         _safe_close(conn)
 
@@ -199,6 +223,7 @@ def resetar():
     tabela_ok = garantir_tabela()
     if not tabela_ok:
         _apply_defaults_to_session()
+        st.warning("Não foi possível preparar a tabela de configurações para resetar no banco.")
         return
 
     conn = None
@@ -212,9 +237,11 @@ def resetar():
     except (OperationalError, InterfaceError):
         _safe_rollback(conn)
         st.error("Erro de conexão ao resetar configurações.")
+        return
     except psycopg2.Error as e:
         _safe_rollback(conn)
         st.error(f"Erro ao resetar configurações: {e}")
+        return
     finally:
         _safe_close(conn)
 
