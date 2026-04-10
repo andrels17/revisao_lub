@@ -6,6 +6,7 @@ from ui import (
     controle_revisoes_page,
     dashboard_page,
     equipamentos_page,
+    prioridades_page,
     importacao_page,
     leituras_page,
     lubrificacoes_page,
@@ -62,6 +63,7 @@ SECOES = {
         "📊 Dashboard": dashboard_page,
     },
     "Operação": {
+        "🔥 Prioridades do Dia": prioridades_page,
         "📏 Leituras KM / Horas": leituras_page,
         "🔧 Controle de Revisões": controle_revisoes_page,
         "🛢️ Controle de Lubrificações": lubrificacoes_page,
