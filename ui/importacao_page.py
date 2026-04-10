@@ -9,11 +9,32 @@ MODO_LABELS = {
     importacao_service.MODO_PREENCHER_VAZIOS: "Preencher apenas campos vazios + consolidar KM/Horas",
 }
 
+CAMPOS_MAPEAMENTO = [
+    ("codigo", "Código", True),
+    ("nome", "Nome do equipamento", True),
+    ("tipo", "Tipo / Grupo", False),
+    ("setor", "Setor / Departamento", False),
+    ("tipo_horimetro", "Tipo do medidor (KM/HORAS)", False),
+    ("km_atual", "Medidor atual (valor numérico)", False),
+    ("horas_atual", "Horas atuais / Horímetro numérico", False),
+    ("placa", "Placa", False),
+    ("serie", "Série / Chassi", False),
+    ("ativo", "Status / Ativo", False),
+]
+
+
+def _resolver_valor_padrao(opcoes, valor):
+    try:
+        return opcoes.index(valor)
+    except ValueError:
+        return 0
+
+
 
 def render():
     render_page_intro(
         "Importação em lote de equipamentos",
-        "Faça carga inicial ou atualização em massa com uma área mais limpa para arquivo, validação e confirmação.",
+        "Faça carga inicial ou atualização em massa com mapeamento automático e associação manual das colunas antes da confirmação.",
         "Ferramentas",
     )
     st.info(f"Escopo atual: {escopo_service.resumo_escopo()}")
@@ -40,10 +61,12 @@ def render():
 - `nome` *(obrigatório)* — nome do equipamento
 - `tipo` — Trator, Caminhão, Máquina, etc.
 - `setor` — nome exato do setor cadastrado
-- `km_atual` — hodômetro atual
-- `horas_atual` — horímetro atual
+- `tipo_horimetro` — informa se o medidor atual está em `KM` ou `HORAS`
+- `km_atual` — valor numérico do medidor atual
+- `horas_atual` — horímetro atual **numérico**
 - `placa` — placa do veículo
-- `serie` — número de série
+- `serie` — número de série / chassi
+- `ativo` — Ativo/Inativo, Sim/Não, S/N, 1/0
 """)
 
     with tab_import:
@@ -51,7 +74,7 @@ def render():
         setor_padrao = None
         if setores:
             setor_padrao_obj = st.selectbox(
-                "Setor padrão (usado quando a coluna 'setor' não bater com nenhum setor cadastrado)",
+                "Setor padrão (usado quando a coluna de setor/departamento não bater com nenhum setor cadastrado)",
                 [None] + setores,
                 format_func=lambda s: s["nome"] if s else "— nenhum —",
             )
@@ -61,7 +84,51 @@ def render():
 
         if arquivo:
             file_bytes = arquivo.read()
-            resultado = importacao_service.processar_arquivo(file_bytes, arquivo.name)
+            leitura = importacao_service.ler_arquivo(file_bytes, arquivo.name)
+            if "erro" in leitura:
+                st.error(leitura["erro"])
+                return
+
+            sugestao = importacao_service.sugerir_mapeamento(leitura["columns"])
+            st.success("Arquivo carregado. Revise abaixo a associação das colunas antes da pré-validação.")
+
+            with st.expander("Prévia da planilha original", expanded=False):
+                st.dataframe(leitura["preview_raw"], use_container_width=True, hide_index=True)
+
+            st.markdown("### Associação das colunas")
+            st.caption(
+                "O sistema já tenta identificar automaticamente colunas como COD_EQUIPAMENTO, DESCRICAO_EQUIPAMENTO, DESCRICAOTIPOEQUIPAMENTO, DESCRICAO, TIPO_HORIMETRO e KM_ATUAL. Você pode ajustar manualmente antes de importar."
+            )
+
+            opcoes = [importacao_service.SEM_MAPEAMENTO] + leitura["columns"]
+            mapping = {}
+            cols = st.columns(2)
+            for idx, (campo, label, obrigatorio) in enumerate(CAMPOS_MAPEAMENTO):
+                with cols[idx % 2]:
+                    default_value = st.session_state.get(f"map_{campo}", sugestao.get(campo, importacao_service.SEM_MAPEAMENTO))
+                    escolhido = st.selectbox(
+                        f"{label}{' *' if obrigatorio else ''}",
+                        options=opcoes,
+                        index=_resolver_valor_padrao(opcoes, default_value),
+                        key=f"map_{campo}",
+                        format_func=lambda item: "— ignorar —" if item == importacao_service.SEM_MAPEAMENTO else item,
+                    )
+                    mapping[campo] = escolhido
+
+            if mapping.get("codigo") == importacao_service.SEM_MAPEAMENTO or mapping.get("nome") == importacao_service.SEM_MAPEAMENTO:
+                st.warning("Mapeie pelo menos as colunas de código e nome para continuar.")
+                return
+
+            if mapping.get("tipo_horimetro") != importacao_service.SEM_MAPEAMENTO and mapping.get("km_atual") != importacao_service.SEM_MAPEAMENTO:
+                st.info(
+                    "Quando você mapear TIPO_HORIMETRO + KM_ATUAL, o sistema separa automaticamente o valor numérico: linhas com KM vão para km_atual e linhas com HORAS vão para horas_atual."
+                )
+            elif mapping.get("horas_atual") != importacao_service.SEM_MAPEAMENTO:
+                st.info(
+                    "A coluna de horas_atual deve conter um valor numérico. Se sua planilha usa um único medidor em KM_ATUAL, prefira mapear TIPO_HORIMETRO + KM_ATUAL."
+                )
+
+            resultado = importacao_service.processar_arquivo(file_bytes, arquivo.name, column_mapping=mapping)
             if "erro" in resultado:
                 st.error(resultado["erro"])
                 return
@@ -75,7 +142,7 @@ def render():
             c5.metric("Com erro", resumo.get("com_erro", 0))
 
             st.success(
-                f"Arquivo lido: **{resultado['linhas_ok']}** linha(s) válida(s)"
+                f"Arquivo pré-validado: **{resultado['linhas_ok']}** linha(s) válida(s)"
                 + (f" | {resultado['linhas_erro']} com erro" if resultado["linhas_erro"] else "")
             )
 
@@ -88,6 +155,9 @@ def render():
                 with st.expander("Ver avisos e conflitos detectados"):
                     for a in resultado["avisos"]:
                         st.info(a)
+
+            with st.expander("Mapeamento aplicado", expanded=False):
+                st.json({k: v for k, v in mapping.items() if v != importacao_service.SEM_MAPEAMENTO})
 
             st.markdown("### Pré-validação da importação")
             st.dataframe(resultado["preview_full"], use_container_width=True, hide_index=True)
