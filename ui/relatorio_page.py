@@ -311,14 +311,22 @@ def _render_distribution_chart(df_rev: pd.DataFrame, df_lub: pd.DataFrame) -> No
         st.bar_chart(pivot, use_container_width=True)
 
 
-def _render_evolucao_diaria(df_rev: pd.DataFrame, df_lub: pd.DataFrame) -> None:
+def _safe_datetime_series(df: pd.DataFrame, col: str = "Data") -> pd.Series:
+    if df is None or df.empty or col not in df.columns:
+        return pd.Series(dtype="datetime64[ns]")
+    return pd.to_datetime(df[col], errors="coerce")
+
+
+def _render_timeline_chart(df_rev: pd.DataFrame, df_lub: pd.DataFrame) -> None:
     base = []
     if not df_rev.empty:
         rev = df_rev[["Data"]].copy()
+        rev["Data"] = _safe_datetime_series(df_rev, "Data")
         rev["Tipo"] = "Revisões"
         base.append(rev)
     if not df_lub.empty:
         lub = df_lub[["Data"]].copy()
+        lub["Data"] = _safe_datetime_series(df_lub, "Data")
         lub["Tipo"] = "Lubrificações"
         base.append(lub)
     if not base:
@@ -326,13 +334,19 @@ def _render_evolucao_diaria(df_rev: pd.DataFrame, df_lub: pd.DataFrame) -> None:
         return
 
     df = pd.concat(base, ignore_index=True)
-    df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
     df = df.dropna(subset=["Data"])
     if df.empty:
         st.info("Sem datas válidas para montar a série temporal.")
         return
-    df["Dia"] = df["Data"].dt.strftime("%d/%m")
-    resumo = df.groupby(["Dia", "Tipo"]).size().reset_index(name="Qtd")
+
+    df["DiaData"] = df["Data"].dt.floor("D")
+    resumo = (
+        df.groupby(["DiaData", "Tipo"])
+        .size()
+        .reset_index(name="Qtd")
+        .sort_values("DiaData")
+    )
+    resumo["Dia"] = resumo["DiaData"].dt.strftime("%d/%m")
 
     try:
         import plotly.express as px
@@ -351,6 +365,10 @@ def _render_evolucao_diaria(df_rev: pd.DataFrame, df_lub: pd.DataFrame) -> None:
     except Exception:
         pivot = resumo.pivot(index="Dia", columns="Tipo", values="Qtd").fillna(0)
         st.line_chart(pivot, use_container_width=True)
+
+
+def _render_evolucao_diaria(df_rev: pd.DataFrame, df_lub: pd.DataFrame) -> None:
+    _render_timeline_chart(df_rev, df_lub)
 
 
 def _render_responsaveis_summary(df_rev: pd.DataFrame, df_lub: pd.DataFrame) -> None:
