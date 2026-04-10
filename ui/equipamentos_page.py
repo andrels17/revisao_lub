@@ -17,7 +17,7 @@ from services import (
 )
 from ui.constants import STATUS_LABEL, TIPOS_EQUIPAMENTO
 from ui.theme import render_page_intro
-
+from services import leituras_service
 
 def _inject_css():
     st.markdown(
