@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from datetime import date
 
 import pandas as pd
 import streamlit as st
@@ -392,7 +393,7 @@ def _render_metric_mini(label: str, value):
     )
 
 
-def _render_resumo_section(eq_id: str, equipamento: dict, snap: dict):
+def _render_resumo_section(eq_id: str, equipamento: dict, snap: dict, responsavel_map: dict):
     km_atual = float(equipamento.get("km_atual", snap.get("km_atual", 0)) or 0)
     horas_atual = float(equipamento.get("horas_atual", snap.get("horas_atual", 0)) or 0)
     km_ini = float(equipamento.get("km_inicial_plano", equipamento.get("km_base_plano", km_atual)) or 0)
@@ -431,6 +432,83 @@ def _render_resumo_section(eq_id: str, equipamento: dict, snap: dict):
                     st.session_state['pagina_atual'] = '🛢️ Controle de Lubrificações'
                     st.session_state.pop('eq_modal_id', None)
                     st.rerun()
+
+            with st.expander('Atualizar KM / Horas', expanded=False):
+                km_novo_default = float(equipamento.get('km_atual', snap.get('km_atual', 0)) or 0)
+                horas_novo_default = float(equipamento.get('horas_atual', snap.get('horas_atual', 0)) or 0)
+                data_padrao = date.today()
+                principal_id = str(equipamento.get('responsavel_principal_id') or '')
+                resp_ids = [''] + list(responsavel_map.keys())
+                resp_labels = ['Responsável principal atual'] + list(responsavel_map.values())
+                resp_index = resp_ids.index(principal_id) if principal_id in resp_ids else 0
+
+                l1, l2 = st.columns(2, gap='small')
+                with l1:
+                    km_novo = st.number_input('Novo KM', min_value=0.0, value=km_novo_default, step=1.0, key=f'quick_km_{eq_id}')
+                with l2:
+                    horas_novo = st.number_input('Novas horas', min_value=0.0, value=horas_novo_default, step=1.0, key=f'quick_horas_{eq_id}')
+
+                l3, l4 = st.columns([1.2, 1.4], gap='small')
+                with l3:
+                    data_leitura = st.date_input('Data da leitura', value=data_padrao, key=f'quick_data_{eq_id}')
+                with l4:
+                    resp_idx = st.selectbox(
+                        'Responsável da leitura',
+                        options=range(len(resp_ids)),
+                        index=resp_index,
+                        format_func=lambda i: resp_labels[i],
+                        key=f'quick_resp_leitura_{eq_id}',
+                    )
+
+                observacoes = st.text_area(
+                    'Observação',
+                    key=f'quick_obs_{eq_id}',
+                    height=70,
+                    placeholder='Ex.: leitura coletada na troca de turno, conferida no painel do equipamento...',
+                )
+
+                atualizou_km = km_novo > km_atual
+                atualizou_horas = horas_novo > horas_atual
+                delta_km = max(0.0, km_novo - km_atual)
+                delta_horas = max(0.0, horas_novo - horas_atual)
+                st.caption(
+                    f'Atual: {km_atual:,.0f} km / {horas_atual:,.0f} h · ' +
+                    f'Variação: +{delta_km:,.0f} km / +{delta_horas:,.0f} h'
+                )
+
+                if st.button('Salvar leitura', key=f'quick_save_leitura_{eq_id}', use_container_width=True, type='primary'):
+                    erros = []
+                    if km_novo < km_atual:
+                        erros.append(f'Novo KM não pode ser menor que o atual ({km_atual:,.0f}).')
+                    if horas_novo < horas_atual:
+                        erros.append(f'Novas horas não podem ser menores que as atuais ({horas_atual:,.0f}).')
+                    if not atualizou_km and not atualizou_horas:
+                        erros.append('Informe pelo menos uma leitura maior que a atual.')
+
+                    if erros:
+                        for erro in erros:
+                            st.error(erro)
+                    else:
+                        tipo = 'ambos' if (atualizou_km and atualizou_horas) else ('km' if atualizou_km else 'horas')
+                        try:
+                            leituras_service.registrar(
+                                equipamento_id=eq_id,
+                                tipo_leitura=tipo,
+                                km_valor=km_novo if atualizou_km else None,
+                                horas_valor=horas_novo if atualizou_horas else None,
+                                data_leitura=data_leitura,
+                                responsavel_id=resp_ids[resp_idx] or None,
+                                observacoes=(observacoes or '').strip() or None,
+                            )
+                            _carregar_equipamento.clear()
+                            _revisoes_eq.clear()
+                            _lubrificacoes_eq.clear()
+                            _timeline_eq.clear()
+                            equipamentos_service.limpar_cache()
+                            st.success('Leitura atualizada com sucesso.')
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f'Não foi possível atualizar a leitura: {exc}')
             st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="eq-inline-strip">', unsafe_allow_html=True)
@@ -670,7 +748,7 @@ def _render_ficha_conteudo(eq_id: str, setor_map: dict, responsavel_map: dict):
 
     st.markdown('<div class="eq-section">', unsafe_allow_html=True)
     if secao == "Resumo":
-        _render_resumo_section(eq_id, equipamento, snap)
+        _render_resumo_section(eq_id, equipamento, snap, responsavel_map)
     elif secao == "Revisões":
         _render_revisoes_section(eq_id)
     elif secao == "Lubrificações":
