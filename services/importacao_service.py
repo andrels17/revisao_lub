@@ -1,115 +1,92 @@
 import io
-import unicodedata
+from collections import defaultdict
 
 import pandas as pd
 
 from database.connection import get_conn, release_conn
-from services import auditoria_service, equipamentos_service, setores_service
+from services import (
+    auditoria_service,
+    equipamentos_service,
+    responsaveis_service,
+    setores_service,
+    vinculos_service,
+)
 
 COLUNAS_OBRIGATORIAS = ["codigo", "nome"]
-COLUNAS_OPCIONAIS = ["tipo", "setor", "tipo_horimetro", "km_atual", "horas_atual", "placa", "serie", "ativo"]
-COLUNAS_SISTEMA = COLUNAS_OBRIGATORIAS + COLUNAS_OPCIONAIS
+COLUNAS_OPCIONAIS = [
+    "tipo",
+    "empresa",
+    "unidade",
+    "departamento",
+    "setor",
+    "subsetor",
+    "km_atual",
+    "horas_atual",
+    "placa",
+    "serie",
+    "responsavel",
+    "responsavel_nome",
+    "gestor",
+    "tipo_horimetro",
+]
 
-TIPOS_VALIDOS = {
-    "caminhão", "trator", "colheitadeira", "pulverizador",
-    "implemento", "máquina", "outro",
+TIPOS_REFERENCIA = {
+    "caminhão", "trator", "colheitadeira", "pulverizador", "implemento", "máquina", "outro"
 }
 
 MODO_IGNORAR = "ignorar"
 MODO_ATUALIZAR = "atualizar"
 MODO_PREENCHER_VAZIOS = "preencher_vazios"
 
-SEM_MAPEAMENTO = "__IGNORAR__"
-
-ALIASES_COLUNAS = {
-    "codigo": [
-        "codigo", "cod_equipamento", "cod equipamento", "equipamento", "id_equipamento",
-    ],
-    "nome": [
-        "nome", "descricao_equipamento", "descrição_equipamento", "equipamento_nome", "descricao",
-    ],
-    "tipo": [
-        "tipo", "descricao_tipoequipamento", "descricaotipoequipamento", "tipo_equipamento", "grupo",
-    ],
-    "setor": [
-        "setor", "departamento", "descricao", "setor_nome", "departamento_nome",
-    ],
-    "tipo_horimetro": [
-        "tipo_horimetro", "tipo_horímetro", "tipo de horimetro", "tipo de horímetro",
-        "horimetro_tipo", "horímetro_tipo",
-    ],
-    "km_atual": [
-        "km_atual", "km atual", "hodometro", "hodômetro", "quilometragem", "km_total",
-    ],
-    "horas_atual": [
-        "horas_atual", "horas atual", "horimetro", "horímetro", "horimetro_atual", "horimetro atual",
-    ],
-    "placa": ["placa"],
-    "serie": ["serie", "série", "chassis", "serial"],
-    "ativo": ["ativo", "status", "situacao", "situação", "ativo_1"],
-}
-
-
-MAPEAMENTO_TIPO_MEDIDOR = {
-    "km": "km",
-    "kms": "km",
-    "quilometro": "km",
-    "quilometros": "km",
-    "quilômetro": "km",
-    "quilômetros": "km",
-    "kilometro": "km",
-    "kilometros": "km",
-    "hodometro": "km",
-    "hodômetro": "km",
-    "odometro": "km",
-    "odômetro": "km",
-    "hora": "horas",
-    "horas": "horas",
-    "hr": "horas",
-    "hrs": "horas",
-    "horimetro": "horas",
-    "horímetro": "horas",
-}
+HIERARQUIA_SETORES = [
+    ("empresa", "empresa"),
+    ("unidade", "unidade"),
+    ("departamento", "departamento"),
+    ("setor", "setor"),
+    ("subsetor", "subsetor"),
+]
 
 
 def get_template_csv() -> bytes:
-    df = pd.DataFrame(columns=["codigo", "nome", "tipo", "setor", "tipo_horimetro", "km_atual", "horas_atual", "placa", "serie", "ativo"])
+    df = pd.DataFrame(
+        columns=[
+            "codigo",
+            "nome",
+            "tipo",
+            "empresa",
+            "unidade",
+            "departamento",
+            "setor",
+            "subsetor",
+            "km_atual",
+            "horas_atual",
+            "responsavel",
+            "gestor",
+            "placa",
+            "serie",
+        ]
+    )
     df.loc[0] = {
         "codigo": "EQ001",
         "nome": "Trator John Deere",
         "tipo": "Trator",
-        "setor": "Setor Agrícola",
-        "tipo_horimetro": "HORAS",
+        "empresa": "Matriz",
+        "unidade": "Usina Norte",
+        "departamento": "Agrícola",
+        "setor": "Plantio",
+        "subsetor": "Frente A",
         "km_atual": 0,
         "horas_atual": 1200,
+        "responsavel": "João Silva",
+        "gestor": "Maria Souza",
         "placa": "ABC-1234",
         "serie": "JD-2024-001",
-        "ativo": "Ativo",
     }
     return df.to_csv(index=False).encode("utf-8")
 
 
-def _normalizar_nome_coluna(valor: str) -> str:
-    texto = str(valor or "").strip().lower().replace("-", "_").replace(" ", "_")
-    texto = "".join(
-        ch for ch in unicodedata.normalize("NFKD", texto)
-        if not unicodedata.combining(ch)
-    )
-    while "__" in texto:
-        texto = texto.replace("__", "_")
-    return texto.strip("_")
-
-
-def _parse_numerico(valor, campo: str, linha: int, erros: list) -> float:
-    try:
-        if pd.isna(valor):
-            return 0.0
-        if isinstance(valor, str):
-            valor = valor.strip().replace(".", "").replace(",", ".") if "," in valor else valor.strip()
-        return float(valor or 0)
-    except (ValueError, TypeError):
-        erros.append(f"Linha {linha}: valor inválido em '{campo}' — '{valor}' não é numérico")
-        return 0.0
+def _normalizar_coluna(nome: str) -> str:
+    return str(nome or "").strip().lower().replace(" ", "_")
 
 
 def _normalizar_texto(valor) -> str:
@@ -118,48 +95,20 @@ def _normalizar_texto(valor) -> str:
     return str(valor).strip()
 
 
-def _normalizar_ativo(valor) -> bool:
-    texto = _normalizar_nome_coluna(valor)
-    if texto in {"", "1", "s", "sim", "ativo", "true", "t", "yes", "y"}:
-        return True
-    if texto in {"0", "n", "nao", "não", "inativo", "false", "f", "no"}:
-        return False
-    return True
+def _normalizar_chave(valor) -> str:
+    return _normalizar_texto(valor).strip().lower()
 
 
-def _classificar_tipo_medidor(valor) -> str:
-    texto = _normalizar_nome_coluna(valor)
-    texto = texto.replace("_", "")
-    for chave, destino in MAPEAMENTO_TIPO_MEDIDOR.items():
-        chave_norm = _normalizar_nome_coluna(chave).replace("_", "")
-        if texto == chave_norm or chave_norm in texto:
-            return destino
-    return ""
-
-
-def _aplicar_medicao_compartilhada(df: pd.DataFrame) -> pd.DataFrame:
-    if "tipo_horimetro" not in df.columns:
-        return df
-
-    tipo_series = df["tipo_horimetro"].apply(_classificar_tipo_medidor)
-    tem_km = "km_atual" in df.columns and df["km_atual"].notna().any()
-    tem_horas = "horas_atual" in df.columns and df["horas_atual"].notna().any()
-
-    if tem_km and not tem_horas:
-        valor_compartilhado = df["km_atual"]
-        df.loc[tipo_series == "horas", "horas_atual"] = valor_compartilhado[tipo_series == "horas"]
-        df.loc[tipo_series == "horas", "km_atual"] = 0
-    elif tem_horas and not tem_km:
-        valor_compartilhado = df["horas_atual"]
-        df.loc[tipo_series == "km", "km_atual"] = valor_compartilhado[tipo_series == "km"]
-        df.loc[tipo_series == "km", "horas_atual"] = 0
-    elif tem_km and tem_horas:
-        km_vazio = df["km_atual"].isna() | (df["km_atual"].astype(str).str.strip() == "")
-        horas_vazio = df["horas_atual"].isna() | (df["horas_atual"].astype(str).str.strip() == "")
-        df.loc[(tipo_series == "km") & km_vazio, "km_atual"] = df.loc[(tipo_series == "km") & km_vazio, "horas_atual"]
-        df.loc[(tipo_series == "horas") & horas_vazio, "horas_atual"] = df.loc[(tipo_series == "horas") & horas_vazio, "km_atual"]
-
-    return df
+def _parse_numerico(valor, campo: str, linha: int, erros: list) -> float:
+    try:
+        if pd.isna(valor) or valor in (None, ""):
+            return 0.0
+        if isinstance(valor, str):
+            valor = valor.strip().replace(".", "").replace(",", ".") if valor.count(",") == 1 else valor.strip().replace(",", ".")
+        return float(valor or 0)
+    except (ValueError, TypeError):
+        erros.append(f"Linha {linha}: valor inválido em '{campo}' — '{valor}' não é numérico")
+        return 0.0
 
 
 def _carregar_existentes_map() -> dict:
@@ -167,83 +116,129 @@ def _carregar_existentes_map() -> dict:
     return {str(item.get("codigo", "")).strip().upper(): item for item in itens if item.get("codigo")}
 
 
-def ler_arquivo(file_bytes: bytes, filename: str) -> dict:
+def _carregar_setores_map() -> dict:
+    itens = setores_service.listar()
+    return {
+        (_normalizar_chave(item.get("nome")), _normalizar_chave(item.get("tipo_nivel")), str(item.get("setor_pai_id") or "")): item["id"]
+        for item in itens
+        if item.get("nome")
+    }
+
+
+def _carregar_responsaveis_map() -> dict:
+    itens = responsaveis_service.listar()
+    return {_normalizar_chave(item.get("nome")): item["id"] for item in itens if item.get("nome")}
+
+
+def _consolidar_duplicados_arquivo(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    if "codigo" not in df.columns:
+        return df, []
+
+    df = df.copy()
+    df["_linha_origem"] = range(2, len(df) + 2)
+    df["_codigo_norm"] = df["codigo"].apply(lambda v: _normalizar_texto(v).upper())
+
+    avisos = []
+    duplicados = df[df["_codigo_norm"].ne("")].duplicated(subset=["_codigo_norm"], keep=False)
+    if duplicados.any():
+        for codigo, grupo in df.loc[duplicados].groupby("_codigo_norm", sort=False):
+            linhas = grupo["_linha_origem"].tolist()
+            manter = linhas[-1]
+            ignoradas = ", ".join(str(x) for x in linhas[:-1])
+            avisos.append(
+                f"Código {codigo}: {len(linhas)} ocorrência(s) no arquivo; mantida a linha {manter} e consolidadas as linhas {ignoradas}"
+            )
+        df = df.drop_duplicates(subset=["_codigo_norm"], keep="last")
+
+    return df.drop(columns=["_codigo_norm"]), avisos
+
+
+def _resolver_medidores(row, linha: int, erros: list) -> tuple[float, float]:
+    km = _parse_numerico(row.get("km_atual", 0), "km_atual", linha, erros)
+    horas = _parse_numerico(row.get("horas_atual", 0), "horas_atual", linha, erros)
+
+    if "tipo_horimetro" not in row.index:
+        return km, horas
+
+    tipo_h = _normalizar_chave(row.get("tipo_horimetro"))
+    if not tipo_h:
+        return km, horas
+
+    valor_unico = _parse_numerico(row.get("km_atual", 0), "km/hr_atual", linha, erros)
+    if any(chave in tipo_h for chave in ["hora", "horimet", "hr"]):
+        return 0.0, valor_unico
+    if any(chave in tipo_h for chave in ["km", "quil", "hod"]):
+        return valor_unico, 0.0
+    if "não possui" in tipo_h or "nao possui" in tipo_h:
+        return 0.0, 0.0
+    return km, horas
+
+
+def _get_or_create_setor_hierarquia(setores_map: dict, row: pd.Series, contadores: defaultdict) -> int | None:
+    pai_id = None
+    ultimo_id = None
+    for coluna, tipo_nivel in HIERARQUIA_SETORES:
+        nome = _normalizar_texto(row.get(coluna))
+        if not nome:
+            continue
+        chave = (_normalizar_chave(nome), tipo_nivel, str(pai_id or ""))
+        setor_id = setores_map.get(chave)
+        if not setor_id:
+            setor_id = setores_service.criar(nome, tipo_nivel=tipo_nivel, setor_pai_id=pai_id, ativo=True)
+            setores_map[chave] = setor_id
+            contadores[tipo_nivel] += 1
+        pai_id = setor_id
+        ultimo_id = setor_id
+    return ultimo_id
+
+
+def _get_or_create_responsavel_id(responsaveis_map: dict, nome: str, contadores: defaultdict) -> int | None:
+    chave = _normalizar_chave(nome)
+    if not chave:
+        return None
+    responsavel_id = responsaveis_map.get(chave)
+    if responsavel_id:
+        return responsavel_id
+    responsavel_id = responsaveis_service.criar(nome, ativo=True)
+    responsaveis_map[chave] = responsavel_id
+    contadores["responsaveis"] += 1
+    return responsavel_id
+
+
+def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
     try:
-        if filename.lower().endswith(".csv"):
+        if filename.endswith(".csv"):
             df = pd.read_csv(io.BytesIO(file_bytes))
-        elif filename.lower().endswith((".xlsx", ".xls")):
+        elif filename.endswith((".xlsx", ".xls")):
             df = pd.read_excel(io.BytesIO(file_bytes))
         else:
             return {"erro": "Formato não suportado. Use CSV ou XLSX."}
     except Exception as e:
         return {"erro": f"Erro ao ler arquivo: {e}"}
 
-    colunas_originais = [str(c).strip() for c in df.columns]
-    return {
-        "df_raw": df.copy(),
-        "columns": colunas_originais,
-        "preview_raw": df.head(20),
-    }
+    df.columns = [_normalizar_coluna(c) for c in df.columns]
+    df, avisos_duplicados = _consolidar_duplicados_arquivo(df)
 
-
-def sugerir_mapeamento(columns: list[str]) -> dict:
-    norm_to_original = {_normalizar_nome_coluna(col): col for col in columns}
-    sugestao = {}
-    for campo, aliases in ALIASES_COLUNAS.items():
-        escolhido = None
-        for alias in aliases:
-            alias_norm = _normalizar_nome_coluna(alias)
-            if alias_norm in norm_to_original:
-                escolhido = norm_to_original[alias_norm]
-                break
-        sugestao[campo] = escolhido or SEM_MAPEAMENTO
-    return sugestao
-
-
-def aplicar_mapeamento(df_raw: pd.DataFrame, column_mapping: dict | None = None) -> pd.DataFrame:
-    mapping = column_mapping or sugerir_mapeamento([str(c) for c in df_raw.columns])
-    df = pd.DataFrame()
-
-    for campo in COLUNAS_SISTEMA:
-        origem = mapping.get(campo)
-        if origem and origem != SEM_MAPEAMENTO and origem in df_raw.columns:
-            df[campo] = df_raw[origem]
-        else:
-            df[campo] = None
-
-    return _aplicar_medicao_compartilhada(df)
-
-
-def processar_arquivo(file_bytes: bytes, filename: str, column_mapping: dict | None = None) -> dict:
-    leitura = ler_arquivo(file_bytes, filename)
-    if "erro" in leitura:
-        return leitura
-
-    df_raw = leitura["df_raw"]
-    df = aplicar_mapeamento(df_raw, column_mapping)
-
-    ausentes = [col for col in COLUNAS_OBRIGATORIAS if col not in df.columns or df[col].isna().all()]
+    ausentes = [col for col in COLUNAS_OBRIGATORIAS if col not in df.columns]
     if ausentes:
-        return {"erro": f"Colunas obrigatórias ausentes ou não mapeadas: {', '.join(ausentes)}"}
+        return {"erro": f"Colunas obrigatórias ausentes: {', '.join(ausentes)}"}
 
-    erros = []
-    avisos = []
-    codigos_arquivo = {}
+    erros: list[str] = []
+    avisos: list[str] = list(avisos_duplicados)
     existentes_map = _carregar_existentes_map()
-    setores_map = {s["nome"].strip().lower(): s["id"] for s in setores_service.listar() if s.get("nome")}
+    setores_map = _carregar_setores_map()
+    responsaveis_map = _carregar_responsaveis_map()
 
     duplicados_sistema = 0
-    setores_nao_encontrados = 0
+    novos_niveis = defaultdict(set)
+    novos_responsaveis = set()
     preview_rows = []
 
     for idx, row in df.iterrows():
-        linha = idx + 2
+        linha = int(row.get("_linha_origem", idx + 2))
         codigo = _normalizar_texto(row.get("codigo"))
         nome = _normalizar_texto(row.get("nome"))
         tipo_original = _normalizar_texto(row.get("tipo"))
-        setor_txt = _normalizar_texto(row.get("setor"))
-        tipo_medidor = _normalizar_texto(row.get("tipo_horimetro"))
-
         status_linha = "nova"
         acao_sugerida = "importar"
 
@@ -255,106 +250,115 @@ def processar_arquivo(file_bytes: bytes, filename: str, column_mapping: dict | N
             status_linha = "erro"
 
         codigo_upper = codigo.upper()
-        if codigo_upper:
-            if codigo_upper in codigos_arquivo:
-                erros.append(f"Linha {linha}: código duplicado no arquivo ({codigo}) — já apareceu na linha {codigos_arquivo[codigo_upper]}")
-                status_linha = "erro"
-            else:
-                codigos_arquivo[codigo_upper] = linha
-            if codigo_upper in existentes_map:
-                duplicados_sistema += 1
-                avisos.append(f"Linha {linha}: código {codigo} já existe no sistema")
-                status_linha = "duplicado"
-                acao_sugerida = "revisar duplicado"
+        if codigo_upper in existentes_map:
+            duplicados_sistema += 1
+            avisos.append(f"Linha {linha}: código {codigo} já existe no sistema")
+            status_linha = "duplicado"
+            acao_sugerida = "revisar duplicado"
 
-        if setor_txt and setor_txt.lower() not in setores_map:
-            setores_nao_encontrados += 1
-            avisos.append(f"Linha {linha}: setor '{setor_txt}' não encontrado; será usado setor padrão se informado")
+        tipo_ref = _normalizar_chave(tipo_original)
+        if tipo_ref and tipo_ref not in TIPOS_REFERENCIA and status_linha != "erro":
+            status_linha = "aviso"
+            acao_sugerida = "importar tipo livre"
+
+        for coluna, tipo_nivel in HIERARQUIA_SETORES:
+            valor = _normalizar_texto(row.get(coluna))
+            if valor:
+                chave = (_normalizar_chave(valor), tipo_nivel)
+                existe = any(k[0] == chave[0] and k[1] == chave[1] for k in setores_map.keys())
+                if not existe:
+                    novos_niveis[tipo_nivel].add(valor)
+                    if status_linha == "nova":
+                        status_linha = "aviso"
+                        acao_sugerida = "criar estrutura automaticamente"
+
+        responsavel_nome = _normalizar_texto(row.get("responsavel") or row.get("responsavel_nome"))
+        gestor_nome = _normalizar_texto(row.get("gestor"))
+        if responsavel_nome and _normalizar_chave(responsavel_nome) not in responsaveis_map:
+            novos_responsaveis.add(responsavel_nome)
             if status_linha == "nova":
                 status_linha = "aviso"
-                acao_sugerida = "usar setor padrão"
+                acao_sugerida = "criar responsável automaticamente"
+        if gestor_nome and _normalizar_chave(gestor_nome) not in responsaveis_map:
+            novos_responsaveis.add(gestor_nome)
+            if status_linha == "nova":
+                status_linha = "aviso"
+                acao_sugerida = "criar gestor automaticamente"
 
-        if tipo_medidor:
-            tipo_classificado = _classificar_tipo_medidor(tipo_medidor)
-            if not tipo_classificado:
-                avisos.append(
-                    f"Linha {linha}: TIPO_HORIMETRO '{tipo_medidor}' não foi reconhecido automaticamente. Revise a associação dessa linha."
-                )
-                if status_linha == "nova":
-                    status_linha = "aviso"
-            else:
-                acao_sugerida = f"popular {tipo_classificado} a partir do medidor"
-
-        horas_raw = row.get("horas_atual")
-        if _normalizar_texto(horas_raw) and not pd.api.types.is_number(horas_raw):
-            horas_txt = _normalizar_texto(horas_raw).lower()
-            if any(token in horas_txt for token in ["km", "quil", "hora", "hori"]):
-                avisos.append(
-                    f"Linha {linha}: coluna mapeada para horas_atual parece textual ('{horas_raw}'). O sistema importará 0 nesse campo."
-                )
-                if status_linha == "nova":
-                    status_linha = "aviso"
-
+        km_preview, horas_preview = _resolver_medidores(row, linha, erros)
         preview_rows.append(
             {
                 "linha": linha,
                 "codigo": codigo,
                 "nome": nome,
                 "tipo": tipo_original,
-                "setor": setor_txt,
-                "tipo_horimetro": tipo_medidor,
-                "km_atual": row.get("km_atual", 0),
-                "horas_atual": row.get("horas_atual", 0),
-                "placa": row.get("placa", ""),
-                "serie": row.get("serie", ""),
-                "ativo": row.get("ativo", True),
+                "empresa": _normalizar_texto(row.get("empresa")),
+                "unidade": _normalizar_texto(row.get("unidade")),
+                "departamento": _normalizar_texto(row.get("departamento")),
+                "setor": _normalizar_texto(row.get("setor")),
+                "subsetor": _normalizar_texto(row.get("subsetor")),
+                "responsavel": responsavel_nome,
+                "gestor": gestor_nome,
+                "km_atual": km_preview,
+                "horas_atual": horas_preview,
                 "status_importacao": status_linha,
                 "acao_sugerida": acao_sugerida,
                 "ja_existe": codigo_upper in existentes_map if codigo_upper else False,
             }
         )
 
-    preview = pd.DataFrame(preview_rows)
     resumo = {
         "total_linhas": int(len(df)),
         "novas": int(sum(1 for item in preview_rows if item["status_importacao"] == "nova")),
         "duplicadas_sistema": int(duplicados_sistema),
         "com_erro": int(sum(1 for item in preview_rows if item["status_importacao"] == "erro")),
         "com_aviso": int(sum(1 for item in preview_rows if item["status_importacao"] == "aviso")),
-        "setores_nao_encontrados": int(setores_nao_encontrados),
+        "novos_setores": len(novos_niveis["setor"]),
+        "novos_departamentos": len(novos_niveis["departamento"]),
+        "novas_empresas": len(novos_niveis["empresa"]),
+        "novas_unidades": len(novos_niveis["unidade"]),
+        "novos_subsetores": len(novos_niveis["subsetor"]),
+        "novos_responsaveis": len(novos_responsaveis),
     }
 
+    for tipo_nivel in ["empresa", "unidade", "departamento", "setor", "subsetor"]:
+        nomes = sorted(novos_niveis[tipo_nivel], key=str.lower)
+        if nomes:
+            avisos.insert(
+                0,
+                f"{len(nomes)} {tipo_nivel}(s) serão criado(s) automaticamente: {', '.join(nomes[:10])}" + (" ..." if len(nomes) > 10 else ""),
+            )
+    if novos_responsaveis:
+        nomes = sorted(novos_responsaveis, key=str.lower)
+        avisos.insert(
+            0,
+            f"{len(nomes)} responsável(is) serão criado(s) automaticamente: {', '.join(nomes[:10])}" + (" ..." if len(nomes) > 10 else ""),
+        )
+
+    preview = pd.DataFrame(preview_rows)
+    linhas_erro = len([r for r in preview_rows if r["status_importacao"] == "erro"])
     return {
-        "df": df,
-        "df_raw": df_raw,
-        "mapping": column_mapping or sugerir_mapeamento([str(c) for c in df_raw.columns]),
-        "suggested_mapping": sugerir_mapeamento([str(c) for c in df_raw.columns]),
-        "available_columns": [str(c) for c in df_raw.columns],
+        "df": df.drop(columns=[c for c in ["_linha_origem"] if c in df.columns]),
         "erros": erros,
         "avisos": avisos,
-        "linhas_ok": max(0, len(df) - len([r for r in preview_rows if r["status_importacao"] == "erro"])),
-        "linhas_erro": len([r for r in preview_rows if r["status_importacao"] == "erro"]),
+        "linhas_ok": max(0, len(df) - linhas_erro),
+        "linhas_erro": linhas_erro,
         "preview": preview.head(15),
         "preview_full": preview,
-        "preview_raw": df_raw.head(15),
         "resumo": resumo,
     }
 
 
-
-def importar(
-    df: pd.DataFrame,
-    setor_padrao_id=None,
-    modo_duplicados: str = MODO_IGNORAR,
-    progress_callback=None,
-) -> dict:
-    setores_map = {s["nome"].lower(): s["id"] for s in setores_service.listar() if s.get("nome")}
+def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados: str = MODO_IGNORAR, progress_callback=None) -> dict:
+    setores_map = _carregar_setores_map()
+    responsaveis_map = _carregar_responsaveis_map()
     importados = 0
     atualizados = 0
     duplicados = 0
     preenchidos_vazios = 0
     erros = []
     total = len(df)
+    criados = defaultdict(int)
 
     for idx, row in df.iterrows():
         linha = idx + 2
@@ -366,36 +370,47 @@ def importar(
             continue
 
         tipo = _normalizar_texto(row.get("tipo")) or "Outro"
-        setor_nome = _normalizar_texto(row.get("setor")).lower()
-        setor_id = setores_map.get(setor_nome) or setor_padrao_id
+        setor_id = _get_or_create_setor_hierarquia(setores_map, row, criados)
+        if not setor_id:
+            setor_id = setor_padrao_id
 
-        km = _parse_numerico(row.get("km_atual", 0), "km_atual", linha, erros)
-        horas = _parse_numerico(row.get("horas_atual", 0), "horas_atual", linha, erros)
-        ativo = _normalizar_ativo(row.get("ativo"))
+        km, horas = _resolver_medidores(row, linha, erros)
+        responsavel_id = _get_or_create_responsavel_id(
+            responsaveis_map,
+            _normalizar_texto(row.get("responsavel") or row.get("responsavel_nome")),
+            criados,
+        )
+        gestor_id = _get_or_create_responsavel_id(
+            responsaveis_map,
+            _normalizar_texto(row.get("gestor")),
+            criados,
+        )
 
         try:
-            equipamentos_service.criar(
+            equipamento_id = equipamentos_service.criar(
                 codigo=codigo,
                 nome=nome,
                 tipo=tipo,
                 setor_id=setor_id,
                 km_atual=km,
                 horas_atual=horas,
-                ativo=ativo,
             )
+            _vincular_responsaveis(equipamento_id, setor_id, responsavel_id, gestor_id, erros, linha, codigo)
             importados += 1
         except Exception as e:
             msg = str(e)
-            if "unique" in msg.lower() or "duplicate" in msg.lower():
+            if "unique" in msg.lower() or "duplicate" in msg.lower() or "já existe" in msg.lower():
                 if modo_duplicados == MODO_ATUALIZAR:
                     try:
-                        _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, ativo, preencher_vazios=False)
+                        equipamento_id = _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, preencher_vazios=False)
+                        _vincular_responsaveis(equipamento_id, setor_id, responsavel_id, gestor_id, erros, linha, codigo)
                         atualizados += 1
                     except Exception as e2:
                         erros.append(f"Linha {linha} ({codigo}): erro ao atualizar — {e2}")
                 elif modo_duplicados == MODO_PREENCHER_VAZIOS:
                     try:
-                        alterou = _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, ativo, preencher_vazios=True)
+                        equipamento_id, alterou = _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, preencher_vazios=True)
+                        _vincular_responsaveis(equipamento_id, setor_id, responsavel_id, gestor_id, erros, linha, codigo)
                         preenchidos_vazios += int(bool(alterou))
                     except Exception as e2:
                         erros.append(f"Linha {linha} ({codigo}): erro ao preencher vazios — {e2}")
@@ -412,18 +427,47 @@ def importar(
         "atualizados": atualizados,
         "duplicados": duplicados,
         "preenchidos_vazios": preenchidos_vazios,
+        "empresas_criadas": criados["empresa"],
+        "unidades_criadas": criados["unidade"],
+        "departamentos_criados": criados["departamento"],
+        "setores_criados": criados["setor"],
+        "subsetores_criados": criados["subsetor"],
+        "responsaveis_criados": criados["responsaveis"],
         "erros": erros,
     }
 
 
+def _vincular_responsaveis(equipamento_id, setor_id, responsavel_id, gestor_id, erros, linha, codigo):
+    if responsavel_id:
+        try:
+            vinculos_service.criar_vinculo_equipamento(
+                equipamento_id=equipamento_id,
+                responsavel_id=responsavel_id,
+                tipo_vinculo="operacional",
+                principal=True,
+            )
+        except Exception as exc:
+            erros.append(f"Linha {linha} ({codigo}): não foi possível vincular responsável operacional — {exc}")
+    if gestor_id and setor_id:
+        try:
+            vinculos_service.criar_vinculo_setor(
+                setor_id=setor_id,
+                responsavel_id=gestor_id,
+                tipo_responsabilidade="gestor",
+                principal=True,
+            )
+        except Exception as exc:
+            erros.append(f"Linha {linha} ({codigo}): não foi possível vincular gestor ao setor — {exc}")
 
-def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, ativo, preencher_vazios=False):
+
+
+def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, preencher_vazios=False):
     conn = get_conn()
     cur = conn.cursor()
     try:
         cur.execute(
             """
-            select id::text, nome, tipo, setor_id::text, coalesce(km_atual, 0), coalesce(horas_atual, 0), coalesce(ativo, true)
+            select id::text, nome, tipo, setor_id::text, coalesce(km_atual, 0), coalesce(horas_atual, 0)
             from equipamentos
             where codigo = %s
             """,
@@ -436,12 +480,10 @@ def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, ativo, preen
         nome_final = nome
         tipo_final = tipo
         setor_final = setor_id
-        ativo_final = ativo
         if preencher_vazios:
             nome_final = anterior[1] or nome
             tipo_final = anterior[2] or tipo
             setor_final = anterior[3] or setor_id
-            ativo_final = anterior[6] if anterior[6] is not None else ativo
 
         cur.execute(
             """
@@ -450,12 +492,11 @@ def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, ativo, preen
                    tipo = %s,
                    setor_id = %s,
                    km_atual = greatest(coalesce(km_atual, 0), %s),
-                   horas_atual = greatest(coalesce(horas_atual, 0), %s),
-                   ativo = %s
+                   horas_atual = greatest(coalesce(horas_atual, 0), %s)
              where codigo = %s
-            returning id::text, nome, tipo, setor_id::text, coalesce(km_atual, 0), coalesce(horas_atual, 0), coalesce(ativo, true)
+            returning id::text, nome, tipo, setor_id::text, coalesce(km_atual, 0), coalesce(horas_atual, 0)
             """,
-            (nome_final, tipo_final, setor_final, km, horas, ativo_final, codigo),
+            (nome_final, tipo_final, setor_final, km, horas, codigo),
         )
         atual = cur.fetchone()
         auditoria_service.registrar_no_conn(
@@ -469,7 +510,6 @@ def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, ativo, preen
                 "setor_id": anterior[3],
                 "km_atual": float(anterior[4] or 0),
                 "horas_atual": float(anterior[5] or 0),
-                "ativo": bool(anterior[6]),
             },
             valor_novo={
                 "codigo": codigo,
@@ -478,19 +518,18 @@ def _atualizar_equipamento(codigo, nome, tipo, setor_id, km, horas, ativo, preen
                 "setor_id": atual[3],
                 "km_atual": float(atual[4] or 0),
                 "horas_atual": float(atual[5] or 0),
-                "ativo": bool(atual[6]),
             },
         )
         conn.commit()
-        return any(
+        alterou = any(
             [
                 anterior[1] != atual[1],
                 anterior[2] != atual[2],
                 str(anterior[3] or "") != str(atual[3] or ""),
                 float(anterior[4] or 0) != float(atual[4] or 0),
                 float(anterior[5] or 0) != float(atual[5] or 0),
-                bool(anterior[6]) != bool(atual[6]),
             ]
         )
+        return atual[0], alterou
     finally:
         release_conn(conn)
