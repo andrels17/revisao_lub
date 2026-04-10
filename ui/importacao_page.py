@@ -9,32 +9,11 @@ MODO_LABELS = {
     importacao_service.MODO_PREENCHER_VAZIOS: "Preencher apenas campos vazios + consolidar KM/Horas",
 }
 
-CAMPOS_MAPEAMENTO = [
-    ("codigo", "Código", True),
-    ("nome", "Nome do equipamento", True),
-    ("tipo", "Tipo / Grupo", False),
-    ("setor", "Setor / Departamento", False),
-    ("tipo_horimetro", "Tipo do medidor (KM/HORAS)", False),
-    ("km_atual", "Medidor atual (valor numérico)", False),
-    ("horas_atual", "Horas atuais / Horímetro numérico", False),
-    ("placa", "Placa", False),
-    ("serie", "Série / Chassi", False),
-    ("ativo", "Status / Ativo", False),
-]
-
-
-def _resolver_valor_padrao(opcoes, valor):
-    try:
-        return opcoes.index(valor)
-    except ValueError:
-        return 0
-
-
 
 def render():
     render_page_intro(
         "Importação em lote de equipamentos",
-        "Faça carga inicial ou atualização em massa com mapeamento automático e associação manual das colunas antes da confirmação.",
+        "Faça carga inicial ou atualização em massa com criação automática da estrutura organizacional e dos responsáveis quando vierem no arquivo.",
         "Ferramentas",
     )
     st.info(f"Escopo atual: {escopo_service.resumo_escopo()}")
@@ -56,25 +35,28 @@ def render():
             mime="text/csv",
             use_container_width=True,
         )
-        st.markdown("""
+        st.markdown(
+            """
 - `codigo` *(obrigatório)* — código único
 - `nome` *(obrigatório)* — nome do equipamento
-- `tipo` — Trator, Caminhão, Máquina, etc.
-- `setor` — nome exato do setor cadastrado
-- `tipo_horimetro` — informa se o medidor atual está em `KM` ou `HORAS`
-- `km_atual` — valor numérico do medidor atual
-- `horas_atual` — horímetro atual **numérico**
+- `tipo` — categoria livre do equipamento
+- `empresa`, `unidade`, `departamento`, `setor`, `subsetor` — estrutura que será criada automaticamente se não existir
+- `km_atual` — hodômetro atual
+- `horas_atual` — horímetro atual
+- `tipo_horimetro` — quando a base traz um único medidor em `km_atual`, o importador separa para KM ou Horas automaticamente
+- `responsavel` — responsável operacional principal do equipamento
+- `gestor` — gestor principal do setor final da hierarquia
 - `placa` — placa do veículo
-- `serie` — número de série / chassi
-- `ativo` — Ativo/Inativo, Sim/Não, S/N, 1/0
-""")
+- `serie` — número de série
+"""
+        )
 
     with tab_import:
         setores = [s for s in setores_service.listar() if s.get("ativo")]
         setor_padrao = None
         if setores:
             setor_padrao_obj = st.selectbox(
-                "Setor padrão (usado quando a coluna de setor/departamento não bater com nenhum setor cadastrado)",
+                "Setor padrão (usado apenas quando nenhuma coluna de estrutura vier preenchida)",
                 [None] + setores,
                 format_func=lambda s: s["nome"] if s else "— nenhum —",
             )
@@ -84,67 +66,32 @@ def render():
 
         if arquivo:
             file_bytes = arquivo.read()
-            leitura = importacao_service.ler_arquivo(file_bytes, arquivo.name)
-            if "erro" in leitura:
-                st.error(leitura["erro"])
-                return
-
-            sugestao = importacao_service.sugerir_mapeamento(leitura["columns"])
-            st.success("Arquivo carregado. Revise abaixo a associação das colunas antes da pré-validação.")
-
-            with st.expander("Prévia da planilha original", expanded=False):
-                st.dataframe(leitura["preview_raw"], use_container_width=True, hide_index=True)
-
-            st.markdown("### Associação das colunas")
-            st.caption(
-                "O sistema já tenta identificar automaticamente colunas como COD_EQUIPAMENTO, DESCRICAO_EQUIPAMENTO, DESCRICAOTIPOEQUIPAMENTO, DESCRICAO, TIPO_HORIMETRO e KM_ATUAL. Você pode ajustar manualmente antes de importar."
-            )
-
-            opcoes = [importacao_service.SEM_MAPEAMENTO] + leitura["columns"]
-            mapping = {}
-            cols = st.columns(2)
-            for idx, (campo, label, obrigatorio) in enumerate(CAMPOS_MAPEAMENTO):
-                with cols[idx % 2]:
-                    default_value = st.session_state.get(f"map_{campo}", sugestao.get(campo, importacao_service.SEM_MAPEAMENTO))
-                    escolhido = st.selectbox(
-                        f"{label}{' *' if obrigatorio else ''}",
-                        options=opcoes,
-                        index=_resolver_valor_padrao(opcoes, default_value),
-                        key=f"map_{campo}",
-                        format_func=lambda item: "— ignorar —" if item == importacao_service.SEM_MAPEAMENTO else item,
-                    )
-                    mapping[campo] = escolhido
-
-            if mapping.get("codigo") == importacao_service.SEM_MAPEAMENTO or mapping.get("nome") == importacao_service.SEM_MAPEAMENTO:
-                st.warning("Mapeie pelo menos as colunas de código e nome para continuar.")
-                return
-
-            if mapping.get("tipo_horimetro") != importacao_service.SEM_MAPEAMENTO and mapping.get("km_atual") != importacao_service.SEM_MAPEAMENTO:
-                st.info(
-                    "Quando você mapear TIPO_HORIMETRO + KM_ATUAL, o sistema separa automaticamente o valor numérico: linhas com KM vão para km_atual e linhas com HORAS vão para horas_atual."
-                )
-            elif mapping.get("horas_atual") != importacao_service.SEM_MAPEAMENTO:
-                st.info(
-                    "A coluna de horas_atual deve conter um valor numérico. Se sua planilha usa um único medidor em KM_ATUAL, prefira mapear TIPO_HORIMETRO + KM_ATUAL."
-                )
-
-            resultado = importacao_service.processar_arquivo(file_bytes, arquivo.name, column_mapping=mapping)
+            resultado = importacao_service.processar_arquivo(file_bytes, arquivo.name)
             if "erro" in resultado:
                 st.error(resultado["erro"])
                 return
 
             resumo = resultado.get("resumo", {})
-            c1, c2, c3, c4, c5 = st.columns(5)
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("Linhas do arquivo", resumo.get("total_linhas", 0))
             c2.metric("Novas", resumo.get("novas", 0))
             c3.metric("Duplicadas", resumo.get("duplicadas_sistema", 0))
             c4.metric("Com aviso", resumo.get("com_aviso", 0))
             c5.metric("Com erro", resumo.get("com_erro", 0))
+            c6.metric("Resp. novos", resumo.get("novos_responsaveis", 0))
+
+            c7, c8, c9, c10, c11 = st.columns(5)
+            c7.metric("Empresas novas", resumo.get("novas_empresas", 0))
+            c8.metric("Unidades novas", resumo.get("novas_unidades", 0))
+            c9.metric("Deptos novos", resumo.get("novos_departamentos", 0))
+            c10.metric("Setores novos", resumo.get("novos_setores", 0))
+            c11.metric("Subsetores novos", resumo.get("novos_subsetores", 0))
 
             st.success(
-                f"Arquivo pré-validado: **{resultado['linhas_ok']}** linha(s) válida(s)"
+                f"Arquivo lido: **{resultado['linhas_ok']}** linha(s) válida(s)"
                 + (f" | {resultado['linhas_erro']} com erro" if resultado["linhas_erro"] else "")
             )
+            st.caption("Itens de estrutura e responsáveis inexistentes serão criados automaticamente durante a importação.")
 
             if resultado["erros"]:
                 with st.expander("Ver erros de validação"):
@@ -155,9 +102,6 @@ def render():
                 with st.expander("Ver avisos e conflitos detectados"):
                     for a in resultado["avisos"]:
                         st.info(a)
-
-            with st.expander("Mapeamento aplicado", expanded=False):
-                st.json({k: v for k, v in mapping.items() if v != importacao_service.SEM_MAPEAMENTO})
 
             st.markdown("### Pré-validação da importação")
             st.dataframe(resultado["preview_full"], use_container_width=True, hide_index=True)
@@ -195,6 +139,18 @@ def render():
                         msg += f" | **{res['atualizados']}** atualizado(s)"
                     if res.get("preenchidos_vazios"):
                         msg += f" | **{res['preenchidos_vazios']}** enriquecido(s)"
+                    if res.get("empresas_criadas"):
+                        msg += f" | **{res['empresas_criadas']}** empresa(s) criada(s)"
+                    if res.get("unidades_criadas"):
+                        msg += f" | **{res['unidades_criadas']}** unidade(s) criada(s)"
+                    if res.get("departamentos_criados"):
+                        msg += f" | **{res['departamentos_criados']}** departamento(s) criado(s)"
+                    if res.get("setores_criados"):
+                        msg += f" | **{res['setores_criados']}** setor(es) criado(s)"
+                    if res.get("subsetores_criados"):
+                        msg += f" | **{res['subsetores_criados']}** subsetor(es) criado(s)"
+                    if res.get("responsaveis_criados"):
+                        msg += f" | **{res['responsaveis_criados']}** responsável(is) criado(s)"
                     if res["duplicados"]:
                         msg += f" | {res['duplicados']} duplicado(s) ignorado(s)"
                     st.success(msg)
