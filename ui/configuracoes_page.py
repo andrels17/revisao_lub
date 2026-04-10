@@ -24,14 +24,26 @@ def render():
 
     with st.form("form_configuracoes"):
         st.markdown("### Alertas de vencimento")
-        nova_tolerancia = st.number_input(
-            "Tolerância de 'Próximo do vencimento' (km / horas)",
-            min_value=1,
-            max_value=500,
-            value=int(cfg["tolerancia_padrao"]),
-            step=5,
-            help="Itens com diferença até este valor são marcados como Próximo em vez de Em dia.",
-        )
+
+        col_km, col_horas = st.columns(2, gap="small")
+        with col_km:
+            tolerancia_km = st.number_input(
+                "Tolerância de próximo vencimento (km)",
+                min_value=1,
+                max_value=5000,
+                value=int(cfg.get("tolerancia_proximo_km", cfg.get("tolerancia_padrao", 500))),
+                step=50,
+                help="Itens por KM com diferença até este valor são marcados como Próximo.",
+            )
+        with col_horas:
+            tolerancia_horas = st.number_input(
+                "Tolerância de próximo vencimento (horas)",
+                min_value=1,
+                max_value=500,
+                value=int(cfg.get("tolerancia_proximo_horas", 50)),
+                step=5,
+                help="Itens por horas com diferença até este valor são marcados como Próximo.",
+            )
 
         st.markdown("### Cache de dados")
         novo_ttl = st.slider(
@@ -77,7 +89,8 @@ def render():
 
     if salvar:
         configuracoes_service.salvar({
-            "tolerancia_padrao": int(nova_tolerancia),
+            "tolerancia_proximo_km": int(tolerancia_km),
+            "tolerancia_proximo_horas": int(tolerancia_horas),
             "ttl_cache": int(novo_ttl),
             "dias_sem_leitura": int(dias_sem_leitura),
             "alerta_cooldown_horas": int(cooldown_horas),
@@ -88,7 +101,10 @@ def render():
         except Exception:
             pass
         st.success(
-            f"Configurações salvas. Tolerância: {int(nova_tolerancia)} | Cache: {int(novo_ttl)}s | Dias sem leitura: {int(dias_sem_leitura)} | Cooldown: {int(cooldown_horas)}h"
+            "Configurações salvas. "
+            f"KM: {int(tolerancia_km)} | Horas: {int(tolerancia_horas)} | "
+            f"Cache: {int(novo_ttl)}s | Dias sem leitura: {int(dias_sem_leitura)} | "
+            f"Cooldown: {int(cooldown_horas)}h"
         )
         st.rerun()
 

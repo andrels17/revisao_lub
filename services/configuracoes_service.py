@@ -20,9 +20,6 @@ CONFIG_DEFAULTS = {
 SESSION_PREFIX = "cfg_"
 
 
-# =========================
-# SAFE DB HELPERS (NOVO)
-# =========================
 def _safe_rollback(conn):
     try:
         if conn and not conn.closed:
@@ -56,18 +53,6 @@ def _apply_defaults_to_session() -> dict:
     return cfg
 
 
-def _is_missing_table_error(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return any(s in msg for s in [
-        "does not exist",
-        "relation",
-        "undefinedtable",
-    ])
-
-
-# =========================
-# GARANTIR TABELA (CORRIGIDO)
-# =========================
 def garantir_tabela() -> bool:
     conn = None
     try:
@@ -98,9 +83,6 @@ def garantir_tabela() -> bool:
         _safe_close(conn)
 
 
-# =========================
-# CARREGAR CONFIG (CORRIGIDO)
-# =========================
 @st.cache_data(ttl=300, show_spinner=False)
 def carregar_todas() -> dict:
     tabela_ok = garantir_tabela()
@@ -130,7 +112,7 @@ def carregar_todas() -> dict:
     tolerancia_km = merged.get("tolerancia_proximo_km", merged.get("tolerancia_padrao", CONFIG_DEFAULTS["tolerancia_proximo_km"]))
     tolerancia_horas = merged.get("tolerancia_proximo_horas", CONFIG_DEFAULTS["tolerancia_proximo_horas"])
 
-    return {
+    cfg = {
         "tolerancia_proximo_km": _clamp_int(_parse_int(tolerancia_km, CONFIG_DEFAULTS["tolerancia_proximo_km"]), 1, 5000),
         "tolerancia_proximo_horas": _clamp_int(_parse_int(tolerancia_horas, CONFIG_DEFAULTS["tolerancia_proximo_horas"]), 1, 500),
         "ttl_cache": _clamp_int(_parse_int(merged.get("ttl_cache"), CONFIG_DEFAULTS["ttl_cache"]), 10, 600),
@@ -139,10 +121,16 @@ def carregar_todas() -> dict:
         "fila_alertas_limite": _clamp_int(_parse_int(merged.get("fila_alertas_limite"), CONFIG_DEFAULTS["fila_alertas_limite"]), 20, 1000),
     }
 
+    # compatibilidade com código legado
+    cfg["tolerancia_padrao"] = int(cfg["tolerancia_proximo_km"])
+    return cfg
+
 
 def aplicar_no_session_state():
     cfg = carregar_todas()
     for chave, valor in cfg.items():
+        if chave == "tolerancia_padrao":
+            continue
         st.session_state[f"{SESSION_PREFIX}{chave}"] = valor
     ui_constants.TOLERANCIA_PROXIMO_KM = int(cfg["tolerancia_proximo_km"])
     ui_constants.TOLERANCIA_PROXIMO_HORAS = int(cfg["tolerancia_proximo_horas"])
@@ -150,9 +138,6 @@ def aplicar_no_session_state():
     return cfg
 
 
-# =========================
-# SALVAR (CORRIGIDO)
-# =========================
 def salvar(configs: dict):
     tabela_ok = garantir_tabela()
     if not tabela_ok:
@@ -188,12 +173,10 @@ def salvar(configs: dict):
         _safe_close(conn)
 
     cache_service.invalidate_configuracoes()
+    carregar_todas.clear()
     aplicar_no_session_state()
 
 
-# =========================
-# RESETAR (CORRIGIDO)
-# =========================
 def resetar():
     tabela_ok = garantir_tabela()
     if not tabela_ok:
@@ -216,12 +199,10 @@ def resetar():
         _safe_close(conn)
 
     cache_service.invalidate_configuracoes()
+    carregar_todas.clear()
     aplicar_no_session_state()
 
 
-# =========================
-# GETTERS
-# =========================
 def get_tolerancia_proximo_km() -> int:
     return int(st.session_state.get(f"{SESSION_PREFIX}tolerancia_proximo_km", ui_constants.TOLERANCIA_PROXIMO_KM))
 
