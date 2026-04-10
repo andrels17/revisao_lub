@@ -493,6 +493,82 @@ def _resumir_macro(df: pd.DataFrame, modo: str) -> pd.DataFrame:
     return resumo[colunas].sort_values(['Departamento', 'Grupo', 'Tipo', 'Referência'])
 
 
+def _render_quantitativo_departamentos(resumo: pd.DataFrame, modo: str) -> None:
+    """Tabela executiva: quantitativo de realizados e pendentes por departamento/grupo."""
+    col_etapa = 'Etapa' if modo == 'rev' else 'Item'
+
+    agg = (
+        resumo.groupby(['Departamento', 'Grupo', 'Tipo', col_etapa, 'Referência'], dropna=False)
+        .agg(
+            Total=('Execuções', 'sum'),
+            NoPrazo=('No prazo', 'sum'),
+            Atrasadas=('Atrasadas', 'sum'),
+        )
+        .reset_index()
+    )
+    agg['% no prazo'] = agg.apply(
+        lambda r: f"{round(r['NoPrazo'] / r['Total'] * 100)}%" if r['Total'] > 0 else '—', axis=1
+    )
+
+    total_geral = int(agg['Total'].sum())
+    no_prazo_geral = int(agg['NoPrazo'].sum())
+    atrasadas_geral = int(agg['Atrasadas'].sum())
+
+    st.markdown("<p style='font-size:13px;font-weight:500;color:var(--text-muted,#6b7280);margin:0 0 8px;'>Quantitativo por departamento</p>", unsafe_allow_html=True)
+
+    linhas = []
+    for _, row in agg.iterrows():
+        pct = round(row['NoPrazo'] / row['Total'] * 100) if row['Total'] > 0 else 0
+        cor_pct = "#15803d" if pct == 100 else ("#b45309" if pct >= 50 else "#b91c1c")
+        bar_ok = f"<div style='height:4px;border-radius:2px;background:#dcfce7;overflow:hidden;margin-top:3px'><div style='height:100%;width:{pct}%;background:#16a34a;border-radius:2px'></div></div>"
+        linhas.append(f"""
+        <tr>
+          <td style='padding:8px 10px;font-size:13px;color:var(--color-text-primary)'>{row['Departamento']}</td>
+          <td style='padding:8px 10px;font-size:13px;color:var(--color-text-secondary)'>{row['Grupo']}</td>
+          <td style='padding:8px 10px;font-size:13px;color:var(--color-text-secondary)'>{row['Tipo']}</td>
+          <td style='padding:8px 10px;font-size:13px;color:var(--color-text-secondary)'>{row[col_etapa] or '—'}</td>
+          <td style='padding:8px 10px;font-size:13px;color:var(--color-text-secondary)'>{row['Referência']}</td>
+          <td style='padding:8px 10px;font-size:13px;font-weight:500;text-align:center'>{int(row['Total'])}</td>
+          <td style='padding:8px 10px;text-align:center'><span style='font-size:12px;font-weight:500;color:#15803d;background:#dcfce7;padding:2px 10px;border-radius:20px'>{int(row['NoPrazo'])}</span></td>
+          <td style='padding:8px 10px;text-align:center'><span style='font-size:12px;font-weight:500;color:#991b1b;background:#fee2e2;padding:2px 10px;border-radius:20px'>{int(row['Atrasadas'])}</span></td>
+          <td style='padding:8px 10px;min-width:90px'><span style='font-size:12px;font-weight:500;color:{cor_pct}'>{pct}%</span>{bar_ok}</td>
+        </tr>""")
+
+    rodape = f"""
+    <tr style='border-top:1px solid #e5e7eb;background:#f9fafb'>
+      <td colspan='5' style='padding:8px 10px;font-size:12px;font-weight:500;color:#374151'>Total geral</td>
+      <td style='padding:8px 10px;font-size:13px;font-weight:500;text-align:center'>{total_geral}</td>
+      <td style='padding:8px 10px;text-align:center'><span style='font-size:12px;font-weight:500;color:#15803d;background:#dcfce7;padding:2px 10px;border-radius:20px'>{no_prazo_geral}</span></td>
+      <td style='padding:8px 10px;text-align:center'><span style='font-size:12px;font-weight:500;color:#991b1b;background:#fee2e2;padding:2px 10px;border-radius:20px'>{atrasadas_geral}</span></td>
+      <td style='padding:8px 10px'></td>
+    </tr>"""
+
+    tabela_html = f"""
+    <div style='overflow-x:auto;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:1rem'>
+      <table style='width:100%;border-collapse:collapse'>
+        <thead>
+          <tr style='background:#f9fafb;border-bottom:1px solid #e5e7eb'>
+            <th style='padding:8px 10px;text-align:left;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.05em'>Departamento</th>
+            <th style='padding:8px 10px;text-align:left;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.05em'>Grupo</th>
+            <th style='padding:8px 10px;text-align:left;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.05em'>Tipo</th>
+            <th style='padding:8px 10px;text-align:left;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.05em'>{'Etapa' if modo == 'rev' else 'Item'}</th>
+            <th style='padding:8px 10px;text-align:left;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.05em'>Referência</th>
+            <th style='padding:8px 10px;text-align:center;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.05em'>Total</th>
+            <th style='padding:8px 10px;text-align:center;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.05em'>No prazo</th>
+            <th style='padding:8px 10px;text-align:center;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.05em'>Atrasadas</th>
+            <th style='padding:8px 10px;text-align:left;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.05em'>Progressão</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(linhas)}
+          {rodape}
+        </tbody>
+      </table>
+    </div>
+    """
+    st.markdown(tabela_html, unsafe_allow_html=True)
+
+
 def _render_macro_hierarquico(df_macro: pd.DataFrame, modo: str, titulo: str, descricao: str) -> None:
     st.markdown(f"<div class='section-card'><h3>{titulo}</h3><p>{descricao}</p></div>", unsafe_allow_html=True)
     resumo = _resumir_macro(df_macro, modo)
@@ -505,6 +581,8 @@ def _render_macro_hierarquico(df_macro: pd.DataFrame, modo: str, titulo: str, de
     top_cols[1].metric('Grupos', int(resumo['Grupo'].nunique()))
     top_cols[2].metric('Execuções', int(resumo['Execuções'].sum()))
     top_cols[3].metric('Atrasadas', int(resumo['Atrasadas'].sum()))
+
+    _render_quantitativo_departamentos(resumo, modo)
 
     st.dataframe(resumo, use_container_width=True, hide_index=True)
 
