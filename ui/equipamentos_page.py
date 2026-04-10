@@ -14,6 +14,7 @@ from services import (
     responsaveis_service,
     revisoes_service,
     setores_service,
+    leituras_service,
 )
 from ui.constants import STATUS_LABEL, TIPOS_EQUIPAMENTO
 from ui.theme import render_page_intro
