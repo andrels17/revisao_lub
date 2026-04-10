@@ -6,8 +6,10 @@ import pandas as pd
 import streamlit as st
 
 from services import (
+    comentarios_service,
     equipamentos_service,
     lubrificacoes_service,
+    painel_360_service,
     responsaveis_service,
     revisoes_service,
     setores_service,
@@ -102,6 +104,48 @@ def _inject_css():
         .eq-chip strong { color:#8fb7ff; font-weight:700; }
         .eq-section {
             border-top:1px solid rgba(148,163,184,.12); padding-top:.75rem; margin-top:.4rem;
+        }
+        .eq-modal-shell {
+            animation: eqFadeSlide .18s ease-out;
+        }
+        @keyframes eqFadeSlide {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .eq-priority {
+            border: 1px solid rgba(148,163,184,.1);
+            border-radius: 12px;
+            padding: .8rem .9rem;
+            background: rgba(255,255,255,.02);
+            min-height: 104px;
+        }
+        .eq-priority.danger { border-color: rgba(239,68,68,.28); background: rgba(239,68,68,.07); }
+        .eq-priority.warn { border-color: rgba(245,158,11,.28); background: rgba(245,158,11,.06); }
+        .eq-priority.ok { border-color: rgba(34,197,94,.2); background: rgba(34,197,94,.05); }
+        .eq-priority .t { font-size:.72rem; color:#8fa4c0; text-transform:uppercase; letter-spacing:.04em; font-weight:700; margin-bottom:.25rem; }
+        .eq-priority .h { font-size:.95rem; color:#e8f1ff; font-weight:800; line-height:1.25; margin-bottom:.28rem; }
+        .eq-priority .d { font-size:.8rem; color:#b9cae0; line-height:1.35; }
+        .eq-health-line { display:flex; align-items:center; gap:.5rem; margin:.35rem 0 .6rem; }
+        .eq-health-dot { width:10px; height:10px; border-radius:999px; display:inline-block; }
+        .eq-health-note { font-size:.82rem; color:#b9cae0; }
+        .eq-timeline-item {
+            border-left: 2px solid rgba(148,163,184,.18);
+            padding: 0 0 .85rem .85rem;
+            margin-left: .32rem;
+            position: relative;
+        }
+        .eq-timeline-item::before {
+            content: '';
+            position: absolute; left: -6px; top: 4px;
+            width: 10px; height: 10px; border-radius: 999px;
+            background: #8fb7ff; box-shadow: 0 0 0 4px rgba(143,183,255,.08);
+        }
+        .eq-timeline-top { display:flex; justify-content:space-between; gap:.75rem; align-items:flex-start; }
+        .eq-timeline-type { font-size:.72rem; color:#8fb7ff; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+        .eq-timeline-title { font-size:.92rem; color:#e8f1ff; font-weight:700; margin:.08rem 0; }
+        .eq-timeline-meta, .eq-timeline-detail { font-size:.8rem; color:#b9cae0; line-height:1.35; }
+        .eq-soft-card {
+            border: 1px solid rgba(148,163,184,.1); border-radius:12px; padding:.8rem .9rem; background:rgba(255,255,255,.02);
         }
         div[data-testid="stRadio"] label p { font-size:.92rem; }
         .eq-config-wrap {
@@ -256,6 +300,50 @@ def _lubrificacoes_eq(eq_id: str):
     return lubrificacoes_service.calcular_proximas_lubrificacoes_batch([eq_id]).get(eq_id, [])
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _timeline_eq(eq_id: str):
+    return painel_360_service.montar_timeline_equipamento(eq_id, limite=20)
+
+
+def _health_descriptor(score: int) -> tuple[str, str, str]:
+    if score >= 80:
+        return ('Verde', 'Operação estável, sem sinais críticos no momento.', '#22c55e')
+    if score >= 50:
+        return ('Amarelo', 'Há itens próximos do vencimento que pedem programação.', '#f59e0b')
+    return ('Vermelho', 'Existem pendências críticas ou necessidade de ação imediata.', '#ef4444')
+
+
+def _format_num(v) -> str:
+    try:
+        return f"{float(v or 0):,.0f}"
+    except Exception:
+        return '0'
+
+
+def _build_prioridade(revisoes: list[dict], lubrificacoes: list[dict]):
+    pend = painel_360_service.resumir_pendencias(revisoes, lubrificacoes)
+    if not pend:
+        return {
+            'css': 'ok',
+            'titulo': 'Nenhuma pendência crítica',
+            'detalhe': 'Equipamento sem revisões ou lubrificações vencidas/próximas no momento.',
+        }
+    top = pend[0]
+    unidade = 'h' if (top.get('controle') or '').lower() == 'horas' else 'km'
+    status = (top.get('status') or '').upper()
+    if status == 'VENCIDO':
+        diff = abs(float(top.get('falta') or 0))
+        css = 'danger'
+        titulo = f"{top.get('origem')} atrasada"
+        detalhe = f"{top.get('item')} · atraso de {_format_num(diff)} {unidade}."
+    else:
+        diff = float(top.get('falta') or 0)
+        css = 'warn'
+        titulo = f"Próxima ação: {top.get('origem')}"
+        detalhe = f"{top.get('item')} · faltam {_format_num(diff)} {unidade}."
+    return {'css': css, 'titulo': titulo, 'detalhe': detalhe, 'raw': top}
+
+
 def _setor_options():
     return {str(s["id"]): s.get("nome", "-") for s in _setores()}
 
@@ -304,11 +392,46 @@ def _render_metric_mini(label: str, value):
     )
 
 
-def _render_resumo_section(equipamento: dict, snap: dict):
+def _render_resumo_section(eq_id: str, equipamento: dict, snap: dict):
     km_atual = float(equipamento.get("km_atual", snap.get("km_atual", 0)) or 0)
     horas_atual = float(equipamento.get("horas_atual", snap.get("horas_atual", 0)) or 0)
     km_ini = float(equipamento.get("km_inicial_plano", equipamento.get("km_base_plano", km_atual)) or 0)
     horas_ini = float(equipamento.get("horas_inicial_plano", equipamento.get("horas_base_plano", horas_atual)) or 0)
+
+    score = int(equipamento.get("score_saude", snap.get("score_saude", 0)) or 0)
+    faixa, leitura_saude, cor = _health_descriptor(score)
+
+    revisoes = _revisoes_eq(eq_id)
+    lubrificacoes = _lubrificacoes_eq(eq_id)
+    prioridade = _build_prioridade(revisoes, lubrificacoes)
+
+    st.markdown('<div class="eq-health-line"><span class="eq-health-dot" style="background:' + cor + '"></span>'
+                f'<span class="eq-chip"><strong>Saúde {faixa}</strong></span>'
+                f'<span class="eq-health-note">{leitura_saude}</span></div>', unsafe_allow_html=True)
+
+    p1, p2 = st.columns([1.4, 1], gap="small")
+    with p1:
+        st.markdown(
+            f'<div class="eq-priority {prioridade["css"]}"><div class="t">Prioridade operacional</div>'
+            f'<div class="h">{prioridade["titulo"]}</div><div class="d">{prioridade["detalhe"]}</div></div>',
+            unsafe_allow_html=True,
+        )
+    with p2:
+        with st.container(border=False):
+            st.markdown('<div class="eq-soft-card">', unsafe_allow_html=True)
+            st.caption('Ações rápidas')
+            a1, a2 = st.columns(2, gap="small")
+            with a1:
+                if st.button('Abrir revisões', key=f'quick_rev_{eq_id}', use_container_width=True):
+                    st.session_state['pagina_atual'] = '🔧 Controle de Revisões'
+                    st.session_state.pop('eq_modal_id', None)
+                    st.rerun()
+            with a2:
+                if st.button('Abrir lubrificações', key=f'quick_lub_{eq_id}', use_container_width=True):
+                    st.session_state['pagina_atual'] = '🛢️ Controle de Lubrificações'
+                    st.session_state.pop('eq_modal_id', None)
+                    st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="eq-inline-strip">', unsafe_allow_html=True)
     chips = [
@@ -318,7 +441,12 @@ def _render_resumo_section(equipamento: dict, snap: dict):
         f'<span class="eq-chip"><strong>Horas iniciais</strong> {horas_ini:,.0f}</span>',
     ]
     st.markdown("".join(chips) + "</div>", unsafe_allow_html=True)
-    st.caption("Resumo rápido do equipamento. As tabelas detalhadas carregam apenas quando você abre cada seção.")
+
+    if prioridade.get('raw'):
+        raw = prioridade['raw']
+        unidade = 'h' if (raw.get('controle') or '').lower() == 'horas' else 'km'
+        ref = _format_num(raw.get('referencia'))
+        st.caption(f"Referência do próximo marco: {ref} {unidade} · Origem: {raw.get('origem')} · Item: {raw.get('item')}")
 
 
 def _render_revisoes_section(eq_id: str):
@@ -359,6 +487,41 @@ def _render_lubrificacoes_section(eq_id: str):
         st.dataframe(df, use_container_width=True, hide_index=True)
     else:
         st.info("Nenhuma lubrificação encontrada.")
+
+
+def _render_historico_section(eq_id: str):
+    top1, top2 = st.columns([1.6, 1], gap='small')
+    with top1:
+        novo_comentario = st.text_area('Comentário rápido', key=f'coment_eq_{eq_id}', height=90, placeholder='Registrar observação, contexto ou atualização rápida...')
+    with top2:
+        st.caption('Ações')
+        if st.button('Salvar comentário', key=f'coment_btn_{eq_id}', use_container_width=True, type='primary'):
+            ok, msg = comentarios_service.criar(eq_id, novo_comentario)
+            if ok:
+                _timeline_eq.clear()
+                st.success(msg)
+                st.rerun()
+            else:
+                st.error(msg)
+        st.caption('O histórico reúne leituras, revisões, lubrificações, comentários e alertas.')
+
+    timeline = _timeline_eq(eq_id)
+    if not timeline:
+        st.info('Nenhum evento recente encontrado.')
+        return
+
+    for evento in timeline[:12]:
+        data = evento.get('data')
+        data_txt = data.strftime('%d/%m/%Y %H:%M') if hasattr(data, 'strftime') else str(data or '-')
+        observacoes = (evento.get('observacoes') or '').strip()
+        detalhe_extra = f"<div class='eq-timeline-detail'>{observacoes}</div>" if observacoes and observacoes != (evento.get('detalhe') or '').strip() else ''
+        st.markdown(
+            f"<div class='eq-timeline-item'><div class='eq-timeline-top'><div><div class='eq-timeline-type'>{evento.get('tipo','Evento')}</div>"
+            f"<div class='eq-timeline-title'>{evento.get('titulo','-')}</div>"
+            f"<div class='eq-timeline-detail'>{evento.get('detalhe','')}</div>{detalhe_extra}</div>"
+            f"<div class='eq-timeline-meta'>{data_txt}<br>{evento.get('responsavel') or '-'}</div></div></div>",
+            unsafe_allow_html=True,
+        )
 
 
 def _render_config_section(eq_id: str, equipamento: dict, setor_map: dict, responsavel_map: dict):
@@ -440,6 +603,7 @@ def _render_config_section(eq_id: str, equipamento: dict, setor_map: dict, respo
             _carregar_equipamento.clear()
             _revisoes_eq.clear()
             _lubrificacoes_eq.clear()
+            _timeline_eq.clear()
             equipamentos_service.limpar_cache()
             st.success("Equipamento atualizado.")
             st.rerun()
@@ -495,9 +659,10 @@ def _render_ficha_conteudo(eq_id: str, setor_map: dict, responsavel_map: dict):
     if sec_key not in st.session_state:
         st.session_state[sec_key] = "Resumo"
 
+    st.markdown('<div class="eq-modal-shell">', unsafe_allow_html=True)
     secao = st.radio(
         "Seção",
-        ["Resumo", "Revisões", "Lubrificações", "Configurações"],
+        ["Resumo", "Revisões", "Lubrificações", "Histórico", "Configurações"],
         key=sec_key,
         horizontal=True,
         label_visibility="collapsed",
@@ -505,14 +670,16 @@ def _render_ficha_conteudo(eq_id: str, setor_map: dict, responsavel_map: dict):
 
     st.markdown('<div class="eq-section">', unsafe_allow_html=True)
     if secao == "Resumo":
-        _render_resumo_section(equipamento, snap)
+        _render_resumo_section(eq_id, equipamento, snap)
     elif secao == "Revisões":
         _render_revisoes_section(eq_id)
     elif secao == "Lubrificações":
         _render_lubrificacoes_section(eq_id)
+    elif secao == "Histórico":
+        _render_historico_section(eq_id)
     else:
         _render_config_section(eq_id, equipamento, setor_map, responsavel_map)
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
 
 @st.dialog("Ficha do equipamento", width="large")
@@ -540,6 +707,7 @@ def render():
             _carregar_equipamento.clear()
             _revisoes_eq.clear()
             _lubrificacoes_eq.clear()
+            _timeline_eq.clear()
             st.rerun()
 
     rows = equipamentos_service.carregar_snapshot_equipamentos()
