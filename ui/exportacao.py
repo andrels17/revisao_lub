@@ -275,7 +275,112 @@ def _pdf_bytes_relatorio_manutencao(
     elements.append(Spacer(1, 5 * mm))
 
     df_rev_macro = _enriquecer_macro_revisoes(df_rev)
+    df_lub_macro = _enriquecer_macro_lubrificacoes(df_lub)
     resumo_rev = _resumir_macro(df_rev_macro, "rev")
+    resumo_lub = _resumir_macro(df_lub_macro, "lub")
+
+    # ── Tabela de quantitativo por departamento ──────────────────────────────
+    quant_style = ParagraphStyle(
+        "QuantSubtitle",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        textColor=colors.HexColor("#5b6b7c"),
+        spaceAfter=3,
+    )
+
+    def _build_quant_table(resumo: pd.DataFrame, col_etapa: str, header_color) -> Table | None:
+        if resumo is None or resumo.empty:
+            return None
+        agg = (
+            resumo.groupby(["Departamento", "Grupo", "Tipo", col_etapa, "Referência"], dropna=False)
+            .agg(Total=("Execuções", "sum"), NoPrazo=("No prazo", "sum"), Atrasadas=("Atrasadas", "sum"))
+            .reset_index()
+        )
+        header = ["Departamento", "Grupo", "Tipo", col_etapa, "Referência", "Total", "No prazo", "Atrasadas", "% no prazo"]
+        rows = [header]
+        for _, r in agg.iterrows():
+            pct = f"{round(r['NoPrazo'] / r['Total'] * 100)}%" if r["Total"] > 0 else "—"
+            rows.append([
+                _safe_text(r["Departamento"]),
+                _safe_text(r["Grupo"]),
+                _safe_text(r["Tipo"]),
+                _safe_text(r[col_etapa]),
+                _safe_text(r["Referência"]),
+                str(int(r["Total"])),
+                str(int(r["NoPrazo"])),
+                str(int(r["Atrasadas"])),
+                pct,
+            ])
+        total_row = [
+            "Total geral", "", "", "", "",
+            str(int(agg["Total"].sum())),
+            str(int(agg["NoPrazo"].sum())),
+            str(int(agg["Atrasadas"].sum())),
+            f"{round(agg['NoPrazo'].sum() / agg['Total'].sum() * 100)}%" if agg["Total"].sum() > 0 else "—",
+        ]
+        rows.append(total_row)
+
+        tbl = Table(
+            rows,
+            repeatRows=1,
+            colWidths=[30 * mm, 24 * mm, 18 * mm, 30 * mm, 20 * mm, 12 * mm, 14 * mm, 14 * mm, 14 * mm],
+        )
+        n = len(rows)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), header_color),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -2), 0.35, colors.HexColor("#d4deea")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, n - 2), [colors.white, colors.HexColor("#f7fbff")]),
+            ("BACKGROUND", (0, n - 1), (-1, n - 1), colors.HexColor("#e8eef5")),
+            ("FONTNAME", (0, n - 1), (-1, n - 1), "Helvetica-Bold"),
+            ("LINEABOVE", (0, n - 1), (-1, n - 1), 0.8, colors.HexColor("#c7d3e0")),
+            ("ALIGN", (5, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            # Destaque: "No prazo" em verde e "Atrasadas" em vermelho
+            ("TEXTCOLOR", (6, 1), (6, n - 2), colors.HexColor("#15803d")),
+            ("TEXTCOLOR", (7, 1), (7, n - 2), colors.HexColor("#b91c1c")),
+        ]))
+        return tbl
+
+    section_quant_style = ParagraphStyle(
+        "SectionQuant",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        textColor=colors.white,
+        backColor=colors.HexColor("#1e3a5f"),
+        borderPadding=5,
+        spaceBefore=4,
+        spaceAfter=4,
+    )
+    elements.append(Paragraph("Quantitativo por departamento", section_quant_style))
+    elements.append(Paragraph("Visão consolidada de execuções realizadas no período, separadas por status de prazo.", quant_style))
+
+    tbl_rev_quant = _build_quant_table(resumo_rev, "Etapa", colors.HexColor("#2563eb"))
+    if tbl_rev_quant:
+        elements.append(Paragraph("Revisões", ParagraphStyle("QL", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8, textColor=colors.HexColor("#1e3a5f"), spaceAfter=2)))
+        elements.append(tbl_rev_quant)
+        elements.append(Spacer(1, 3 * mm))
+
+    tbl_lub_quant = _build_quant_table(resumo_lub, "Item", colors.HexColor("#16a34a"))
+    if tbl_lub_quant:
+        elements.append(Paragraph("Lubrificações", ParagraphStyle("QL2", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8, textColor=colors.HexColor("#166534"), spaceAfter=2)))
+        elements.append(tbl_lub_quant)
+        elements.append(Spacer(1, 3 * mm))
+
+    if tbl_rev_quant is None and tbl_lub_quant is None:
+        elements.append(Paragraph("Sem dados no período selecionado.", small_style))
+
+    elements.append(Spacer(1, 4 * mm))
+    # ────────────────────────────────────────────────────────────────────────
+
     elements.append(Paragraph("Macro de revisões realizadas", section_style))
     if resumo_rev.empty:
         elements.append(Paragraph("Sem dados de revisão no período selecionado.", small_style))
@@ -317,8 +422,6 @@ def _pdf_bytes_relatorio_manutencao(
 
     elements.append(Spacer(1, 5 * mm))
 
-    df_lub_macro = _enriquecer_macro_lubrificacoes(df_lub)
-    resumo_lub = _resumir_macro(df_lub_macro, "lub")
     elements.append(Paragraph("Macro de lubrificações realizadas", section_style))
     if resumo_lub.empty:
         elements.append(Paragraph("Sem dados de lubrificação no período selecionado.", small_style))
