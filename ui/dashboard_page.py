@@ -3,7 +3,7 @@ import math
 import pandas as pd
 import streamlit as st
 
-from services import dashboard_service
+from services import dashboard_service, prioridades_service
 from ui.constants import STATUS_LABEL
 from ui.exportacao import botao_exportar_excel
 
@@ -203,6 +203,60 @@ def _inject_styles():
             margin-bottom: .75rem;
         }
 
+
+        .dash-prio-grid {
+            display:grid;
+            grid-template-columns: 1.15fr .85fr;
+            gap: .7rem;
+            margin-bottom: .75rem;
+        }
+        .dash-prio-box {
+            border: 1px solid rgba(148,163,184,.12);
+            border-radius: 14px;
+            background: #0d1929;
+            padding: .85rem .95rem;
+        }
+        .dash-prio-head {
+            display:flex; align-items:flex-start; justify-content:space-between; gap:.75rem; margin-bottom:.65rem;
+        }
+        .dash-prio-head h3 { margin:0; font-size:.98rem; font-weight:800; color:#f8fbff; }
+        .dash-prio-head p { margin:.18rem 0 0; color:#8fa4c0; font-size:.76rem; }
+        .dash-prio-link {
+            display:inline-flex; align-items:center; justify-content:center;
+            min-height:36px; padding:0 .8rem; border-radius:10px;
+            border:1px solid rgba(79,140,255,.16); background:rgba(79,140,255,.08);
+            color:#dbeafe; font-weight:700; font-size:.74rem; white-space:nowrap;
+        }
+        .dash-prio-mini-grid {
+            display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.5rem;
+        }
+        .dash-prio-mini {
+            border:1px solid rgba(148,163,184,.10); border-radius:12px; padding:.7rem .75rem; background:rgba(15,23,42,.58);
+        }
+        .dash-prio-mini .lbl { font-size:.68rem; color:#8fa4c0; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+        .dash-prio-mini .val { font-size:1.35rem; font-weight:800; color:#f8fbff; margin:.18rem 0 .15rem; }
+        .dash-prio-mini .sub { font-size:.72rem; color:#89a2bd; }
+        .dash-prio-mini.danger .val { color:#fca5a5; }
+        .dash-prio-mini.warn .val { color:#fcd34d; }
+        .dash-prio-mini.info .val { color:#93c5fd; }
+        .dash-prio-mini.ok .val { color:#86efac; }
+        .dash-prio-list { display:flex; flex-direction:column; gap:.5rem; }
+        .dash-prio-item {
+            border:1px solid rgba(148,163,184,.10); border-radius:12px; padding:.72rem .8rem; background:rgba(15,23,42,.58);
+        }
+        .dash-prio-item-top { display:flex; align-items:flex-start; justify-content:space-between; gap:.65rem; }
+        .dash-prio-item-title { font-size:.84rem; font-weight:800; color:#eff6ff; }
+        .dash-prio-item-desc { font-size:.74rem; color:#8fa4c0; margin-top:.14rem; }
+        .dash-prio-pill { display:inline-flex; align-items:center; padding:.13rem .48rem; border-radius:999px; font-size:.66rem; font-weight:700; }
+        .dash-prio-pill.danger { background:rgba(239,68,68,.10); color:#fecaca; }
+        .dash-prio-pill.warn { background:rgba(245,158,11,.10); color:#fde68a; }
+        .dash-prio-pill.info { background:rgba(96,165,250,.10); color:#bfdbfe; }
+        .dash-prio-meta { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.42rem; }
+        .dash-prio-chip { display:inline-flex; align-items:center; padding:.13rem .42rem; border-radius:999px; font-size:.66rem; font-weight:700; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.05); color:#dbeafe; }
+        @media (max-width: 900px) {
+            .dash-prio-grid { grid-template-columns:1fr; }
+            .dash-prio-mini-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        }
         @media (max-width: 900px) {
             .dash-kpi-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
             .dash-kpi-grid.three { grid-template-columns: repeat(2,minmax(0,1fr)); }
@@ -458,6 +512,75 @@ def _slice_page(df: pd.DataFrame, page: int, page_size: int) -> pd.DataFrame:
     return df.iloc[start:start + page_size]
 
 
+
+
+def _prio_css(status: str) -> str:
+    return {"VENCIDO": "danger", "PROXIMO": "warn", "SEM_LEITURA": "info"}.get((status or "").upper(), "ok")
+
+
+def _prio_label(status: str) -> str:
+    return {"VENCIDO": "Vencido", "PROXIMO": "Próximo", "SEM_LEITURA": "Sem leitura"}.get((status or "").upper(), status or "Em dia")
+
+
+def _abrir_prioridades() -> None:
+    st.session_state["pagina_atual"] = "🔥 Prioridades do Dia"
+    st.rerun()
+
+
+def _render_bloco_prioridades_dashboard() -> None:
+    try:
+        payload = prioridades_service.carregar_prioridades()
+    except Exception:
+        return
+
+    resumo = payload.get("resumo") or {}
+    itens = payload.get("itens") or []
+    destaques = itens[:3]
+
+    st.markdown('<div class="dash-prio-grid">', unsafe_allow_html=True)
+    left, right = st.columns([1.2, .8], gap="small")
+    with left:
+        st.markdown('<div class="dash-prio-box">', unsafe_allow_html=True)
+        head_l, head_r = st.columns([4.2, 1.1], vertical_alignment="center")
+        with head_l:
+            st.markdown(
+                "<div class='dash-prio-head'><div><h3>Prioridades do dia</h3><p>Resumo operacional com foco no que precisa de ação imediata.</p></div></div>",
+                unsafe_allow_html=True,
+            )
+        with head_r:
+            if st.button("Abrir painel", key="dash_open_prio", use_container_width=True):
+                _abrir_prioridades()
+        st.markdown('<div class="dash-prio-mini-grid">', unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns(4, gap="small")
+        mini = [
+            ("Pendências", int(resumo.get("total_pendencias", 0)), "Tudo que pede ação hoje", "danger"),
+            ("Críticos", int(resumo.get("equipamentos_criticos", 0)), "Equipamentos em risco", "warn"),
+            ("Vencidos", int(resumo.get("vencidos", 0)), "Ação imediata", "danger"),
+            ("Sem leitura", int(resumo.get("sem_leitura", 0)), "Janela acima de 7 dias", "info"),
+        ]
+        for col, (label, value, sub, css) in zip([c1,c2,c3,c4], mini):
+            with col:
+                st.markdown(f"<div class='dash-prio-mini {css}'><div class='lbl'>{label}</div><div class='val'>{value}</div><div class='sub'>{sub}</div></div>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with right:
+        st.markdown('<div class="dash-prio-box"><div class="dash-section-title">Ações imediatas</div><div class="dash-prio-list">', unsafe_allow_html=True)
+        if not destaques:
+            st.success("Nenhuma prioridade aberta no momento.")
+        else:
+            for idx, item in enumerate(destaques):
+                css = _prio_css(str(item.get("status") or ""))
+                atraso = float(item.get("atraso", 0) or 0)
+                falta = float(item.get("falta", 0) or 0)
+                unidade = item.get("unidade") or ""
+                extra = f"Atraso {atraso:.0f} {unidade}" if css == "danger" else (f"Falta {max(falta,0):.0f} {unidade}" if css == "warn" else f"{int(float(item.get('dias_sem_leitura', 0) or 0))} dia(s)")
+                st.markdown(
+                    f"<div class='dash-prio-item'><div class='dash-prio-item-top'><div><div class='dash-prio-item-title'>{item.get('titulo') or '-'}</div><div class='dash-prio-item-desc'>{item.get('descricao') or '-'}</div></div><span class='dash-prio-pill {css}'>{_prio_label(str(item.get('status') or ''))}</span></div><div class='dash-prio-meta'><span class='dash-prio-chip'>{item.get('origem') or '-'}</span><span class='dash-prio-chip'>{item.get('setor_nome') or '-'}</span><span class='dash-prio-chip'>{extra}</span></div></div>",
+                    unsafe_allow_html=True,
+                )
+        st.markdown('</div></div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
 def render():
     _inject_styles()
 
@@ -470,6 +593,10 @@ def render():
         if st.button("Atualizar", help="Recarrega dados do banco"):
 
             dashboard_service.carregar_alertas.clear()
+            try:
+                prioridades_service.limpar_cache()
+            except Exception:
+                pass
             st.rerun()
 
     with st.spinner("Carregando…"):
@@ -478,6 +605,7 @@ def render():
     kpis = dashboard_service.resumo_kpis(alertas, total_equipamentos)
 
     _render_cards(kpis)
+    _render_bloco_prioridades_dashboard()
 
     if not alertas:
         st.info("Nenhum alerta encontrado. Verifique se os equipamentos possuem template configurado.")
