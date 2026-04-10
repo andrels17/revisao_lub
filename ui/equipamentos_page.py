@@ -149,8 +149,8 @@ def _build_export_df(rows):
         "Próximos": row.get("proximos"),
         "KM atual": row.get("km_atual"),
         "Horas atual": row.get("horas_atual"),
-        "KM inicial do plano": row.get("km_inicial_plano"),
-        "Horas iniciais do plano": row.get("horas_inicial_plano"),
+        "KM inicial do plano": row.get("km_inicial_plano", row.get("km_base_plano")),
+        "Horas iniciais do plano": row.get("horas_inicial_plano", row.get("horas_base_plano")),
         "Ativo": "Sim" if row.get("ativo") else "Não",
     } for row in rows])
 
@@ -340,39 +340,40 @@ def _render_detalhe(setor_map: dict, responsavel_map: dict):
                 format_func=lambda i: setor_labels[i],
                 key=f"edit_setor_{eq_id}",
             )
+
+        km_base_atual = float(equipamento.get("km_inicial_plano", equipamento.get("km_base_plano")) or equipamento.get("km_atual") or 0)
+        horas_base_atual = float(equipamento.get("horas_inicial_plano", equipamento.get("horas_base_plano")) or equipamento.get("horas_atual") or 0)
+
+        b1, b2 = st.columns(2)
+        with b1:
+            km_base_edit = st.number_input("KM inicial do plano", min_value=0.0, value=km_base_atual, step=1.0, key=f"edit_km_base_{eq_id}")
+        with b2:
+            horas_base_edit = st.number_input("Horas iniciais do plano", min_value=0.0, value=horas_base_atual, step=1.0, key=f"edit_horas_base_{eq_id}")
+
+        st.caption("Esses campos ancoram os ciclos de revisão e lubrificação. Ex.: base 3.200 + etapas 5/10/15/20 mil = 8.200 / 13.200 / 18.200 / 23.200.")
+
         with e5:
             st.write("")
-
-        p1, p2 = st.columns(2)
-        with p1:
-            km_inicial_plano = st.number_input(
-                "KM inicial do plano",
-                min_value=0.0,
-                value=float(equipamento.get("km_inicial_plano") or 0),
-                step=100.0,
-                key=f"edit_km_inicial_{eq_id}",
-            )
-        with p2:
-            horas_inicial_plano = st.number_input(
-                "Horas iniciais do plano",
-                min_value=0.0,
-                value=float(equipamento.get("horas_inicial_plano") or 0),
-                step=10.0,
-                key=f"edit_horas_inicial_{eq_id}",
-            )
-
-        if st.button("Salvar alterações", key=f"edit_salvar_{eq_id}", use_container_width=True, type="primary"):
-            equipamentos_service.atualizar_inline(
-                eq_id,
-                nome=nome_edit.strip() or equipamento.get("nome"),
-                tipo=tipo_edit,
-                setor_id=setor_ids[setor_idx],
-                ativo=ativo_edit,
-                km_inicial_plano=km_inicial_plano,
-                horas_inicial_plano=horas_inicial_plano,
-            )
-            st.success("Equipamento atualizado.")
-            st.rerun()
+            if st.button("Salvar alterações", key=f"edit_salvar_{eq_id}", use_container_width=True, type="primary"):
+                km_atual_ref = float(equipamento.get("km_atual") or 0)
+                horas_atual_ref = float(equipamento.get("horas_atual") or 0)
+                if km_base_edit > km_atual_ref:
+                    st.error("KM inicial do plano não pode ser maior que o KM atual.")
+                    st.stop()
+                if horas_base_edit > horas_atual_ref:
+                    st.error("Horas iniciais do plano não podem ser maiores que as horas atuais.")
+                    st.stop()
+                equipamentos_service.atualizar_inline(
+                    eq_id,
+                    nome=nome_edit.strip() or equipamento.get("nome"),
+                    tipo=tipo_edit,
+                    setor_id=setor_ids[setor_idx],
+                    ativo=ativo_edit,
+                    km_inicial_plano=km_base_edit,
+                    horas_inicial_plano=horas_base_edit,
+                )
+                st.success("Equipamento atualizado.")
+                st.rerun()
 
         resp_ids    = [""] + list(responsavel_map.keys())
         resp_labels = ["— sem principal —"] + list(responsavel_map.values())
@@ -389,12 +390,12 @@ def _render_detalhe(setor_map: dict, responsavel_map: dict):
             )
         with r2:
             st.markdown(
-                f'<div class="eq-info-box"><strong>KM atual</strong>{float(equipamento.get("km_atual", 0) or 0):.0f}</div>',
+                f'<div class="eq-info-box"><strong>KM atual</strong>{float(equipamento.get("km_atual", 0) or 0):.0f}<br><small>Inicial: {float(equipamento.get("km_inicial_plano", equipamento.get("km_base_plano", equipamento.get("km_atual", 0))) or 0):.0f}</small></div>',
                 unsafe_allow_html=True,
             )
         with r3:
             st.markdown(
-                f'<div class="eq-info-box"><strong>Horas</strong>{float(equipamento.get("horas_atual", 0) or 0):.0f}</div>',
+                f'<div class="eq-info-box"><strong>Horas</strong>{float(equipamento.get("horas_atual", 0) or 0):.0f}<br><small>Inicial: {float(equipamento.get("horas_inicial_plano", equipamento.get("horas_base_plano", equipamento.get("horas_atual", 0))) or 0):.0f}</small></div>',
                 unsafe_allow_html=True,
             )
         with r4:
