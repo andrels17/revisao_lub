@@ -55,6 +55,7 @@ ROLE_PAGINAS["admin"] = {
     "📱 Alertas WhatsApp",
     "📥 Importar Equipamentos", "📈 Relatório de Manutenção",
     "⚙️ Configurações",
+    "🔥 Prioridades do Dia",
 }
 ROLE_PAGINAS["gestor"] = {
     "📊 Dashboard",
@@ -64,16 +65,19 @@ ROLE_PAGINAS["gestor"] = {
     "🛢️ Controle de Lubrificações",
     "📱 Alertas WhatsApp",
     "📈 Relatório de Manutenção",
+    "🔥 Prioridades do Dia",
 }
 ROLE_PAGINAS["operador"] = {
     "📊 Dashboard",
     "📏 Leituras KM / Horas",
     "🔧 Controle de Revisões",
     "🛢️ Controle de Lubrificações",
+    "🔥 Prioridades do Dia",
 }
 ROLE_PAGINAS["visualizador"] = {
     "📊 Dashboard",
     "📈 Relatório de Manutenção",
+    "🔥 Prioridades do Dia",
 }
 
 def hash_senha(senha: str) -> str:
