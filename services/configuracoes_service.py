@@ -61,7 +61,7 @@ def garantir_tabela() -> bool:
 
         cur.execute(
             """
-            create table if not exists configuracoes_sistema (
+            create table if not exists public.configuracoes_sistema (
                 chave varchar(100) primary key,
                 valor varchar(500) not null,
                 descricao text,
@@ -94,7 +94,7 @@ def carregar_todas() -> dict:
         conn = get_conn()
         cur = conn.cursor()
 
-        cur.execute("select chave, valor from configuracoes_sistema")
+        cur.execute("select chave, valor from public.configuracoes_sistema")
         rows = cur.fetchall()
 
     except (OperationalError, InterfaceError):
@@ -153,7 +153,7 @@ def salvar(configs: dict):
         for chave, valor in configs.items():
             cur.execute(
                 """
-                insert into configuracoes_sistema (chave, valor, atualizado_em)
+                insert into public.configuracoes_sistema (chave, valor, atualizado_em)
                 values (%s, %s, now())
                 on conflict (chave)
                 do update set valor = excluded.valor, atualizado_em = now()
@@ -188,7 +188,7 @@ def resetar():
         conn = get_conn()
         cur = conn.cursor()
 
-        cur.execute("delete from configuracoes_sistema")
+        cur.execute("delete from public.configuracoes_sistema")
         conn.commit()
 
     except (OperationalError, InterfaceError):
