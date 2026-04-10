@@ -9,22 +9,23 @@ from services import cache_service, configuracoes_service
 
 # ── helpers de status ────────────────────────────────────────────────────────
 
-def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, leitura_inicial=0):
+def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, leitura_base=0):
     if intervalo <= 0:
         return "EM DIA", max(0.0, leitura_atual), max(0.0, leitura_atual), 0.0
 
     leitura_atual   = float(leitura_atual   or 0)
     ultima_execucao = float(ultima_execucao or 0)
     intervalo       = float(intervalo       or 0)
-    leitura_inicial = float(leitura_inicial or 0)
+    leitura_base    = float(leitura_base    or 0)
 
-    leitura_relativa_atual = max(0.0, leitura_atual - leitura_inicial)
-    leitura_relativa_exec  = max(0.0, ultima_execucao - leitura_inicial)
-
-    ciclo_atual        = int(leitura_relativa_atual // intervalo) if leitura_relativa_atual > 0 else 0
-    ciclo_ultima       = int(leitura_relativa_exec  // intervalo) if ultima_execucao > 0 else -1
-    inicio_ciclo       = leitura_inicial + (ciclo_atual * intervalo)
-    proximo_vencimento = leitura_inicial + ((ciclo_atual + 1) * intervalo)
+    offset_atual = max(0.0, leitura_atual - leitura_base)
+    ciclo_atual = int(offset_atual // intervalo) if offset_atual > 0 else 0
+    if ultima_execucao > leitura_base:
+        ciclo_ultima = int((ultima_execucao - leitura_base) // intervalo)
+    else:
+        ciclo_ultima = -1
+    inicio_ciclo = leitura_base + (ciclo_atual * intervalo)
+    proximo_vencimento = inicio_ciclo + intervalo
 
     if ultima_execucao > 0 and ciclo_ultima == ciclo_atual:
         return "REALIZADO", inicio_ciclo, proximo_vencimento, max(0.0, proximo_vencimento - leitura_atual)
@@ -38,6 +39,18 @@ def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, le
 
 
 # ── batch loading (1 query para todos os equipamentos) ───────────────────────
+
+def _colunas_equipamentos(cur):
+    cur.execute(
+        """
+        select column_name
+          from information_schema.columns
+         where table_schema = 'public'
+           and table_name = 'equipamentos'
+        """
+    )
+    return {str(r[0]) for r in cur.fetchall()}
+
 
 def _carregar_ultimas_execucoes_batch(cur, equipamento_ids):
     """
@@ -84,14 +97,17 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
     cur  = conn.cursor()
     try:
         placeholders = ",".join(["%s"] * len(equipamento_ids))
+        colunas = _colunas_equipamentos(cur)
+        km_base_expr = "coalesce(e.km_inicial_plano, e.km_base_plano, e.km_atual, 0)" if "km_inicial_plano" in colunas and "km_base_plano" in colunas else ("coalesce(e.km_inicial_plano, e.km_atual, 0)" if "km_inicial_plano" in colunas else ("coalesce(e.km_base_plano, e.km_atual, 0)" if "km_base_plano" in colunas else "coalesce(e.km_atual, 0)"))
+        horas_base_expr = "coalesce(e.horas_inicial_plano, e.horas_base_plano, e.horas_atual, 0)" if "horas_inicial_plano" in colunas and "horas_base_plano" in colunas else ("coalesce(e.horas_inicial_plano, e.horas_atual, 0)" if "horas_inicial_plano" in colunas else ("coalesce(e.horas_base_plano, e.horas_atual, 0)" if "horas_base_plano" in colunas else "coalesce(e.horas_atual, 0)"))
         cur.execute(
             f"""
             select
                 e.id as equipamento_id,
                 e.km_atual,
                 e.horas_atual,
-                coalesce(e.km_inicial_plano, 0) as km_inicial_plano,
-                coalesce(e.horas_inicial_plano, 0) as horas_inicial_plano,
+                {km_base_expr} as km_inicial_plano,
+                {horas_base_expr} as horas_inicial_plano,
                 tl.tipo_controle,
                 itl.id as item_id,
                 itl.nome_item,
@@ -118,10 +134,19 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
 
         for eqp_id, km_atual, horas_atual, km_inicial_plano, horas_inicial_plano, tipo_controle, item_id, nome_item, tipo_produto, intervalo in rows:
             leitura_atual = float(horas_atual if tipo_controle == "horas" else km_atual)
-            leitura_inicial = float(horas_inicial_plano if tipo_controle == "horas" else km_inicial_plano)
+            leitura_base = float(horas_inicial_plano if tipo_controle == "horas" else km_inicial_plano)
+            leitura_atual_ref = float(horas_atual if tipo_controle == "horas" else km_atual)
+            if leitura_base > leitura_atual_ref:
+                leitura_base = leitura_atual_ref
             ultima = ultimas.get(eqp_id, {}).get(item_id, 0.0)
 
-            status, ref_ciclo, prox_venc, diff = _status_item_ciclo(leitura_atual, ultima, float(intervalo or 0), tolerancia, leitura_inicial=leitura_inicial)
+            status, ref_ciclo, prox_venc, diff = _status_item_ciclo(
+                leitura_atual,
+                ultima,
+                float(intervalo or 0),
+                tolerancia,
+                leitura_base=leitura_base,
+            )
 
             resultado[eqp_id].append({
                 "item_id":          item_id,
@@ -130,7 +155,11 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
                 "referencia_ciclo": ref_ciclo,
                 "vencimento":       prox_venc,
                 "atual":            leitura_atual,
-                "leitura_inicial_plano": leitura_inicial,
+                "leitura_base_plano": leitura_base,
+                "km_inicial_plano": float(km_inicial_plano or 0),
+                "horas_inicial_plano": float(horas_inicial_plano or 0),
+                "km_base_plano":     float(km_inicial_plano or 0),
+                "horas_base_plano":  float(horas_inicial_plano or 0),
                 "ultima_execucao":  ultima,
                 "status":           status,
                 "diferenca":        diff,

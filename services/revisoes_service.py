@@ -40,9 +40,25 @@ def _valor_leitura_execucao(tipo_controle, km_execucao, horas_execucao):
     return _normalizar_numero(horas_execucao if tipo_controle == "horas" else km_execucao)
 
 
-def _carregar_base_revisoes(cur):
+def _colunas_equipamentos(cur):
     cur.execute(
         """
+        select column_name
+          from information_schema.columns
+         where table_schema = 'public'
+           and table_name = 'equipamentos'
+        """
+    )
+    return {str(r[0]) for r in cur.fetchall()}
+
+
+def _carregar_base_revisoes(cur):
+    colunas = _colunas_equipamentos(cur)
+    km_base_expr = "coalesce(e.km_inicial_plano, e.km_base_plano, e.km_atual, 0)" if "km_inicial_plano" in colunas and "km_base_plano" in colunas else ("coalesce(e.km_inicial_plano, e.km_atual, 0)" if "km_inicial_plano" in colunas else ("coalesce(e.km_base_plano, e.km_atual, 0)" if "km_base_plano" in colunas else "coalesce(e.km_atual, 0)"))
+    horas_base_expr = "coalesce(e.horas_inicial_plano, e.horas_base_plano, e.horas_atual, 0)" if "horas_inicial_plano" in colunas and "horas_base_plano" in colunas else ("coalesce(e.horas_inicial_plano, e.horas_atual, 0)" if "horas_inicial_plano" in colunas else ("coalesce(e.horas_base_plano, e.horas_atual, 0)" if "horas_base_plano" in colunas else "coalesce(e.horas_atual, 0)"))
+
+    cur.execute(
+        f"""
         select
             e.id as equipamento_id,
             e.codigo,
@@ -55,8 +71,8 @@ def _carregar_base_revisoes(cur):
             tr.tipo_controle,
             e.km_atual,
             e.horas_atual,
-            coalesce(e.km_inicial_plano, 0) as km_inicial_plano,
-            coalesce(e.horas_inicial_plano, 0) as horas_inicial_plano,
+            {km_base_expr} as km_inicial_plano,
+            {horas_base_expr} as horas_inicial_plano,
             et.id as etapa_id,
             et.nome_etapa,
             et.gatilho_valor
@@ -139,14 +155,17 @@ def _agrupar_execucoes_por_etapa(exec_rows, tipo_por_equipamento):
 def _montar_item_controle(base, execucoes_por_etapa, tolerancia, modo="dashboard"):
     tipo_controle = (base["tipo_controle"] or "km").lower()
     leitura_atual = _normalizar_numero(base["horas_atual"] if tipo_controle == "horas" else base["km_atual"])
-    leitura_inicial = _normalizar_numero(base["horas_inicial_plano"] if tipo_controle == "horas" else base["km_inicial_plano"])
+    leitura_base = _normalizar_numero(base["horas_inicial_plano"] if tipo_controle == "horas" else base["km_inicial_plano"])
+    if leitura_base > leitura_atual:
+        leitura_base = leitura_atual
     gatilho = _normalizar_numero(base["gatilho_valor"])
     ciclo = max(_normalizar_numero(base["ciclo_maximo"]), gatilho, 1.0)
 
-    leitura_relativa = max(0.0, leitura_atual - leitura_inicial)
-    leitura_ref = leitura_relativa - 1e-9 if leitura_relativa > 0 else leitura_relativa
-    inicio_ciclo_rel = math.floor(leitura_ref / ciclo) * ciclo
-    inicio_ciclo = leitura_inicial + inicio_ciclo_rel
+    # Usa a base inicial do plano como âncora do ciclo.
+    offset_atual = max(0.0, leitura_atual - leitura_base)
+    leitura_ref = offset_atual - 1e-9 if offset_atual > 0 else offset_atual
+    inicio_offset = math.floor(leitura_ref / ciclo) * ciclo
+    inicio_ciclo = leitura_base + inicio_offset
     vencimento_ciclo = inicio_ciclo + gatilho
 
     leituras_etapa = execucoes_por_etapa.get(base["etapa"], [])
@@ -183,11 +202,13 @@ def _montar_item_controle(base, execucoes_por_etapa, tolerancia, modo="dashboard
         "gatilho_valor": gatilho,
         "km_atual": _normalizar_numero(base["km_atual"]),
         "horas_atual": _normalizar_numero(base["horas_atual"]),
-        "km_inicial_plano": _normalizar_numero(base.get("km_inicial_plano")),
-        "horas_inicial_plano": _normalizar_numero(base.get("horas_inicial_plano")),
-        "leitura_inicial_plano": leitura_inicial,
         "leitura_atual": leitura_atual,
         "ultima_execucao": ultima_execucao,
+        "km_inicial_plano": _normalizar_numero(base.get("km_inicial_plano")),
+        "horas_inicial_plano": _normalizar_numero(base.get("horas_inicial_plano")),
+        "km_base_plano": _normalizar_numero(base.get("km_inicial_plano")),
+        "horas_base_plano": _normalizar_numero(base.get("horas_inicial_plano")),
+        "leitura_base_plano": leitura_base,
         "vencimento": proximo_vencimento,
         "vencimento_ciclo": vencimento_ciclo,
         "proximo_vencimento": proximo_vencimento,
@@ -250,6 +271,8 @@ def _construir_controles(modo="dashboard"):
                 "horas_atual": row[10],
                 "km_inicial_plano": row[11],
                 "horas_inicial_plano": row[12],
+                "km_base_plano": row[11],
+                "horas_base_plano": row[12],
                 "etapa_id": row[13],
                 "etapa": row[14],
                 "gatilho_valor": row[15],
