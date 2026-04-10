@@ -149,6 +149,8 @@ def _build_export_df(rows):
         "Próximos": row.get("proximos"),
         "KM atual": row.get("km_atual"),
         "Horas atual": row.get("horas_atual"),
+        "KM base plano": row.get("km_base_plano"),
+        "Horas base plano": row.get("horas_base_plano"),
         "Ativo": "Sim" if row.get("ativo") else "Não",
     } for row in rows])
 
@@ -338,6 +340,18 @@ def _render_detalhe(setor_map: dict, responsavel_map: dict):
                 format_func=lambda i: setor_labels[i],
                 key=f"edit_setor_{eq_id}",
             )
+
+        km_base_atual = float(equipamento.get("km_base_plano") or equipamento.get("km_atual") or 0)
+        horas_base_atual = float(equipamento.get("horas_base_plano") or equipamento.get("horas_atual") or 0)
+
+        b1, b2 = st.columns(2)
+        with b1:
+            km_base_edit = st.number_input("KM inicial do plano", min_value=0.0, value=km_base_atual, step=1.0, key=f"edit_km_base_{eq_id}")
+        with b2:
+            horas_base_edit = st.number_input("Horas iniciais do plano", min_value=0.0, value=horas_base_atual, step=1.0, key=f"edit_horas_base_{eq_id}")
+
+        st.caption("Esses campos ancoram os ciclos de revisão e lubrificação. Ex.: base 3.200 + etapas 5/10/15/20 mil = 8.200 / 13.200 / 18.200 / 23.200.")
+
         with e5:
             st.write("")
             if st.button("Salvar alterações", key=f"edit_salvar_{eq_id}", use_container_width=True, type="primary"):
@@ -347,6 +361,8 @@ def _render_detalhe(setor_map: dict, responsavel_map: dict):
                     tipo=tipo_edit,
                     setor_id=setor_ids[setor_idx],
                     ativo=ativo_edit,
+                    km_base_plano=km_base_edit,
+                    horas_base_plano=horas_base_edit,
                 )
                 st.success("Equipamento atualizado.")
                 st.rerun()
@@ -366,12 +382,12 @@ def _render_detalhe(setor_map: dict, responsavel_map: dict):
             )
         with r2:
             st.markdown(
-                f'<div class="eq-info-box"><strong>KM atual</strong>{float(equipamento.get("km_atual", 0) or 0):.0f}</div>',
+                f'<div class="eq-info-box"><strong>KM atual</strong>{float(equipamento.get("km_atual", 0) or 0):.0f}<br><small>Base: {float(equipamento.get("km_base_plano", equipamento.get("km_atual", 0)) or 0):.0f}</small></div>',
                 unsafe_allow_html=True,
             )
         with r3:
             st.markdown(
-                f'<div class="eq-info-box"><strong>Horas</strong>{float(equipamento.get("horas_atual", 0) or 0):.0f}</div>',
+                f'<div class="eq-info-box"><strong>Horas</strong>{float(equipamento.get("horas_atual", 0) or 0):.0f}<br><small>Base: {float(equipamento.get("horas_base_plano", equipamento.get("horas_atual", 0)) or 0):.0f}</small></div>',
                 unsafe_allow_html=True,
             )
         with r4:
