@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, date
 from typing import Any
 
 from services import alertas_service, comentarios_service, execucoes_service, leituras_service, lubrificacoes_service
@@ -19,6 +19,36 @@ def _tipo_medicao(item: dict) -> str:
     if tipo == "horas":
         return "horas"
     return "km"
+
+
+def _normalize_dt(value: Any) -> datetime:
+    if value is None:
+        return datetime.min
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo else value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return datetime.min
+        candidatos = [raw]
+        if raw.endswith("Z"):
+            candidatos.append(raw[:-1] + "+00:00")
+        if " " in raw and "T" not in raw:
+            candidatos.append(raw.replace(" ", "T", 1))
+        for candidato in candidatos:
+            try:
+                dt = datetime.fromisoformat(candidato)
+                return dt.replace(tzinfo=None) if dt.tzinfo else dt
+            except Exception:
+                pass
+        for fmt in ("%d/%m/%Y %H:%M", "%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(raw, fmt)
+            except Exception:
+                pass
+    return datetime.min
 
 
 def montar_timeline_equipamento(equipamento_id, limite=50):
@@ -88,10 +118,7 @@ def montar_timeline_equipamento(equipamento_id, limite=50):
         })
 
     def _sort_key(item):
-        data = item.get("data")
-        if isinstance(data, datetime):
-            return data
-        return datetime.min
+        return _normalize_dt(item.get("data"))
 
     eventos.sort(key=_sort_key, reverse=True)
     return eventos[:limite]
@@ -110,7 +137,7 @@ def serie_evolucao_semanal(equipamento: dict, leituras: list[dict], limite=8):
             "tipo": leitura.get("tipo_leitura") or "-",
         })
 
-    eventos.sort(key=lambda x: x["data"])
+    eventos.sort(key=lambda x: _normalize_dt(x.get("data")))
     if not eventos:
         eventos = [{"data": None, "km": _to_float(equipamento.get("km_atual")), "horas": _to_float(equipamento.get("horas_atual")), "tipo": "atual"}]
 
