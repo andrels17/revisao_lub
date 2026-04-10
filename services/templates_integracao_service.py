@@ -65,8 +65,20 @@ def _id_key(value: Any) -> str | None:
 
 
 
+def garantir_estrutura_vinculos() -> None:
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(DDL_VINCULOS)
+        conn.commit()
+    finally:
+        _close(conn)
+
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def listar_vinculos() -> list[dict[str, Any]]:
+    garantir_estrutura_vinculos()
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -135,6 +147,7 @@ def obter_vinculo_por_par(template_revisao_id: Any, template_lubrificacao_id: An
 
 
 def salvar_vinculo(template_revisao_id: Any, template_lubrificacao_id: Any, observacoes: str | None = None) -> Any:
+    garantir_estrutura_vinculos()
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -162,6 +175,7 @@ def salvar_vinculo(template_revisao_id: Any, template_lubrificacao_id: Any, obse
 
 @st.cache_data(ttl=300, show_spinner=False)
 def listar_overrides_etapas(vinculo_id: Any) -> dict[str, bool]:
+    garantir_estrutura_vinculos()
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -185,6 +199,7 @@ def listar_overrides_etapas(vinculo_id: Any) -> dict[str, bool]:
 
 
 def salvar_overrides_etapas(vinculo_id: Any, etapa_flags: dict[str, bool]) -> None:
+    garantir_estrutura_vinculos()
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -449,6 +464,7 @@ def obter_integracao_automatica_por_item(
 
 
 def atualizar_vinculo(vinculo_id: Any, *, ativo: bool | None = None, observacoes: str | None = None) -> None:
+    garantir_estrutura_vinculos()
     conn = get_conn()
     cur = conn.cursor()
     try:
