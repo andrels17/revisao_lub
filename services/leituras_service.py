@@ -4,6 +4,16 @@ from database.connection import get_conn, release_conn
 from services import auditoria_service, validacoes_service
 
 
+def _inferir_tipo_leitura(km_valor=None, horas_valor=None):
+    tem_km = km_valor is not None and float(km_valor or 0) > 0
+    tem_horas = horas_valor is not None and float(horas_valor or 0) > 0
+    if tem_km and tem_horas:
+        return "ambos"
+    if tem_horas:
+        return "horas"
+    return "km"
+
+
 def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
                data_leitura=None, responsavel_id=None, observacoes=None,
                permitir_regressao=False):
@@ -22,18 +32,36 @@ def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
             "km_atual": contexto.get("km_atual"),
             "horas_atual": contexto.get("horas_atual"),
         }
-        cur.execute(
-            """
-            insert into leituras
+
+        leitura_id = None
+        try:
+            cur.execute(
+                """
+                insert into leituras
+                    (equipamento_id, tipo_leitura, km_valor, horas_valor,
+                     data_leitura, responsavel_id, observacoes)
+                values (%s, %s, %s, %s, %s, %s, %s)
+                returning id
+                """,
                 (equipamento_id, tipo_leitura, km_valor, horas_valor,
-                 data_leitura, responsavel_id, observacoes)
-            values (%s, %s, %s, %s, %s, %s, %s)
-            returning id
-            """,
-            (equipamento_id, tipo_leitura, km_valor, horas_valor,
-             data_leitura, responsavel_id, observacoes),
-        )
-        leitura_id = cur.fetchone()[0]
+                 data_leitura, responsavel_id, observacoes),
+            )
+            leitura_id = cur.fetchone()[0]
+        except errors.UndefinedColumn:
+            conn.rollback()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                insert into leituras
+                    (equipamento_id, km_valor, horas_valor,
+                     data_leitura, responsavel_id, observacoes)
+                values (%s, %s, %s, %s, %s, %s)
+                returning id
+                """,
+                (equipamento_id, km_valor, horas_valor,
+                 data_leitura, responsavel_id, observacoes),
+            )
+            leitura_id = cur.fetchone()[0]
 
         if tipo_leitura in ("km", "ambos") and km_valor is not None:
             cur.execute(
@@ -73,58 +101,84 @@ def listar_por_equipamento(equipamento_id, limite=20):
     conn = get_conn()
     cur = conn.cursor()
     try:
-        consultas = [
-            """
-            select l.id, l.data_leitura, l.tipo_leitura,
-                   l.km_valor, l.horas_valor,
-                   coalesce(r.nome, '-') as responsavel,
-                   l.observacoes
-            from leituras l
-            left join responsaveis r on r.id = l.responsavel_id
-            where l.equipamento_id = %s
-            order by l.data_leitura desc, l.created_at desc
-            limit %s
-            """,
-            """
-            select l.id, l.data_leitura, l.tipo_leitura,
-                   l.km_valor, l.horas_valor,
-                   coalesce(r.nome, '-') as responsavel,
-                   l.observacoes
-            from leituras l
-            left join responsaveis r on r.id = l.responsavel_id
-            where l.equipamento_id = %s
-            order by l.data_leitura desc, l.id desc
-            limit %s
-            """,
-        ]
-
-        rows = None
-        for sql in consultas:
+        try:
+            cur.execute(
+                """
+                select l.id, l.data_leitura, l.tipo_leitura,
+                       l.km_valor, l.horas_valor,
+                       coalesce(r.nome, '-') as responsavel,
+                       l.observacoes
+                from leituras l
+                left join responsaveis r on r.id = l.responsavel_id
+                where l.equipamento_id = %s
+                order by l.data_leitura desc, l.created_at desc
+                limit %s
+                """,
+                (equipamento_id, limite),
+            )
+            rows = cur.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "data_leitura": r[1],
+                    "tipo_leitura": r[2],
+                    "km_valor": float(r[3] or 0),
+                    "horas_valor": float(r[4] or 0),
+                    "responsavel": r[5],
+                    "observacoes": r[6] or "",
+                }
+                for r in rows
+            ]
+        except errors.UndefinedColumn:
+            conn.rollback()
+            cur = conn.cursor()
             try:
-                cur.execute(sql, (equipamento_id, limite))
-                rows = cur.fetchall()
-                break
+                cur.execute(
+                    """
+                    select l.id, l.data_leitura,
+                           l.km_valor, l.horas_valor,
+                           coalesce(r.nome, '-') as responsavel,
+                           l.observacoes
+                    from leituras l
+                    left join responsaveis r on r.id = l.responsavel_id
+                    where l.equipamento_id = %s
+                    order by l.data_leitura desc, l.created_at desc
+                    limit %s
+                    """,
+                    (equipamento_id, limite),
+                )
             except errors.UndefinedColumn:
                 conn.rollback()
-                continue
-            except errors.UndefinedTable:
-                conn.rollback()
-                return []
-
-        if rows is None:
-            return []
-
-        return [
-            {
-                "id": r[0],
-                "data_leitura": r[1],
-                "tipo_leitura": r[2],
-                "km_valor": float(r[3] or 0),
-                "horas_valor": float(r[4] or 0),
-                "responsavel": r[5],
-                "observacoes": r[6] or "",
-            }
-            for r in rows
-        ]
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    select l.id, l.data_leitura,
+                           l.km_valor, l.horas_valor,
+                           coalesce(r.nome, '-') as responsavel,
+                           l.observacoes
+                    from leituras l
+                    left join responsaveis r on r.id = l.responsavel_id
+                    where l.equipamento_id = %s
+                    order by l.data_leitura desc, l.id desc
+                    limit %s
+                    """,
+                    (equipamento_id, limite),
+                )
+            rows = cur.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "data_leitura": r[1],
+                    "tipo_leitura": _inferir_tipo_leitura(r[2], r[3]),
+                    "km_valor": float(r[2] or 0),
+                    "horas_valor": float(r[3] or 0),
+                    "responsavel": r[4],
+                    "observacoes": r[5] or "",
+                }
+                for r in rows
+            ]
+    except errors.UndefinedTable:
+        conn.rollback()
+        return []
     finally:
         release_conn(conn)
