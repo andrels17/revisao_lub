@@ -9,7 +9,8 @@ from services import cache_service
 from ui import constants as ui_constants
 
 CONFIG_DEFAULTS = {
-    "tolerancia_padrao": 10,
+    "tolerancia_proximo_km": 500,
+    "tolerancia_proximo_horas": 50,
     "ttl_cache": 60,
     "dias_sem_leitura": 7,
     "alerta_cooldown_horas": 24,
@@ -49,7 +50,9 @@ def _apply_defaults_to_session() -> dict:
     cfg = {k: int(v) for k, v in CONFIG_DEFAULTS.items()}
     for chave, valor in cfg.items():
         st.session_state[f"{SESSION_PREFIX}{chave}"] = valor
-    ui_constants.TOLERANCIA_PADRAO = int(cfg["tolerancia_padrao"])
+    ui_constants.TOLERANCIA_PROXIMO_KM = int(cfg["tolerancia_proximo_km"])
+    ui_constants.TOLERANCIA_PROXIMO_HORAS = int(cfg["tolerancia_proximo_horas"])
+    ui_constants.TOLERANCIA_PADRAO = int(cfg["tolerancia_proximo_km"])
     return cfg
 
 
@@ -124,8 +127,12 @@ def carregar_todas() -> dict:
     data = {k: v for k, v in rows}
     merged = {**CONFIG_DEFAULTS, **data}
 
+    tolerancia_km = merged.get("tolerancia_proximo_km", merged.get("tolerancia_padrao", CONFIG_DEFAULTS["tolerancia_proximo_km"]))
+    tolerancia_horas = merged.get("tolerancia_proximo_horas", CONFIG_DEFAULTS["tolerancia_proximo_horas"])
+
     return {
-        "tolerancia_padrao": _clamp_int(_parse_int(merged.get("tolerancia_padrao"), CONFIG_DEFAULTS["tolerancia_padrao"]), 1, 500),
+        "tolerancia_proximo_km": _clamp_int(_parse_int(tolerancia_km, CONFIG_DEFAULTS["tolerancia_proximo_km"]), 1, 5000),
+        "tolerancia_proximo_horas": _clamp_int(_parse_int(tolerancia_horas, CONFIG_DEFAULTS["tolerancia_proximo_horas"]), 1, 500),
         "ttl_cache": _clamp_int(_parse_int(merged.get("ttl_cache"), CONFIG_DEFAULTS["ttl_cache"]), 10, 600),
         "dias_sem_leitura": _clamp_int(_parse_int(merged.get("dias_sem_leitura"), CONFIG_DEFAULTS["dias_sem_leitura"]), 1, 180),
         "alerta_cooldown_horas": _clamp_int(_parse_int(merged.get("alerta_cooldown_horas"), CONFIG_DEFAULTS["alerta_cooldown_horas"]), 1, 168),
@@ -137,7 +144,9 @@ def aplicar_no_session_state():
     cfg = carregar_todas()
     for chave, valor in cfg.items():
         st.session_state[f"{SESSION_PREFIX}{chave}"] = valor
-    ui_constants.TOLERANCIA_PADRAO = int(cfg["tolerancia_padrao"])
+    ui_constants.TOLERANCIA_PROXIMO_KM = int(cfg["tolerancia_proximo_km"])
+    ui_constants.TOLERANCIA_PROXIMO_HORAS = int(cfg["tolerancia_proximo_horas"])
+    ui_constants.TOLERANCIA_PADRAO = int(cfg["tolerancia_proximo_km"])
     return cfg
 
 
@@ -213,8 +222,16 @@ def resetar():
 # =========================
 # GETTERS
 # =========================
+def get_tolerancia_proximo_km() -> int:
+    return int(st.session_state.get(f"{SESSION_PREFIX}tolerancia_proximo_km", ui_constants.TOLERANCIA_PROXIMO_KM))
+
+
+def get_tolerancia_proximo_horas() -> int:
+    return int(st.session_state.get(f"{SESSION_PREFIX}tolerancia_proximo_horas", ui_constants.TOLERANCIA_PROXIMO_HORAS))
+
+
 def get_tolerancia_padrao() -> int:
-    return int(st.session_state.get(f"{SESSION_PREFIX}tolerancia_padrao", ui_constants.TOLERANCIA_PADRAO))
+    return get_tolerancia_proximo_km()
 
 
 def get_ttl_cache() -> int:
