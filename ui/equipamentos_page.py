@@ -603,18 +603,45 @@ def _render_historico_section(eq_id: str):
         )
 
 
+
+
+def _normalizar_tipo_digitado(tipo: str) -> str:
+    valor = (tipo or '').strip()
+    if not valor:
+        return ''
+    return ' '.join(parte.capitalize() for parte in valor.split())
+
+
+def _tipo_selector(prefixo: str, tipos_disponiveis: list[str], tipo_atual: str = '') -> str:
+    tipos_base = list(tipos_disponiveis or [])
+    if tipo_atual and all((tipo_atual or '').casefold() != t.casefold() for t in tipos_base):
+        tipos_base.append(tipo_atual)
+
+    custom_label = '➕ Informar novo tipo'
+    options = tipos_base + [custom_label]
+    atual = next((t for t in tipos_base if t.casefold() == (tipo_atual or '').casefold()), None)
+    default_option = atual or (tipos_base[0] if tipos_base else custom_label)
+    selected = st.selectbox(
+        'Tipo',
+        options=options,
+        index=options.index(default_option),
+        key=f'{prefixo}_tipo_select',
+    )
+    if selected == custom_label:
+        novo_tipo = st.text_input('Novo tipo', value=tipo_atual if atual is None else '', key=f'{prefixo}_tipo_novo', placeholder='Ex.: Motocicleta')
+        return _normalizar_tipo_digitado(novo_tipo)
+    return selected
+
 def _render_config_section(eq_id: str, equipamento: dict, setor_map: dict, responsavel_map: dict):
     st.markdown('<div class="eq-config-wrap">', unsafe_allow_html=True)
     e1, e2, e3 = st.columns([2.2, 1.3, 0.8])
     with e1:
         nome_edit = st.text_input("Nome", value=equipamento.get("nome", ""), key=f"edit_nome_{eq_id}")
     with e2:
-        tipos_list = equipamentos_service.listar_tipos_equipamento()
-        tipo_edit = st.selectbox(
-            "Tipo",
-            options=tipos_list,
-            index=max(0, tipos_list.index(equipamento.get("tipo"))) if equipamento.get("tipo") in tipos_list else 0,
-            key=f"edit_tipo_{eq_id}",
+        tipo_edit = _tipo_selector(
+            prefixo=f"edit_{eq_id}",
+            tipos_disponiveis=equipamentos_service.listar_tipos_disponiveis(),
+            tipo_atual=equipamento.get("tipo") or "",
         )
     with e3:
         ativo_edit = st.checkbox("Ativo", value=bool(equipamento.get("ativo")), key=f"edit_ativo_{eq_id}")
@@ -669,6 +696,9 @@ def _render_config_section(eq_id: str, equipamento: dict, setor_map: dict, respo
     a1, a2 = st.columns([1.3, 1])
     with a1:
         if st.button("Salvar alterações", key=f"edit_salvar_{eq_id}", use_container_width=True, type="primary"):
+            if not (tipo_edit or '').strip():
+                st.error("Informe um tipo válido para o equipamento.")
+                st.stop()
             equipamentos_service.atualizar_inline(
                 eq_id,
                 nome=nome_edit.strip() or equipamento.get("nome"),
@@ -789,6 +819,66 @@ def render():
             _timeline_eq.clear()
             st.rerun()
 
+    with st.expander("Novo equipamento", expanded=False):
+        setores_cadastro = setores_service.listar()
+        tipos_cadastro = equipamentos_service.listar_tipos_disponiveis()
+        if not setores_cadastro:
+            st.warning("Cadastre ao menos um setor antes de criar equipamentos manualmente.")
+        else:
+            setor_opts = [str(s.get("id")) for s in setores_cadastro]
+            setor_labels = {str(s.get("id")): s.get("nome") or "-" for s in setores_cadastro}
+            c1, c2, c3 = st.columns([1.1, 2.2, 1.3])
+            with c1:
+                novo_codigo = st.text_input("Código", key="novo_eq_codigo")
+            with c2:
+                novo_nome = st.text_input("Nome do equipamento", key="novo_eq_nome")
+            with c3:
+                novo_tipo = _tipo_selector("novo_eq", tipos_cadastro, "")
+
+            c4, c5, c6, c7 = st.columns([2.0, 1, 1, 0.8])
+            with c4:
+                novo_setor_id = st.selectbox(
+                    "Setor",
+                    options=setor_opts,
+                    format_func=lambda sid: setor_labels.get(sid, sid),
+                    key="novo_eq_setor",
+                )
+            with c5:
+                novo_km = st.number_input("KM atual", min_value=0.0, step=1.0, key="novo_eq_km")
+            with c6:
+                novo_horas = st.number_input("Horas atuais", min_value=0.0, step=1.0, key="novo_eq_horas")
+            with c7:
+                novo_ativo = st.checkbox("Ativo", value=True, key="novo_eq_ativo")
+
+            if st.button("Cadastrar equipamento", type="primary", use_container_width=False, key="novo_eq_submit"):
+                codigo = (novo_codigo or '').strip()
+                nome = (novo_nome or '').strip()
+                tipo = (novo_tipo or '').strip()
+                if not codigo or not nome or not tipo:
+                    st.error("Preencha código, nome e tipo para cadastrar o equipamento.")
+                else:
+                    try:
+                        equipamentos_service.criar_completo(
+                            codigo=codigo,
+                            nome=nome,
+                            tipo=tipo,
+                            setor_id=novo_setor_id,
+                            km_atual=novo_km,
+                            horas_atual=novo_horas,
+                            ativo=novo_ativo,
+                            km_inicial_plano=novo_km,
+                            horas_inicial_plano=novo_horas,
+                        )
+                        _carregar_equipamento.clear()
+                        _revisoes_eq.clear()
+                        _lubrificacoes_eq.clear()
+                        _timeline_eq.clear()
+                        equipamentos_service.limpar_cache()
+                        st.success("Equipamento cadastrado com sucesso.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Não foi possível cadastrar o equipamento: {exc}")
+
     rows = equipamentos_service.carregar_snapshot_equipamentos()
 
     if not rows:
@@ -796,7 +886,7 @@ def render():
         return
 
     setores_disp = sorted({r.get("setor_nome") or "-" for r in rows})
-    tipos_disp = ["Todos"] + equipamentos_service.listar_tipos_equipamento()
+    tipos_disp = ["Todos"] + equipamentos_service.listar_tipos_disponiveis()
 
     f1, f2, f3, f4, f5 = st.columns([2.5, 1.5, 1.2, 1.2, 1.1], gap="small")
     with f1:
