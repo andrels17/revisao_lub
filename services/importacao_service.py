@@ -8,21 +8,47 @@ from services import auditoria_service, equipamentos_service, setores_service
 COLUNAS_OBRIGATORIAS = ["codigo", "nome"]
 COLUNAS_OPCIONAIS = ["tipo", "setor", "km_atual", "horas_atual", "placa", "serie"]
 
-ALIASES_COLUNAS = {
-    "codigo": ["codigo", "cod_equipamento", "codigo_equipamento", "id_equipamento", "id"],
-    "nome": ["nome", "descricao_equipamento", "descricao do equipamento", "equipamento", "descricao"],
-    "tipo": ["tipo", "descricao_tipo_equipamento", "descricaotipoequipamento", "tipo_equipamento", "grupo"],
-    "setor": ["setor", "departamento", "descricao_setor", "descricao_departamento"],
-    "km_atual": ["km_atual", "hodometro", "hodometro_atual", "quilometragem", "km"],
-    "horas_atual": ["horas_atual", "horimetro", "horimetro_atual", "horas", "hr_atual"],
-    "placa": ["placa"],
-    "serie": ["serie", "numero_serie", "serial", "chassi", "chassis"],
-}
-
 TIPOS_VALIDOS = {
     "caminhão", "trator", "colheitadeira", "pulverizador",
-    "implemento", "máquina", "outro",
+    "implemento", "máquina", "veículos leves",
 }
+
+
+def _normalizar_tipo(tipo_original) -> str:
+    bruto = _normalizar_texto(tipo_original)
+    if not bruto:
+        return "Veículos Leves"
+
+    t = bruto.upper()
+
+    if "CAMINH" in t:
+        return "Caminhão"
+    if "TRATOR" in t:
+        return "Trator"
+    if "COLHEIT" in t or "COLHED" in t:
+        return "Colheitadeira"
+    if "PULVER" in t:
+        return "Pulverizador"
+
+    if any(k in t for k in [
+        "IMPLEMENT", "REBOQUE", "JULIETA", "GRADE",
+        "SULCADOR", "SUBSOLADOR", "PIPA", "TANQUE"
+    ]):
+        return "Implemento"
+
+    if any(k in t for k in [
+        "CARREGADEIRA", "MAQUINA", "MÁQUINA", "EMPILHADEIRA",
+        "GERADOR", "ELETROBOMBA", "PIVOT", "PIVÔ", "TURBOMAQ"
+    ]):
+        return "Máquina"
+
+    if any(k in t for k in [
+        "MOTO", "AUTO", "CARRO", "DRONE", "AVIAO", "AVIÃO",
+        "UTILIT", "LEVE", "TERCEIRO"
+    ]):
+        return "Veículos Leves"
+
+    return bruto.strip().title()
 
 MODO_IGNORAR = "ignorar"
 MODO_ATUALIZAR = "atualizar"
@@ -60,36 +86,6 @@ def _normalizar_texto(valor) -> str:
     return str(valor).strip()
 
 
-def _normalizar_nome_coluna(coluna: str) -> str:
-    return str(coluna).strip().lower().replace(" ", "_")
-
-
-def _aplicar_aliases_colunas(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    df = df.copy()
-    df.columns = [_normalizar_nome_coluna(c) for c in df.columns]
-
-    renomeadas = {}
-    colunas_disponiveis = list(df.columns)
-    for campo, aliases in ALIASES_COLUNAS.items():
-        if campo in df.columns:
-            renomeadas[campo] = campo
-            continue
-        for alias in aliases:
-            alias_norm = _normalizar_nome_coluna(alias)
-            if alias_norm in colunas_disponiveis:
-                df = df.rename(columns={alias_norm: campo})
-                renomeadas[campo] = alias_norm
-                colunas_disponiveis = list(df.columns)
-                break
-    return df, renomeadas
-
-
-def _preparar_dataframe_importacao(df: pd.DataFrame) -> tuple[pd.DataFrame, dict, list]:
-    df_norm, renomeadas = _aplicar_aliases_colunas(df)
-    ausentes = [col for col in COLUNAS_OBRIGATORIAS if col not in df_norm.columns]
-    return df_norm, renomeadas, ausentes
-
-
 def _carregar_existentes_map() -> dict:
     itens = equipamentos_service.listar()
     return {str(item.get("codigo", "")).strip().upper(): item for item in itens if item.get("codigo")}
@@ -106,10 +102,11 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
     except Exception as e:
         return {"erro": f"Erro ao ler arquivo: {e}"}
 
-    df, colunas_reconhecidas, ausentes = _preparar_dataframe_importacao(df)
+    df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+
+    ausentes = [col for col in COLUNAS_OBRIGATORIAS if col not in df.columns]
     if ausentes:
-        detalhe = ", ".join(f"{campo} ({'/'.join(ALIASES_COLUNAS.get(campo, [campo]))})" for campo in ausentes)
-        return {"erro": f"Colunas obrigatórias ausentes: {', '.join(ausentes)}", "detalhe": detalhe}
+        return {"erro": f"Colunas obrigatórias ausentes: {', '.join(ausentes)}"}
 
     erros = []
     avisos = []
@@ -126,7 +123,7 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
         codigo = _normalizar_texto(row.get("codigo"))
         nome = _normalizar_texto(row.get("nome"))
         tipo_original = _normalizar_texto(row.get("tipo"))
-        tipo = tipo_original.lower()
+        tipo_normalizado = _normalizar_tipo(tipo_original)
         setor_txt = _normalizar_texto(row.get("setor"))
 
         status_linha = "nova"
@@ -152,11 +149,13 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
                 status_linha = "duplicado"
                 acao_sugerida = "revisar duplicado"
 
-        if tipo and tipo not in TIPOS_VALIDOS:
-            erros.append(
-                f"Linha {linha}: tipo '{row.get('tipo')}' desconhecido — use: {', '.join(t.title() for t in sorted(TIPOS_VALIDOS))}"
+        if tipo_original and tipo_normalizado != tipo_original:
+            avisos.append(
+                f"Linha {linha}: tipo '{tipo_original}' será importado como '{tipo_normalizado}'"
             )
-            status_linha = "erro"
+            if status_linha == "nova":
+                status_linha = "aviso"
+                acao_sugerida = "normalizar tipo"
 
         if setor_txt and setor_txt.lower() not in setores_map:
             setores_nao_encontrados += 1
@@ -170,7 +169,8 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
                 "linha": linha,
                 "codigo": codigo,
                 "nome": nome,
-                "tipo": tipo_original,
+                "tipo": tipo_normalizado,
+                "tipo_origem": tipo_original,
                 "setor": setor_txt,
                 "km_atual": row.get("km_atual", 0),
                 "horas_atual": row.get("horas_atual", 0),
@@ -199,7 +199,6 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
         "preview": preview.head(15),
         "preview_full": preview,
         "resumo": resumo,
-        "colunas_reconhecidas": colunas_reconhecidas,
     }
 
 
@@ -210,16 +209,6 @@ def importar(
     modo_duplicados: str = MODO_IGNORAR,
     progress_callback=None,
 ) -> dict:
-    df, _, ausentes = _preparar_dataframe_importacao(df)
-    if ausentes:
-        return {
-            "importados": 0,
-            "atualizados": 0,
-            "duplicados": 0,
-            "preenchidos_vazios": 0,
-            "erros": [f"Colunas obrigatórias ausentes: {', '.join(ausentes)}"],
-        }
-
     setores_map = {s["nome"].lower(): s["id"] for s in setores_service.listar() if s.get("nome")}
     importados = 0
     atualizados = 0
@@ -237,7 +226,7 @@ def importar(
                 progress_callback(idx + 1, total, codigo or "—")
             continue
 
-        tipo = _normalizar_texto(row.get("tipo")) or "Outro"
+        tipo = _normalizar_tipo(row.get("tipo"))
         setor_nome = _normalizar_texto(row.get("setor")).lower()
         setor_id = setores_map.get(setor_nome) or setor_padrao_id
 
