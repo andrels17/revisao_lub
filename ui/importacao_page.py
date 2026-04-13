@@ -13,7 +13,7 @@ MODO_LABELS = {
 def render():
     render_page_intro(
         "Importação em lote de equipamentos",
-        "Faça carga inicial ou atualização em massa com criação automática da estrutura organizacional e dos responsáveis quando vierem no arquivo.",
+        "Faça carga inicial ou atualização em massa com uma área mais limpa para arquivo, validação e confirmação.",
         "Ferramentas",
     )
     st.info(f"Escopo atual: {escopo_service.resumo_escopo()}")
@@ -35,28 +35,23 @@ def render():
             mime="text/csv",
             use_container_width=True,
         )
-        st.markdown(
-            """
+        st.markdown("""
 - `codigo` *(obrigatório)* — código único
 - `nome` *(obrigatório)* — nome do equipamento
-- `tipo` — categoria livre do equipamento
-- `empresa`, `unidade`, `departamento`, `setor`, `subsetor` — estrutura que será criada automaticamente se não existir
+- `tipo` — Trator, Caminhão, Máquina, etc.
+- `setor` — nome exato do setor cadastrado
 - `km_atual` — hodômetro atual
 - `horas_atual` — horímetro atual
-- `tipo_horimetro` — quando a base traz um único medidor em `km_atual`, o importador separa para KM ou Horas automaticamente
-- `responsavel` — responsável operacional principal do equipamento
-- `gestor` — gestor principal do setor final da hierarquia
 - `placa` — placa do veículo
 - `serie` — número de série
-"""
-        )
+""")
 
     with tab_import:
         setores = [s for s in setores_service.listar() if s.get("ativo")]
         setor_padrao = None
         if setores:
             setor_padrao_obj = st.selectbox(
-                "Setor padrão (usado apenas quando nenhuma coluna de estrutura vier preenchida)",
+                "Setor padrão (usado quando a coluna 'setor' não bater com nenhum setor cadastrado)",
                 [None] + setores,
                 format_func=lambda s: s["nome"] if s else "— nenhum —",
             )
@@ -72,26 +67,20 @@ def render():
                 return
 
             resumo = resultado.get("resumo", {})
-            c1, c2, c3, c4, c5, c6 = st.columns(6)
+            if resultado.get("colunas_mapeadas"):
+                st.caption("Mapeamento automático identificado: " + ", ".join(f"{k} ← {v}" for k, v in resultado["colunas_mapeadas"].items()))
+
+            c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("Linhas do arquivo", resumo.get("total_linhas", 0))
             c2.metric("Novas", resumo.get("novas", 0))
             c3.metric("Duplicadas", resumo.get("duplicadas_sistema", 0))
             c4.metric("Com aviso", resumo.get("com_aviso", 0))
             c5.metric("Com erro", resumo.get("com_erro", 0))
-            c6.metric("Resp. novos", resumo.get("novos_responsaveis", 0))
-
-            c7, c8, c9, c10, c11 = st.columns(5)
-            c7.metric("Empresas novas", resumo.get("novas_empresas", 0))
-            c8.metric("Unidades novas", resumo.get("novas_unidades", 0))
-            c9.metric("Deptos novos", resumo.get("novos_departamentos", 0))
-            c10.metric("Setores novos", resumo.get("novos_setores", 0))
-            c11.metric("Subsetores novos", resumo.get("novos_subsetores", 0))
 
             st.success(
                 f"Arquivo lido: **{resultado['linhas_ok']}** linha(s) válida(s)"
                 + (f" | {resultado['linhas_erro']} com erro" if resultado["linhas_erro"] else "")
             )
-            st.caption("Itens de estrutura e responsáveis inexistentes serão criados automaticamente durante a importação.")
 
             if resultado["erros"]:
                 with st.expander("Ver erros de validação"):
@@ -139,18 +128,6 @@ def render():
                         msg += f" | **{res['atualizados']}** atualizado(s)"
                     if res.get("preenchidos_vazios"):
                         msg += f" | **{res['preenchidos_vazios']}** enriquecido(s)"
-                    if res.get("empresas_criadas"):
-                        msg += f" | **{res['empresas_criadas']}** empresa(s) criada(s)"
-                    if res.get("unidades_criadas"):
-                        msg += f" | **{res['unidades_criadas']}** unidade(s) criada(s)"
-                    if res.get("departamentos_criados"):
-                        msg += f" | **{res['departamentos_criados']}** departamento(s) criado(s)"
-                    if res.get("setores_criados"):
-                        msg += f" | **{res['setores_criados']}** setor(es) criado(s)"
-                    if res.get("subsetores_criados"):
-                        msg += f" | **{res['subsetores_criados']}** subsetor(es) criado(s)"
-                    if res.get("responsaveis_criados"):
-                        msg += f" | **{res['responsaveis_criados']}** responsável(is) criado(s)"
                     if res["duplicados"]:
                         msg += f" | {res['duplicados']} duplicado(s) ignorado(s)"
                     st.success(msg)
