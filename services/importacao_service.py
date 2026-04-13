@@ -1,5 +1,4 @@
 import io
-import re
 
 import pandas as pd
 
@@ -9,48 +8,30 @@ from services import auditoria_service, equipamentos_service, setores_service
 COLUNAS_OBRIGATORIAS = ["codigo", "nome"]
 COLUNAS_OPCIONAIS = ["tipo", "setor", "km_atual", "horas_atual", "placa", "serie"]
 
-COLUNAS_EQUIVALENTES = {
-    "codigo": ["codigo", "cod_equipamento", "codequipamento", "id_equipamento", "equipamento_codigo"],
-    "nome": ["nome", "nome_equipamento", "descricao_equipamento", "descricaoequipamento", "equipamento"],
-    "tipo": ["tipo", "grupo", "descricao_tipo_equipamento", "descricaotipoequipamento", "tipo_equipamento"],
-    "setor": ["setor", "departamento", "descricao_setor", "setor_nome", "descricao"],
-    "km_atual": ["km_atual", "hodometro", "hodometro_atual", "odometro", "quilometragem", "kmhr_atual"],
-    "horas_atual": ["horas_atual", "horimetro", "horimetro_atual", "horimetroatual"],
-    "placa": ["placa"],
-    "serie": ["serie", "serial", "chassi", "chassis"],
-}
+TIPOS_BASE = [
+    "Caminhão", "Trator", "Colheitadeira", "Pulverizador",
+    "Implemento", "Máquina", "Outro",
+]
 
-
-def _slug_coluna(nome: str) -> str:
-    nome = str(nome or "").strip().lower()
-    nome = re.sub(r"[^a-z0-9]+", "_", nome)
-    return nome.strip("_")
-
-
-def _aplicar_mapeamento_automatico(df: pd.DataFrame):
-    colunas_originais = list(df.columns)
-    slug_to_original = {_slug_coluna(c): c for c in colunas_originais}
-    rename_map = {}
-    mapeadas = {}
-
-    for campo, aliases in COLUNAS_EQUIVALENTES.items():
-        for alias in aliases:
-            original = slug_to_original.get(alias)
-            if original:
-                rename_map[original] = campo
-                mapeadas[campo] = original
-                break
-
-    if rename_map:
-        df = df.rename(columns=rename_map)
-
-    df.columns = [_slug_coluna(c) for c in df.columns]
-    return df, mapeadas
-
-
-TIPOS_VALIDOS = {
-    "caminhão", "trator", "colheitadeira", "pulverizador",
-    "implemento", "máquina", "outro",
+TIPOS_ALIAS = {
+    "caminhao": "Caminhão",
+    "caminhão": "Caminhão",
+    "caminhao apoio": "Caminhão",
+    "caminhão apoio": "Caminhão",
+    "trator": "Trator",
+    "tratores": "Trator",
+    "trator pneu": "Trator",
+    "colheitadeira": "Colheitadeira",
+    "colhedora": "Colheitadeira",
+    "pulverizador": "Pulverizador",
+    "implemento": "Implemento",
+    "implementos": "Implemento",
+    "reboque": "Implemento",
+    "julietas": "Implemento",
+    "máquina": "Máquina",
+    "maquina": "Máquina",
+    "máquinas": "Máquina",
+    "maquinas": "Máquina",
 }
 
 MODO_IGNORAR = "ignorar"
@@ -89,6 +70,17 @@ def _normalizar_texto(valor) -> str:
     return str(valor).strip()
 
 
+
+
+def _normalizar_tipo(valor) -> tuple[str, bool]:
+    texto = _normalizar_texto(valor)
+    if not texto:
+        return "Outro", False
+    chave = texto.casefold()
+    if chave in TIPOS_ALIAS:
+        return TIPOS_ALIAS[chave], False
+    return texto.title(), True
+
 def _carregar_existentes_map() -> dict:
     itens = equipamentos_service.listar()
     return {str(item.get("codigo", "")).strip().upper(): item for item in itens if item.get("codigo")}
@@ -105,14 +97,11 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
     except Exception as e:
         return {"erro": f"Erro ao ler arquivo: {e}"}
 
-    df, colunas_mapeadas = _aplicar_mapeamento_automatico(df)
+    df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
 
     ausentes = [col for col in COLUNAS_OBRIGATORIAS if col not in df.columns]
     if ausentes:
-        detalhe = ""
-        if colunas_mapeadas:
-            detalhe = " | colunas reconhecidas: " + ", ".join(f"{k}←{v}" for k, v in colunas_mapeadas.items())
-        return {"erro": f"Colunas obrigatórias ausentes: {', '.join(ausentes)}{detalhe}"}
+        return {"erro": f"Colunas obrigatórias ausentes: {', '.join(ausentes)}"}
 
     erros = []
     avisos = []
@@ -129,7 +118,7 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
         codigo = _normalizar_texto(row.get("codigo"))
         nome = _normalizar_texto(row.get("nome"))
         tipo_original = _normalizar_texto(row.get("tipo"))
-        tipo = tipo_original.lower()
+        tipo_final, tipo_novo = _normalizar_tipo(tipo_original)
         setor_txt = _normalizar_texto(row.get("setor"))
 
         status_linha = "nova"
@@ -155,11 +144,13 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
                 status_linha = "duplicado"
                 acao_sugerida = "revisar duplicado"
 
-        if tipo and tipo not in TIPOS_VALIDOS:
-            erros.append(
-                f"Linha {linha}: tipo '{row.get('tipo')}' desconhecido — use: {', '.join(t.title() for t in sorted(TIPOS_VALIDOS))}"
+        if tipo_novo:
+            avisos.append(
+                f"Linha {linha}: tipo '{tipo_original}' não existia na base padrão e será criado automaticamente como '{tipo_final}'"
             )
-            status_linha = "erro"
+            if status_linha == "nova":
+                status_linha = "aviso"
+                acao_sugerida = "criar novo tipo"
 
         if setor_txt and setor_txt.lower() not in setores_map:
             setores_nao_encontrados += 1
@@ -173,7 +164,9 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
                 "linha": linha,
                 "codigo": codigo,
                 "nome": nome,
-                "tipo": tipo_original,
+                "tipo": tipo_final,
+                "tipo_origem": tipo_original,
+                "tipo_novo": tipo_novo,
                 "setor": setor_txt,
                 "km_atual": row.get("km_atual", 0),
                 "horas_atual": row.get("horas_atual", 0),
@@ -202,7 +195,6 @@ def processar_arquivo(file_bytes: bytes, filename: str) -> dict:
         "preview": preview.head(15),
         "preview_full": preview,
         "resumo": resumo,
-        "colunas_mapeadas": colunas_mapeadas,
     }
 
 
@@ -230,7 +222,7 @@ def importar(
                 progress_callback(idx + 1, total, codigo or "—")
             continue
 
-        tipo = _normalizar_texto(row.get("tipo")) or "Outro"
+        tipo, _ = _normalizar_tipo(row.get("tipo"))
         setor_nome = _normalizar_texto(row.get("setor")).lower()
         setor_id = setores_map.get(setor_nome) or setor_padrao_id
 

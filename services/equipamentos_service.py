@@ -290,6 +290,21 @@ def carregar_snapshot_equipamentos() -> list[dict[str, Any]]:
     return rows
 
 
+
+
+def listar_tipos_equipamento() -> list[str]:
+    """Retorna tipos dinâmicos baseados no cadastro atual, preservando uma base padrão."""
+    base = [
+        "Caminhão", "Trator", "Colheitadeira", "Pulverizador",
+        "Implemento", "Máquina", "Outro",
+    ]
+    vistos = {item.casefold(): item for item in base}
+    for equipamento in listar():
+        tipo = str(equipamento.get("tipo") or "").strip()
+        if tipo and tipo.casefold() not in vistos:
+            vistos[tipo.casefold()] = tipo
+    return sorted(vistos.values(), key=lambda x: x.casefold())
+
 def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, ativo=True, km_inicial_plano=None, horas_inicial_plano=None):
     return criar_completo(
         codigo=codigo,

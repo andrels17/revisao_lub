@@ -16,7 +16,7 @@ from services import (
     setores_service,
     leituras_service,
 )
-from ui.constants import STATUS_LABEL, TIPOS_EQUIPAMENTO
+from ui.constants import STATUS_LABEL
 from ui.theme import render_page_intro
 
 
@@ -609,7 +609,7 @@ def _render_config_section(eq_id: str, equipamento: dict, setor_map: dict, respo
     with e1:
         nome_edit = st.text_input("Nome", value=equipamento.get("nome", ""), key=f"edit_nome_{eq_id}")
     with e2:
-        tipos_list = list(TIPOS_EQUIPAMENTO)
+        tipos_list = equipamentos_service.listar_tipos_equipamento()
         tipo_edit = st.selectbox(
             "Tipo",
             options=tipos_list,
@@ -796,7 +796,7 @@ def render():
         return
 
     setores_disp = sorted({r.get("setor_nome") or "-" for r in rows})
-    tipos_disp = ["Todos"] + list(TIPOS_EQUIPAMENTO)
+    tipos_disp = ["Todos"] + equipamentos_service.listar_tipos_equipamento()
 
     f1, f2, f3, f4, f5 = st.columns([2.5, 1.5, 1.2, 1.2, 1.1], gap="small")
     with f1:

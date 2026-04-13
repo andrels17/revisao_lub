@@ -38,7 +38,7 @@ def render():
         st.markdown("""
 - `codigo` *(obrigatório)* — código único
 - `nome` *(obrigatório)* — nome do equipamento
-- `tipo` — Trator, Caminhão, Máquina, etc.
+- `tipo` — qualquer tipo livre; se não existir ainda, será criado automaticamente
 - `setor` — nome exato do setor cadastrado
 - `km_atual` — hodômetro atual
 - `horas_atual` — horímetro atual
@@ -67,9 +67,6 @@ def render():
                 return
 
             resumo = resultado.get("resumo", {})
-            if resultado.get("colunas_mapeadas"):
-                st.caption("Mapeamento automático identificado: " + ", ".join(f"{k} ← {v}" for k, v in resultado["colunas_mapeadas"].items()))
-
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("Linhas do arquivo", resumo.get("total_linhas", 0))
             c2.metric("Novas", resumo.get("novas", 0))
