@@ -38,7 +38,7 @@ def render():
         st.markdown("""
 - `codigo` *(obrigatório)* — código único
 - `nome` *(obrigatório)* — nome do equipamento
-- `tipo` — qualquer tipo livre; se não existir ainda, será criado automaticamente
+- `tipo` — Trator, Caminhão, Máquina, etc.
 - `setor` — nome exato do setor cadastrado
 - `km_atual` — hodômetro atual
 - `horas_atual` — horímetro atual
@@ -64,9 +64,16 @@ def render():
             resultado = importacao_service.processar_arquivo(file_bytes, arquivo.name)
             if "erro" in resultado:
                 st.error(resultado["erro"])
+                if resultado.get("detalhe"):
+                    st.caption(f"Mapeamentos aceitos: {resultado['detalhe']}")
                 return
 
             resumo = resultado.get("resumo", {})
+            if resultado.get("colunas_reconhecidas"):
+                reconhecidas = ", ".join(
+                    [f"{destino} ← {origem}" for destino, origem in resultado["colunas_reconhecidas"].items()]
+                )
+                st.caption(f"Colunas reconhecidas automaticamente: {reconhecidas}")
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("Linhas do arquivo", resumo.get("total_linhas", 0))
             c2.metric("Novas", resumo.get("novas", 0))
