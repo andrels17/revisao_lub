@@ -111,6 +111,39 @@ def listar() -> list[dict[str, Any]]:
         _safe_close(conn)
 
 
+
+
+@st.cache_data(ttl=TTL_EQ, show_spinner=False)
+def listar_tipos_disponiveis() -> list[str]:
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            select distinct nullif(trim(tipo), '') as tipo
+              from equipamentos
+             where nullif(trim(tipo), '') is not null
+             order by 1
+            """
+        )
+        tipos_db = [str(r[0]).strip() for r in cur.fetchall() if r and r[0]]
+    finally:
+        _safe_close(conn)
+
+    tipos_base = [
+        "Caminhão", "Trator", "Colheitadeira", "Pulverizador",
+        "Implemento", "Máquina", "Outro",
+    ]
+    vistos = set()
+    tipos = []
+    for tipo in tipos_db + tipos_base:
+        chave = tipo.casefold()
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        tipos.append(tipo)
+    return tipos
+
 def buscar(termo: str = "", somente_ativos: bool = False) -> list[dict[str, Any]]:
     termo_norm = (termo or "").strip().lower()
     itens = listar()
@@ -289,21 +322,6 @@ def carregar_snapshot_equipamentos() -> list[dict[str, Any]]:
     rows.sort(key=lambda x: (x["saude"] != "Crítico", x["saude"] != "Atenção", x["codigo"], x["nome"]))
     return rows
 
-
-
-
-def listar_tipos_equipamento() -> list[str]:
-    """Retorna tipos dinâmicos baseados no cadastro atual, preservando uma base padrão."""
-    base = [
-        "Caminhão", "Trator", "Colheitadeira", "Pulverizador",
-        "Implemento", "Máquina", "Outro",
-    ]
-    vistos = {item.casefold(): item for item in base}
-    for equipamento in listar():
-        tipo = str(equipamento.get("tipo") or "").strip()
-        if tipo and tipo.casefold() not in vistos:
-            vistos[tipo.casefold()] = tipo
-    return sorted(vistos.values(), key=lambda x: x.casefold())
 
 def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, ativo=True, km_inicial_plano=None, horas_inicial_plano=None):
     return criar_completo(
