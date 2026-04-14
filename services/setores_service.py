@@ -1,56 +1,38 @@
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from typing import Any
 
 from database.connection import get_conn, release_conn
 from services import auditoria_service, escopo_service
 
 
-RESPONSAVEL_TABLE = "vinculos_setor_responsavel"
+VINCULOS_TABLE = "vinculos_setor_responsavel"
 
 
-def _normalize_uuid(value) -> Optional[str]:
+def _to_id(value: Any) -> str | None:
     if value is None:
         return None
-    text = str(value).strip()
-    return text or None
-
-
-def _normalize_uuid_list(values: Iterable) -> list[str]:
-    seen = set()
-    out: list[str] = []
-    for value in values or []:
-        item = _normalize_uuid(value)
-        if not item or item in seen:
-            continue
-        seen.add(item)
-        out.append(item)
-    return out
-
-
-def _setor_existe(cur, setor_id: str) -> bool:
-    cur.execute("select 1 from setores where id = %s limit 1", (setor_id,))
-    return cur.fetchone() is not None
+    s = str(value).strip()
+    return s or None
 
 
 def _table_exists(cur, table_name: str) -> bool:
     cur.execute(
         """
-        select exists (
+        select exists(
             select 1
               from information_schema.tables
-             where table_schema = current_schema()
+             where table_schema = 'public'
                and table_name = %s
         )
         """,
         (table_name,),
     )
-    row = cur.fetchone()
-    return bool(row and row[0])
+    return bool(cur.fetchone()[0])
 
 
-def _coletar_descendentes(cur, setor_id) -> list[str]:
-    raiz = _normalize_uuid(setor_id)
+def _coletar_descendentes(cur, setor_id: Any) -> list[str]:
+    raiz = _to_id(setor_id)
     if not raiz:
         return []
 
@@ -59,33 +41,46 @@ def _coletar_descendentes(cur, setor_id) -> list[str]:
     ordem: list[str] = []
 
     while pendentes:
-        atual = pendentes.pop()
-        if atual in vistos:
+        atual = _to_id(pendentes.pop())
+        if not atual or atual in vistos:
             continue
-
         vistos.add(atual)
         ordem.append(atual)
-
-        cur.execute(
-            "select id from setores where setor_pai_id = %s",
-            (atual,),
-        )
-        filhos = [str(r[0]) for r in (cur.fetchall() or []) if r and r[0] is not None]
-        for filho_id in filhos:
-            if filho_id not in vistos:
-                pendentes.append(filho_id)
+        cur.execute("select id::text from setores where setor_pai_id = %s", (atual,))
+        pendentes.extend(_to_id(r[0]) for r in (cur.fetchall() or []))
 
     return ordem
 
 
-def _setor_esta_na_subarvore(cur, setor_origem_id, possivel_descendente_id) -> bool:
-    origem = _normalize_uuid(setor_origem_id)
-    candidato = _normalize_uuid(possivel_descendente_id)
-    if not origem or not candidato:
-        return False
-    if origem == candidato:
-        return True
-    return candidato in set(_coletar_descendentes(cur, origem))
+def _buscar_setor(cur, setor_id: Any):
+    sid = _to_id(setor_id)
+    if not sid:
+        return None
+    cur.execute(
+        """
+        select id::text, nome, tipo_nivel, setor_pai_id::text, ativo
+          from setores
+         where id = %s
+        """,
+        (sid,),
+    )
+    return cur.fetchone()
+
+
+def _validar_pai(cur, setor_id: Any, setor_pai_id: Any):
+    sid = _to_id(setor_id)
+    pai_id = _to_id(setor_pai_id)
+    if not pai_id:
+        return
+    if sid and pai_id == sid:
+        raise ValueError("Um setor não pode ser pai dele mesmo.")
+    pai = _buscar_setor(cur, pai_id)
+    if not pai:
+        raise ValueError("Setor pai não encontrado.")
+    if sid:
+        descendentes = set(_coletar_descendentes(cur, sid))
+        if pai_id in descendentes:
+            raise ValueError("Não é permitido mover um setor para dentro de um descendente.")
 
 
 def listar():
@@ -95,10 +90,10 @@ def listar():
         cur.execute(
             """
             select
-                s.id,
+                s.id::text,
                 s.nome,
                 s.tipo_nivel,
-                s.setor_pai_id,
+                s.setor_pai_id::text,
                 s.ativo,
                 coalesce(sp.nome, '-') as setor_pai_nome,
                 count(e.id) as total_equipamentos
@@ -109,14 +104,14 @@ def listar():
             order by s.nome
             """
         )
-        rows = cur.fetchall() or []
+        rows = cur.fetchall()
         itens = [
             {
                 "id": r[0],
                 "nome": r[1],
                 "tipo_nivel": r[2],
                 "setor_pai_id": r[3],
-                "ativo": r[4],
+                "ativo": bool(r[4]),
                 "setor_pai_nome": r[5],
                 "total_equipamentos": int(r[6] or 0),
             }
@@ -128,28 +123,23 @@ def listar():
 
 
 def criar(nome, tipo_nivel="setor", setor_pai_id=None, ativo=True):
-    nome = (nome or "").strip()
+    nome = str(nome or "").strip()
     if not nome:
         raise ValueError("Informe o nome do setor.")
-
-    setor_pai_id = _normalize_uuid(setor_pai_id)
 
     conn = get_conn()
     cur = conn.cursor()
     try:
-        if setor_pai_id and not _setor_existe(cur, setor_pai_id):
-            raise ValueError("Setor pai não encontrado.")
-
+        _validar_pai(cur, None, setor_pai_id)
         cur.execute(
             """
             insert into setores (nome, tipo_nivel, setor_pai_id, ativo)
             values (%s, %s, %s, %s)
-            returning id
+            returning id::text
             """,
-            (nome, tipo_nivel, setor_pai_id, bool(ativo)),
+            (nome, tipo_nivel, _to_id(setor_pai_id), bool(ativo)),
         )
         setor_id = cur.fetchone()[0]
-
         auditoria_service.registrar_no_conn(
             conn,
             acao="criar_setor",
@@ -159,7 +149,7 @@ def criar(nome, tipo_nivel="setor", setor_pai_id=None, ativo=True):
             valor_novo={
                 "nome": nome,
                 "tipo_nivel": tipo_nivel,
-                "setor_pai_id": setor_pai_id,
+                "setor_pai_id": _to_id(setor_pai_id),
                 "ativo": bool(ativo),
             },
         )
@@ -172,27 +162,75 @@ def criar(nome, tipo_nivel="setor", setor_pai_id=None, ativo=True):
         release_conn(conn)
 
 
-def vincular_equipamentos(setor_id, equipamento_ids: list[str] | list[int]):
-    setor_id = _normalize_uuid(setor_id)
-    equipamento_ids_norm = []
-    vistos = set()
-    for x in equipamento_ids or []:
-        sx = str(x).strip()
-        if not sx or sx in vistos:
-            continue
-        vistos.add(sx)
-        equipamento_ids_norm.append(sx)
+def editar(setor_id, nome, tipo_nivel="setor", setor_pai_id=None, ativo=True):
+    sid = _to_id(setor_id)
+    nome = str(nome or "").strip()
+    if not sid:
+        raise ValueError("Setor não informado.")
+    if not nome:
+        raise ValueError("Informe o nome do setor.")
 
-    if not setor_id:
-        raise ValueError("Setor inválido.")
-    if not equipamento_ids_norm:
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        atual = _buscar_setor(cur, sid)
+        if not atual:
+            raise ValueError("Setor não encontrado.")
+
+        _validar_pai(cur, sid, setor_pai_id)
+        novo_pai = _to_id(setor_pai_id)
+
+        cur.execute(
+            """
+            update setores
+               set nome = %s,
+                   tipo_nivel = %s,
+                   setor_pai_id = %s,
+                   ativo = %s
+             where id = %s
+            """,
+            (nome, tipo_nivel, novo_pai, bool(ativo), sid),
+        )
+
+        auditoria_service.registrar_no_conn(
+            conn,
+            acao="editar_setor",
+            entidade="setores",
+            entidade_id=sid,
+            valor_antigo={
+                "nome": atual[1],
+                "tipo_nivel": atual[2],
+                "setor_pai_id": atual[3],
+                "ativo": bool(atual[4]),
+            },
+            valor_novo={
+                "nome": nome,
+                "tipo_nivel": tipo_nivel,
+                "setor_pai_id": novo_pai,
+                "ativo": bool(ativo),
+            },
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        release_conn(conn)
+
+
+def vincular_equipamentos(setor_id, equipamento_ids: list[int]):
+    sid = _to_id(setor_id)
+    eq_ids = sorted({int(x) for x in (equipamento_ids or []) if str(x).strip()})
+    if not sid:
+        raise ValueError("Setor não informado.")
+    if not eq_ids:
         return 0
 
     conn = get_conn()
     cur = conn.cursor()
     try:
-        cur.execute("select id, nome from setores where id = %s", (setor_id,))
-        setor = cur.fetchone()
+        setor = _buscar_setor(cur, sid)
         if not setor:
             raise ValueError("Setor não encontrado.")
 
@@ -202,17 +240,16 @@ def vincular_equipamentos(setor_id, equipamento_ids: list[str] | list[int]):
                set setor_id = %s
              where id = any(%s::bigint[])
             """,
-            (setor_id, equipamento_ids_norm),
+            (sid, eq_ids),
         )
         total = cur.rowcount or 0
-
         auditoria_service.registrar_no_conn(
             conn,
             acao="vincular_equipamentos_setor",
             entidade="setores",
-            entidade_id=setor_id,
+            entidade_id=sid,
             valor_antigo=None,
-            valor_novo={"equipamento_ids": equipamento_ids_norm, "total": total},
+            valor_novo={"equipamento_ids": eq_ids, "total": total},
         )
         conn.commit()
         return total
@@ -224,51 +261,38 @@ def vincular_equipamentos(setor_id, equipamento_ids: list[str] | list[int]):
 
 
 def excluir(setor_id, destino_setor_id=None, exclusao_completa=False):
-    setor_id = _normalize_uuid(setor_id)
-    destino_setor_id = _normalize_uuid(destino_setor_id)
-
-    if not setor_id:
-        raise ValueError("Setor inválido.")
+    sid = _to_id(setor_id)
+    destino_id = _to_id(destino_setor_id)
+    if not sid:
+        raise ValueError("Setor não informado.")
 
     conn = get_conn()
     cur = conn.cursor()
     try:
-        has_responsavel_table = _table_exists(cur, RESPONSAVEL_TABLE)
-
-        cur.execute(
-            "select id, nome, setor_pai_id from setores where id = %s",
-            (setor_id,),
-        )
-        atual = cur.fetchone()
+        atual = _buscar_setor(cur, sid)
         if not atual:
             raise ValueError("Setor não encontrado.")
 
-        if exclusao_completa and destino_setor_id:
-            raise ValueError(
-                "Escolha apenas uma opção: exclusão completa ou mover para setor de destino."
-            )
-
-        if destino_setor_id:
-            if destino_setor_id == setor_id:
-                raise ValueError("O setor de destino deve ser diferente do setor excluído.")
-            if not _setor_existe(cur, destino_setor_id):
-                raise ValueError("Setor de destino não encontrado.")
-            if _setor_esta_na_subarvore(cur, setor_id, destino_setor_id):
-                raise ValueError(
-                    "O setor de destino não pode estar dentro da árvore do setor excluído."
-                )
-
-        cur.execute("select count(1) from setores where setor_pai_id = %s", (setor_id,))
+        cur.execute("select count(1) from setores where setor_pai_id = %s", (sid,))
         filhos = int(cur.fetchone()[0] or 0)
 
-        cur.execute("select count(1) from equipamentos where setor_id = %s", (setor_id,))
+        cur.execute("select count(1) from equipamentos where setor_id = %s", (sid,))
         equipamentos = int(cur.fetchone()[0] or 0)
 
-        if exclusao_completa:
-            arvore_ids = _coletar_descendentes(cur, setor_id)
-            if not arvore_ids:
-                raise ValueError("Nenhum setor encontrado para exclusão.")
+        if destino_id:
+            if destino_id == sid:
+                raise ValueError("O setor de destino deve ser diferente do setor excluído.")
+            destino = _buscar_setor(cur, destino_id)
+            if not destino:
+                raise ValueError("Setor de destino não encontrado.")
+            if destino_id in set(_coletar_descendentes(cur, sid)):
+                raise ValueError("Não é permitido mover vínculos para um setor descendente do setor excluído.")
 
+        if exclusao_completa and destino_id:
+            raise ValueError("Escolha apenas uma opção: exclusão completa ou mover para setor de destino.")
+
+        if exclusao_completa:
+            arvore_ids = _coletar_descendentes(cur, sid)
             cur.execute(
                 "select count(1) from equipamentos where setor_id = any(%s::uuid[])",
                 (arvore_ids,),
@@ -279,13 +303,13 @@ def excluir(setor_id, destino_setor_id=None, exclusao_completa=False):
                 "update equipamentos set setor_id = null where setor_id = any(%s::uuid[])",
                 (arvore_ids,),
             )
-            if has_responsavel_table:
+            if _table_exists(cur, VINCULOS_TABLE):
                 cur.execute(
-                    f"delete from {RESPONSAVEL_TABLE} where setor_id = any(%s::uuid[])",
+                    f"delete from {VINCULOS_TABLE} where setor_id = any(%s::uuid[])",
                     (arvore_ids,),
                 )
             cur.execute(
-                "update setores set setor_pai_id = null where id = any(%s::uuid[])",
+                "update setores set setor_pai_id = null where setor_pai_id = any(%s::uuid[])",
                 (arvore_ids,),
             )
             cur.execute(
@@ -297,60 +321,48 @@ def excluir(setor_id, destino_setor_id=None, exclusao_completa=False):
                 conn,
                 acao="excluir_setor_completo",
                 entidade="setores",
-                entidade_id=setor_id,
+                entidade_id=sid,
                 valor_antigo={
                     "nome": atual[1],
-                    "setor_pai_id": atual[2],
+                    "setor_pai_id": atual[3],
                     "filhos_diretos": filhos,
                     "equipamentos_diretos": equipamentos,
                     "setores_excluidos": arvore_ids,
                     "equipamentos_desvinculados": total_equipamentos_arvore,
-                    "removeu_vinculos_responsavel": has_responsavel_table,
                 },
                 valor_novo={"destino_setor_id": None, "exclusao_completa": True},
             )
             conn.commit()
             return True
 
-        if filhos and not destino_setor_id:
-            raise ValueError(
-                "Este setor possui setores filhos. Informe um setor de destino antes de excluir ou marque exclusão completa."
-            )
-        if equipamentos and not destino_setor_id:
-            raise ValueError(
-                "Este setor possui equipamentos vinculados. Informe um setor de destino antes de excluir ou marque exclusão completa."
-            )
+        if filhos and not destino_id:
+            raise ValueError("Este setor possui setores filhos. Informe um setor de destino antes de excluir ou marque exclusão completa.")
+        if equipamentos and not destino_id:
+            raise ValueError("Este setor possui equipamentos vinculados. Informe um setor de destino antes de excluir ou marque exclusão completa.")
 
-        if destino_setor_id:
-            cur.execute(
-                "update setores set setor_pai_id = %s where setor_pai_id = %s",
-                (destino_setor_id, setor_id),
-            )
-            cur.execute(
-                "update equipamentos set setor_id = %s where setor_id = %s",
-                (destino_setor_id, setor_id),
-            )
-            if has_responsavel_table:
+        if destino_id:
+            cur.execute("update setores set setor_pai_id = %s where setor_pai_id = %s", (destino_id, sid))
+            cur.execute("update equipamentos set setor_id = %s where setor_id = %s", (destino_id, sid))
+            if _table_exists(cur, VINCULOS_TABLE):
                 cur.execute(
-                    f"update {RESPONSAVEL_TABLE} set setor_id = %s where setor_id = %s",
-                    (destino_setor_id, setor_id),
+                    f"update {VINCULOS_TABLE} set setor_id = %s where setor_id = %s",
+                    (destino_id, sid),
                 )
 
         auditoria_service.registrar_no_conn(
             conn,
             acao="excluir_setor",
             entidade="setores",
-            entidade_id=setor_id,
+            entidade_id=sid,
             valor_antigo={
                 "nome": atual[1],
-                "setor_pai_id": atual[2],
+                "setor_pai_id": atual[3],
                 "filhos": filhos,
                 "equipamentos": equipamentos,
-                "possui_tabela_vinculos_responsavel": has_responsavel_table,
             },
-            valor_novo={"destino_setor_id": destino_setor_id, "exclusao_completa": False},
+            valor_novo={"destino_setor_id": destino_id, "exclusao_completa": False},
         )
-        cur.execute("delete from setores where id = %s", (setor_id,))
+        cur.execute("delete from setores where id = %s", (sid,))
         conn.commit()
         return True
     except Exception:
