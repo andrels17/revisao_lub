@@ -245,6 +245,62 @@ def _setores_index() -> tuple[dict[str, Any], list[str]]:
         release_conn(conn)
 
 
+def _criar_setor_se_ausente(cur, conn, setores_idx: dict[str, Any], setor_nome: Any, colunas_setores: set[str] | None = None) -> Any | None:
+    nome_limpo = _to_str(setor_nome)
+    chave = _normalizar_nome(nome_limpo)
+    if not chave:
+        return None
+
+    existente = setores_idx.get(chave)
+    if existente is not None:
+        return existente
+
+    if colunas_setores is None:
+        colunas_setores = _colunas_tabela(cur, "setores")
+
+    cur.execute(
+        "select id, nome from setores where lower(trim(nome)) = lower(trim(%s)) limit 1",
+        (nome_limpo,),
+    )
+    row = cur.fetchone()
+    if row:
+        setor_id = row[0]
+        setores_idx[chave] = setor_id
+        return setor_id
+
+    insert_cols = ["nome"]
+    insert_vals = [nome_limpo]
+
+    if "tipo_nivel" in colunas_setores:
+        insert_cols.append("tipo_nivel")
+        insert_vals.append("setor")
+    if "ativo" in colunas_setores:
+        insert_cols.append("ativo")
+        insert_vals.append(True)
+
+    placeholders = ", ".join(["%s"] * len(insert_cols))
+    cur.execute(
+        f"insert into setores ({', '.join(insert_cols)}) values ({placeholders}) returning id",
+        tuple(insert_vals),
+    )
+    setor_id = cur.fetchone()[0]
+    setores_idx[chave] = setor_id
+
+    try:
+        auditoria_service.registrar_no_conn(
+            conn,
+            acao="importar_criar_setor",
+            entidade="setores",
+            entidade_id=setor_id,
+            valor_antigo=None,
+            valor_novo={"nome": nome_limpo, "origem": "importacao"},
+        )
+    except Exception:
+        pass
+
+    return setor_id
+
+
 def _resolver_setor_id(setor_nome: Any, setores_idx: dict[str, Any]) -> Any | None:
     nome_original = _to_str(setor_nome)
     if not nome_original:
@@ -371,9 +427,11 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
                 setor_id = _resolver_setor_id(setor_nome, setores_idx)
                 if setor_id is None:
                     sugestoes = [s for s in nomes_setores if _normalizar_nome(setor_nome) in _normalizar_nome(s) or _normalizar_nome(s) in _normalizar_nome(setor_nome)]
-                    detalhe = f"setor '{setor_nome}' não encontrado"
+                    detalhe = f"setor '{setor_nome}' não encontrado na base atual"
                     if sugestoes:
                         detalhe += f". Possível correspondência: {sugestoes[0]}"
+                    else:
+                        detalhe += ". Será criado automaticamente na importação"
                     linha_avisos.append(detalhe)
 
             existente = existentes.get(codigo)
@@ -533,7 +591,9 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
     cur = conn.cursor()
     try:
         colunas = _colunas_tabela(cur, "equipamentos")
+        colunas_setores = _colunas_tabela(cur, "setores")
         existentes = _equipamentos_existentes(cur)
+        setores_idx, _ = _setores_index()
 
         import_cols = ["codigo", "nome", "tipo", "setor_id", "km_atual", "horas_atual", "ativo"]
         if "placa" in colunas:
@@ -552,7 +612,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
         placeholders = ", ".join(["%s"] * len(import_cols))
         insert_sql = f"insert into equipamentos ({', '.join(import_cols)}) values ({placeholders}) returning id"
 
-        importados = atualizados = preenchidos_vazios = duplicados = 0
+        importados = atualizados = preenchidos_vazios = duplicados = setores_criados = 0
         erros = []
         total = len(df)
         rows = df.to_dict(orient="records")
@@ -567,6 +627,22 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                 row = dict(row)
                 row["km_atual"] = km_seguro
                 row["horas_atual"] = horas_seguro
+
+                setor_nome = _to_str(row.get("setor"))
+                setor_id_resolvido = row.get("setor_id")
+                if not setor_id_resolvido and setor_nome:
+                    antes = len(setores_idx)
+                    setor_id_resolvido = _criar_setor_se_ausente(
+                        cur,
+                        conn,
+                        setores_idx,
+                        setor_nome,
+                        colunas_setores=colunas_setores,
+                    )
+                    if len(setores_idx) > antes:
+                        setores_criados += 1
+                row["setor_id"] = setor_id_resolvido or setor_padrao_id
+
                 if existente:
                     if modo_duplicados == MODO_IGNORAR:
                         duplicados += 1
@@ -669,6 +745,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
             "atualizados": atualizados,
             "preenchidos_vazios": preenchidos_vazios,
             "duplicados": duplicados,
+            "setores_criados": setores_criados,
             "erros": erros,
         }
     except Exception:
