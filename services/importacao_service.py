@@ -21,33 +21,36 @@ _MAX_BIGINT = 9223372036854775807
 _PROGRESS_STEP = 25
 
 ALIASES = {
-    "codigo": ["cod_equipamento", "codigo", "id", "cod", "codigo_equipamento"],
+    "codigo": ["cod_equipamento", "codigo", "id", "cod", "codigo_equipamento", "equipamento"],
     "nome": ["descricao_equipamento", "nome", "descricao_nome", "descricao_equip"],
-    "tipo": ["descricaotipoequipamento", "tipo", "tipo_equipamento", "grupo", "categoria"],
-    "setor": ["setor", "departamento", "descricao_setor", "setor_nome"],
-    "tipo_horimetro": ["tipo_horimetro", "tipo_medidor", "medidor_tipo"],
-    "valor_medidor": ["valor_medidor", "medidor_atual"],
-    "km_atual": ["km_atual", "hodometro", "hodometro_atual", "km"],
-    "horas_atual": ["horas_atual", "horimetro", "horimetro_atual", "horas"],
+    "grupo": ["descricaotipoequipamento", "grupo"],
+    "tipo": ["descricaotipoequipamento", "tipo", "tipo_equipamento", "categoria"],
+    "setor": ["descricao", "setor", "departamento", "descricao_setor", "setor_nome"],
+    "tipo_horimetro": ["tipo_horimetro", "horimetro", "tipo_medidor", "medidor_tipo"],
+    "valor_medidor": ["km_atual", "valor_medidor", "medidor_atual", "hodometro", "hodometro_atual", "km"],
+    "km_atual": ["km_atual_destino"],
+    "horas_atual": ["horas_atual", "horimetro_atual", "horas"],
+    "ativo": ["ativo", "status"],
     "placa": ["placa"],
     "serie": ["serie", "numero_serie", "n_serie"],
 }
 
-CAMPOS_PREVIEW = ["codigo", "nome", "tipo", "setor", "km_atual", "horas_atual", "placa", "serie"]
+CAMPOS_PREVIEW = ["codigo", "nome", "grupo", "tipo", "setor", "km_atual", "horas_atual", "ativo", "placa", "serie"]
 
 
 def get_template_csv() -> bytes:
     df = pd.DataFrame(
         [
             {
-                "codigo": "EQ-001",
-                "nome": "Equipamento Exemplo",
-                "tipo": "Caminhão",
-                "setor": "Operação > Caminhões",
-                "km_atual": 12500,
-                "horas_atual": "",
-                "placa": "ABC1D23",
-                "serie": "SER-001",
+                "COD_EQUIPAMENTO": "EQ-001",
+                "DESCRICAO_EQUIPAMENTO": "Equipamento Exemplo",
+                "DESCRICAOTIPOEQUIPAMENTO": "Caminhão",
+                "TIPO_HORIMETRO": "KM",
+                "KM_ATUAL": 12500,
+                "DESCRICAO": "Operação > Caminhões",
+                "ATIVO": "S",
+                "PLACA": "ABC1D23",
+                "SERIE": "SER-001",
             }
         ]
     )
@@ -100,6 +103,16 @@ def _sanitize_meter(value: Any, campo: str) -> int | None:
     if n_int > _MAX_BIGINT:
         raise ValueError(f"{campo} excede o limite aceito pelo banco")
     return n_int
+
+def _parse_bool_ativo(value: Any) -> bool:
+    s = _normalizar_nome(value)
+    if not s:
+        return True
+    if s in {"1", "true", "t", "sim", "s", "ativo", "at", "yes", "y"}:
+        return True
+    if s in {"0", "false", "f", "nao", "não", "n", "inativo", "inativo(a)", "off", "no"}:
+        return False
+    return True
 
 
 def _normalizar_nome(texto: Any) -> str:
@@ -172,24 +185,30 @@ def normalizar_tipo(tipo_original: Any) -> str:
 
 
 def separar_medidor(df: pd.DataFrame):
-    if "tipo_horimetro" not in df.columns or "valor_medidor" not in df.columns:
-        return df
     df = df.copy()
     if "km_atual" not in df.columns:
         df["km_atual"] = None
     if "horas_atual" not in df.columns:
         df["horas_atual"] = None
+
     for i, row in df.iterrows():
-        tipo = str(row.get("tipo_horimetro", "")).strip().upper()
-        valor = _parse_num(row.get("valor_medidor"))
+        tipo = _normalizar_nome(row.get("tipo_horimetro"))
+        valor_bruto = row.get("valor_medidor")
+        if valor_bruto is None or (isinstance(valor_bruto, float) and pd.isna(valor_bruto)):
+            valor_bruto = row.get("km_atual")
+        valor = _parse_num(valor_bruto)
         if valor is None:
             continue
-        if any(k in tipo for k in ["KM", "QUILOMETRO", "QUILÔMETRO"]):
-            if pd.isna(row.get("km_atual")) or _parse_num(row.get("km_atual")) is None:
-                df.at[i, "km_atual"] = valor
-        elif "HORA" in tipo:
-            if pd.isna(row.get("horas_atual")) or _parse_num(row.get("horas_atual")) is None:
-                df.at[i, "horas_atual"] = valor
+
+        if "hora" in tipo:
+            df.at[i, "horas_atual"] = valor
+            if _parse_num(row.get("km_atual")) == valor:
+                df.at[i, "km_atual"] = None
+        else:
+            df.at[i, "km_atual"] = valor
+            if _parse_num(row.get("horas_atual")) == valor:
+                df.at[i, "horas_atual"] = None
+
     return df
 
 
@@ -249,8 +268,9 @@ def _equipamentos_existentes(cur=None) -> dict[str, dict[str, Any]]:
     try:
         cur.execute(
             """
-            select id, codigo, nome, tipo, setor_id,
-                   km_atual, horas_atual, placa, serie
+            select id, codigo, nome, tipo,
+                   coalesce(grupo, tipo) as grupo,
+                   setor_id, km_atual, horas_atual, ativo, placa, serie
               from equipamentos
             """
         )
@@ -261,11 +281,13 @@ def _equipamentos_existentes(cur=None) -> dict[str, dict[str, Any]]:
                 "codigo": r[1],
                 "nome": r[2],
                 "tipo": r[3],
-                "setor_id": r[4],
-                "km_atual": float(r[5] or 0),
-                "horas_atual": float(r[6] or 0),
-                "placa": _to_str(r[7]),
-                "serie": _to_str(r[8]),
+                "grupo": _to_str(r[4]),
+                "setor_id": r[5],
+                "km_atual": float(r[6] or 0),
+                "horas_atual": float(r[7] or 0),
+                "ativo": bool(r[8]) if r[8] is not None else True,
+                "placa": _to_str(r[9]),
+                "serie": _to_str(r[10]),
             }
             for r in rows if r and r[1] is not None
         }
@@ -370,11 +392,17 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
 
         df["codigo"] = df["codigo"].apply(_normalizar_codigo)
         df["nome"] = df["nome"].apply(_to_str)
+        if "grupo" not in df.columns:
+            df["grupo"] = df.get("tipo")
+        df["grupo"] = df["grupo"].apply(_to_str)
         df["tipo"] = df["tipo"].apply(normalizar_tipo)
         df = separar_medidor(df)
         df["km_atual"] = df["km_atual"].apply(lambda v: _sanitize_meter(v, "km_atual") if _parse_num(v) is not None else None)
         df["horas_atual"] = df["horas_atual"].apply(lambda v: _sanitize_meter(v, "horas_atual") if _parse_num(v) is not None else None)
         df["setor"] = df["setor"].apply(_to_str)
+        if "ativo" not in df.columns:
+            df["ativo"] = True
+        df["ativo"] = df["ativo"].apply(_parse_bool_ativo)
         df["placa"] = df["placa"].apply(_to_str)
         df["serie"] = df["serie"].apply(_to_str)
 
@@ -401,8 +429,10 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
         for idx, row in df.iterrows():
             codigo = _normalizar_codigo(row.get("codigo"))
             nome = _to_str(row.get("nome"))
-            tipo = normalizar_tipo(row.get("tipo"))
+            grupo = _to_str(row.get("grupo") or row.get("tipo"))
+            tipo = normalizar_tipo(row.get("tipo") or grupo)
             setor_nome = _to_str(row.get("setor"))
+            ativo = _parse_bool_ativo(row.get("ativo"))
             placa = _to_str(row.get("placa"))
             serie = _to_str(row.get("serie"))
 
@@ -460,12 +490,14 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
                     {
                         "codigo": codigo,
                         "nome": nome,
+                        "grupo": grupo,
                         "tipo": tipo,
                         "setor": setor_nome,
                         "setor_id": setor_id,
                         "setor_resolvido": setor_resolvido,
                         "km_atual": km_atual,
                         "horas_atual": horas_atual,
+                        "ativo": ativo,
                         "placa": placa,
                         "serie": serie,
                         "acao_prevista": acao_prevista,
@@ -481,12 +513,14 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
                 {
                     "codigo": codigo,
                     "nome": nome,
+                    "grupo": grupo,
                     "tipo": tipo,
                     "setor": setor_nome,
                     "setor_resolvido": setor_resolvido,
                     "ação_setor": acao_setor,
                     "km_atual": km_atual,
                     "horas_atual": horas_atual,
+                    "ativo": ativo,
                     "placa": placa,
                     "serie": serie,
                     "ação": acao_prevista,
@@ -549,6 +583,8 @@ def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dic
     if modo == MODO_ATUALIZAR:
         if row.get("nome") and row.get("nome") != _to_str(existente.get("nome")):
             add("nome", row.get("nome"))
+        if "grupo" in colunas and row.get("grupo") and row.get("grupo") != _to_str(existente.get("grupo")):
+            add("grupo", row.get("grupo"))
         if "tipo" in colunas and row.get("tipo") and row.get("tipo") != _to_str(existente.get("tipo")):
             add("tipo", row.get("tipo"))
         if setor_id is not None and "setor_id" in colunas and setor_id != existente.get("setor_id"):
@@ -557,6 +593,8 @@ def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dic
             add("km_atual", row.get("km_atual"))
         if row.get("horas_atual") is not None and "horas_atual" in colunas and float(row.get("horas_atual") or 0) != float(existente.get("horas_atual") or 0):
             add("horas_atual", row.get("horas_atual"))
+        if "ativo" in colunas and bool(row.get("ativo", True)) != bool(existente.get("ativo", True)):
+            add("ativo", bool(row.get("ativo", True)))
         if row.get("placa") and "placa" in colunas and row.get("placa") != _to_str(existente.get("placa")):
             add("placa", row.get("placa"))
         if row.get("serie") and "serie" in colunas and row.get("serie") != _to_str(existente.get("serie")):
@@ -564,6 +602,8 @@ def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dic
     elif modo == MODO_PREENCHER_VAZIOS:
         if not _to_str(existente.get("nome")) and row.get("nome"):
             add("nome", row.get("nome"))
+        if "grupo" in colunas and not _to_str(existente.get("grupo")) and row.get("grupo"):
+            add("grupo", row.get("grupo"))
         if "tipo" in colunas and not _to_str(existente.get("tipo")) and row.get("tipo"):
             add("tipo", row.get("tipo"))
         if setor_id is not None and "setor_id" in colunas and not existente.get("setor_id"):
@@ -611,6 +651,8 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
         setores_idx, _ = _setores_index(cur)
 
         import_cols = ["codigo", "nome", "tipo", "setor_id", "km_atual", "horas_atual", "ativo"]
+        if "grupo" in colunas:
+            import_cols.insert(3, "grupo")
         if "placa" in colunas:
             import_cols.append("placa")
         if "serie" in colunas:
@@ -661,7 +703,9 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                                 {
                                     "nome": row.get("nome") or existente.get("nome"),
                                     "tipo": row.get("tipo") or existente.get("tipo"),
+                                    "grupo": row.get("grupo") or existente.get("grupo"),
                                     "setor_id": row.get("setor_id") if row.get("setor_id") is not None else existente.get("setor_id"),
+                                    "ativo": bool(row.get("ativo", True)),
                                     "km_atual": float(row.get("km_atual") if row.get("km_atual") is not None else existente.get("km_atual") or 0),
                                     "horas_atual": float(row.get("horas_atual") if row.get("horas_atual") is not None else existente.get("horas_atual") or 0),
                                     "placa": row.get("placa") or existente.get("placa"),
@@ -692,10 +736,11 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         "codigo": codigo,
                         "nome": row.get("nome"),
                         "tipo": row.get("tipo") or "Veículos Leves",
+                        "grupo": row.get("grupo") or row.get("tipo") or "Veículos Leves",
                         "setor_id": row.get("setor_id"),
                         "km_atual": row.get("km_atual") or 0,
                         "horas_atual": row.get("horas_atual") or 0,
-                        "ativo": True,
+                        "ativo": bool(row.get("ativo", True)),
                         "placa": row.get("placa") or None,
                         "serie": row.get("serie") or None,
                         "km_inicial_plano": row.get("km_atual") or 0,
@@ -719,7 +764,9 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         "codigo": codigo,
                         "nome": insert_data["nome"],
                         "tipo": insert_data["tipo"],
+                        "grupo": _to_str(insert_data.get("grupo")),
                         "setor_id": insert_data["setor_id"],
+                        "ativo": bool(insert_data.get("ativo", True)),
                         "km_atual": float(insert_data["km_atual"] or 0),
                         "horas_atual": float(insert_data["horas_atual"] or 0),
                         "placa": _to_str(insert_data.get("placa")),
