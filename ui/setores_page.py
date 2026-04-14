@@ -6,14 +6,37 @@ from ui.theme import render_page_intro
 TIPOS_NIVEL = ["empresa", "unidade", "departamento", "setor", "subsetor"]
 
 
+def _normalizar_id(valor):
+    if valor is None:
+        return ""
+    return str(valor).strip()
+
+
+def _enriquecer_setores_com_contagem(setores: list[dict], equipamentos: list[dict]) -> list[dict]:
+    contagem_por_setor: dict[str, int] = {}
+    for eq in equipamentos or []:
+        setor_id = _normalizar_id(eq.get("setor_id"))
+        if not setor_id:
+            continue
+        contagem_por_setor[setor_id] = contagem_por_setor.get(setor_id, 0) + 1
+
+    itens = []
+    for setor in setores or []:
+        item = dict(setor)
+        item["total_equipamentos"] = int(contagem_por_setor.get(_normalizar_id(item.get("id")), 0))
+        itens.append(item)
+    return itens
+
+
 def _rotulo_setor(item: dict) -> str:
     total = int(item.get("total_equipamentos") or 0)
     return f"{item.get('nome', '-')} · {total} equipamento(s)"
 
 
 def render():
-    setores = setores_service.listar()
+    setores_base = setores_service.listar()
     equipamentos = equipamentos_service.listar()
+    setores = _enriquecer_setores_com_contagem(setores_base, equipamentos)
 
     render_page_intro(
         "Estrutura organizacional",
@@ -113,7 +136,7 @@ def render():
                 ]).lower()
                 if termo and termo not in alvo:
                     continue
-                if str(eq.get("setor_id") or "") == str(setor_destino.get("id")):
+                if _normalizar_id(eq.get("setor_id")) == _normalizar_id(setor_destino.get("id")):
                     continue
                 elegiveis.append(eq)
 
@@ -135,7 +158,7 @@ def render():
                     else:
                         total = setores_service.vincular_equipamentos(
                             setor_id=setor_destino["id"],
-                            equipamento_ids=[int(x) for x in selecionados],
+                            equipamento_ids=selecionados,
                         )
                         equipamentos_service.limpar_cache()
                         st.success(f"{total} equipamento(s) vinculado(s) ao setor {setor_destino['nome']}.")
@@ -153,7 +176,7 @@ def render():
                 format_func=_rotulo_setor,
                 key="setor_excluir_sel",
             )
-            destinos = [s for s in setores if str(s.get("id")) != str(setor_excluir.get("id"))]
+            destinos = [s for s in setores if _normalizar_id(s.get("id")) != _normalizar_id(setor_excluir.get("id"))]
             modo_exclusao = st.radio(
                 "Modo de exclusão",
                 options=["Mover vínculos para outro setor", "Exclusão completa"],
@@ -178,13 +201,8 @@ def render():
                     "A exclusão completa remove o setor selecionado e todos os setores filhos. Os equipamentos não serão excluídos, mas ficarão sem setor vinculado."
                 )
 
-            st.write(
-                f"Equipamentos neste setor: **{int(setor_excluir.get('total_equipamentos') or 0)}**"
-            )
-            confirmar = st.checkbox(
-                "Confirmo que desejo excluir este setor",
-                key="confirmar_exclusao_setor",
-            )
+            st.write(f"Equipamentos neste setor: **{int(setor_excluir.get('total_equipamentos') or 0)}**")
+            confirmar = st.checkbox("Confirmo que desejo excluir este setor", key="confirmar_exclusao_setor")
             if st.button("Excluir setor selecionado", use_container_width=True):
                 if not confirmar:
                     st.warning("Marque a confirmação para prosseguir com a exclusão.")
