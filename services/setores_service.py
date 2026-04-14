@@ -2,6 +2,21 @@ from database.connection import get_conn, release_conn
 from services import auditoria_service, escopo_service
 
 
+def _coletar_descendentes(cur, setor_id):
+    pendentes = [int(setor_id)]
+    vistos = set()
+    ordem = []
+    while pendentes:
+        atual = int(pendentes.pop())
+        if atual in vistos:
+            continue
+        vistos.add(atual)
+        ordem.append(atual)
+        cur.execute("select id from setores where setor_pai_id = %s", (atual,))
+        pendentes.extend(int(r[0]) for r in (cur.fetchall() or []))
+    return ordem
+
+
 def listar():
     conn = get_conn()
     cur = conn.cursor()
@@ -112,7 +127,7 @@ def vincular_equipamentos(setor_id, equipamento_ids: list[int]):
         release_conn(conn)
 
 
-def excluir(setor_id, destino_setor_id=None):
+def excluir(setor_id, destino_setor_id=None, exclusao_completa=False):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -137,10 +152,52 @@ def excluir(setor_id, destino_setor_id=None):
             if not cur.fetchone():
                 raise ValueError("Setor de destino não encontrado.")
 
+        if exclusao_completa and destino_setor_id:
+            raise ValueError("Escolha apenas uma opção: exclusão completa ou mover para setor de destino.")
+
+        if exclusao_completa:
+            arvore_ids = _coletar_descendentes(cur, setor_id)
+            cur.execute(
+                "select count(1) from equipamentos where setor_id = any(%s)",
+                (arvore_ids,),
+            )
+            total_equipamentos_arvore = int(cur.fetchone()[0] or 0)
+
+            cur.execute(
+                "update equipamentos set setor_id = null where setor_id = any(%s)",
+                (arvore_ids,),
+            )
+            cur.execute(
+                "delete from vinculos_setor_responsavel where setor_id = any(%s)",
+                (arvore_ids,),
+            )
+            cur.execute(
+                "delete from setores where id = any(%s)",
+                (list(reversed(arvore_ids)),),
+            )
+
+            auditoria_service.registrar_no_conn(
+                conn,
+                acao="excluir_setor_completo",
+                entidade="setores",
+                entidade_id=setor_id,
+                valor_antigo={
+                    "nome": atual[1],
+                    "setor_pai_id": atual[2],
+                    "filhos_diretos": filhos,
+                    "equipamentos_diretos": equipamentos,
+                    "setores_excluidos": arvore_ids,
+                    "equipamentos_desvinculados": total_equipamentos_arvore,
+                },
+                valor_novo={"destino_setor_id": None, "exclusao_completa": True},
+            )
+            conn.commit()
+            return True
+
         if filhos and not destino_setor_id:
-            raise ValueError("Este setor possui setores filhos. Informe um setor de destino antes de excluir.")
+            raise ValueError("Este setor possui setores filhos. Informe um setor de destino antes de excluir ou marque exclusão completa.")
         if equipamentos and not destino_setor_id:
-            raise ValueError("Este setor possui equipamentos vinculados. Informe um setor de destino antes de excluir.")
+            raise ValueError("Este setor possui equipamentos vinculados. Informe um setor de destino antes de excluir ou marque exclusão completa.")
 
         if destino_setor_id:
             cur.execute("update setores set setor_pai_id = %s where setor_pai_id = %s", (destino_setor_id, setor_id))
@@ -161,7 +218,7 @@ def excluir(setor_id, destino_setor_id=None):
                 "filhos": filhos,
                 "equipamentos": equipamentos,
             },
-            valor_novo={"destino_setor_id": destino_setor_id},
+            valor_novo={"destino_setor_id": destino_setor_id, "exclusao_completa": False},
         )
         cur.execute("delete from setores where id = %s", (setor_id,))
         conn.commit()
