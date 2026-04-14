@@ -143,7 +143,7 @@ def render():
 
     with tab4:
         st.markdown("### Excluir setor")
-        st.caption("Se houver equipamentos ou setores filhos, escolha um setor de destino para reaproveitar os vínculos antes da exclusão.")
+        st.caption("Você pode mover os vínculos para outro setor ou fazer uma exclusão completa da árvore do setor.")
         if not setores:
             st.info("Nenhum setor encontrado.")
         else:
@@ -154,29 +154,49 @@ def render():
                 key="setor_excluir_sel",
             )
             destinos = [s for s in setores if str(s.get("id")) != str(setor_excluir.get("id"))]
-            usar_destino = st.checkbox("Mover equipamentos e subníveis para outro setor antes de excluir", value=True)
+            modo_exclusao = st.radio(
+                "Modo de exclusão",
+                options=["Mover vínculos para outro setor", "Exclusão completa"],
+                horizontal=True,
+                key="modo_exclusao_setor",
+            )
+            exclusao_completa = modo_exclusao == "Exclusão completa"
+
             destino = None
-            if usar_destino and destinos:
-                destino = st.selectbox(
-                    "Setor de destino",
-                    destinos,
-                    format_func=lambda x: x.get("nome", "-"),
-                    key="setor_excluir_destino",
+            if not exclusao_completa:
+                if destinos:
+                    destino = st.selectbox(
+                        "Setor de destino",
+                        destinos,
+                        format_func=lambda x: x.get("nome", "-"),
+                        key="setor_excluir_destino",
+                    )
+                else:
+                    st.warning("Não há outro setor disponível como destino.")
+            else:
+                st.warning(
+                    "A exclusão completa remove o setor selecionado e todos os setores filhos. Os equipamentos não serão excluídos, mas ficarão sem setor vinculado."
                 )
-            elif usar_destino and not destinos:
-                st.warning("Não há outro setor disponível como destino.")
 
             st.write(
                 f"Equipamentos neste setor: **{int(setor_excluir.get('total_equipamentos') or 0)}**"
             )
+            confirmar = st.checkbox(
+                "Confirmo que desejo excluir este setor",
+                key="confirmar_exclusao_setor",
+            )
             if st.button("Excluir setor selecionado", use_container_width=True):
-                try:
-                    setores_service.excluir(
-                        setor_id=setor_excluir["id"],
-                        destino_setor_id=(destino["id"] if destino and usar_destino else None),
-                    )
-                    equipamentos_service.limpar_cache()
-                    st.success("Setor excluído com sucesso.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(str(exc))
+                if not confirmar:
+                    st.warning("Marque a confirmação para prosseguir com a exclusão.")
+                else:
+                    try:
+                        setores_service.excluir(
+                            setor_id=setor_excluir["id"],
+                            destino_setor_id=(destino["id"] if destino and not exclusao_completa else None),
+                            exclusao_completa=exclusao_completa,
+                        )
+                        equipamentos_service.limpar_cache()
+                        st.success("Setor excluído com sucesso.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(str(exc))
