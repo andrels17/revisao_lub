@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from typing import Any
+import math
 
 import pandas as pd
 
@@ -14,6 +15,24 @@ MODO_SOBRESCREVER = "sobrescrever"  # compatibilidade
 MODO_ATUALIZAR = "atualizar"
 MODO_BLOQUEAR = "bloquear"  # compatibilidade
 MODO_PREENCHER_VAZIOS = "preencher_vazios"
+
+
+
+_MAX_BIGINT = 9223372036854775807
+
+
+def _sanitize_meter(value: Any, campo: str) -> int | None:
+    n = _parse_num(value)
+    if n is None:
+        return None
+    if isinstance(n, float) and (math.isnan(n) or math.isinf(n)):
+        raise ValueError(f"{campo} inválido")
+    if n < 0:
+        raise ValueError(f"{campo} não pode ser negativo")
+    n_int = int(n)
+    if n_int > _MAX_BIGINT:
+        raise ValueError(f"{campo} excede o limite aceito pelo banco")
+    return n_int
 
 ALIASES = {
     "codigo": ["cod_equipamento", "codigo", "id", "cod", "codigo_equipamento"],
@@ -257,8 +276,8 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
         df["nome"] = df["nome"].apply(_to_str)
         df["tipo"] = df["tipo"].apply(normalizar_tipo)
         df = separar_medidor(df)
-        df["km_atual"] = df["km_atual"].apply(_parse_num)
-        df["horas_atual"] = df["horas_atual"].apply(_parse_num)
+        df["km_atual"] = df["km_atual"].apply(lambda v: _sanitize_meter(v, "km_atual") if _parse_num(v) is not None else None)
+        df["horas_atual"] = df["horas_atual"].apply(lambda v: _sanitize_meter(v, "horas_atual") if _parse_num(v) is not None else None)
         df["setor"] = df["setor"].apply(_to_str)
         df["placa"] = df["placa"].apply(_to_str)
         df["serie"] = df["serie"].apply(_to_str)
@@ -286,13 +305,23 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
             nome = _to_str(row.get("nome"))
             tipo = normalizar_tipo(row.get("tipo"))
             setor_nome = _to_str(row.get("setor"))
-            km_atual = _parse_num(row.get("km_atual"))
-            horas_atual = _parse_num(row.get("horas_atual"))
             placa = _to_str(row.get("placa"))
             serie = _to_str(row.get("serie"))
 
             linha_erros = []
             linha_avisos = []
+
+            try:
+                km_atual = _sanitize_meter(row.get("km_atual"), "km_atual")
+            except Exception as e:
+                km_atual = None
+                linha_erros.append(str(e))
+
+            try:
+                horas_atual = _sanitize_meter(row.get("horas_atual"), "horas_atual")
+            except Exception as e:
+                horas_atual = None
+                linha_erros.append(str(e))
 
             if not codigo:
                 linha_erros.append("codigo vazio")
@@ -489,7 +518,13 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
         for i, row in enumerate(rows, start=1):
             codigo = _normalizar_codigo(row.get("codigo"))
             existente = existentes.get(codigo)
+            cur.execute("SAVEPOINT importacao_item")
             try:
+                km_seguro = _sanitize_meter(row.get("km_atual"), "km_atual")
+                horas_seguro = _sanitize_meter(row.get("horas_atual"), "horas_atual")
+                row = dict(row)
+                row["km_atual"] = km_seguro
+                row["horas_atual"] = horas_seguro
                 if existente:
                     if modo_duplicados == MODO_IGNORAR:
                         duplicados += 1
@@ -565,7 +600,16 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         "serie": _to_str(insert_data.get("serie")),
                     }
             except Exception as e:
+                try:
+                    cur.execute("ROLLBACK TO SAVEPOINT importacao_item")
+                except Exception:
+                    conn.rollback()
                 erros.append(f"Código {codigo}: {e}")
+            else:
+                try:
+                    cur.execute("RELEASE SAVEPOINT importacao_item")
+                except Exception:
+                    pass
 
             if progress_callback and (i == total or i == 1 or i % _PROGRESS_STEP == 0):
                 try:
