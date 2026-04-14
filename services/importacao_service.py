@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 from typing import Any
 import math
+import re
 import unicodedata
 
 import pandas as pd
@@ -10,20 +11,18 @@ import pandas as pd
 from database.connection import get_conn, release_conn
 from services import auditoria_service, equipamentos_service
 
-# Modos usados pela UI
 MODO_IGNORAR = "ignorar"
-MODO_SOBRESCREVER = "sobrescrever"  # compatibilidade
+MODO_SOBRESCREVER = "sobrescrever"
 MODO_ATUALIZAR = "atualizar"
-MODO_BLOQUEAR = "bloquear"  # compatibilidade
+MODO_BLOQUEAR = "bloquear"
 MODO_PREENCHER_VAZIOS = "preencher_vazios"
 
 _MAX_BIGINT = 9223372036854775807
 _PROGRESS_STEP = 25
 
-
 ALIASES = {
     "codigo": ["cod_equipamento", "codigo", "id", "cod", "codigo_equipamento"],
-    "nome": ["descricao_equipamento", "nome", "descricao_equipamento", "descricao_nome", "descricao_equip"],
+    "nome": ["descricao_equipamento", "nome", "descricao_nome", "descricao_equip"],
     "tipo": ["descricaotipoequipamento", "tipo", "tipo_equipamento", "grupo", "categoria"],
     "setor": ["setor", "departamento", "descricao_setor", "setor_nome"],
     "tipo_horimetro": ["tipo_horimetro", "tipo_medidor", "medidor_tipo"],
@@ -44,7 +43,7 @@ def get_template_csv() -> bytes:
                 "codigo": "EQ-001",
                 "nome": "Equipamento Exemplo",
                 "tipo": "Caminhão",
-                "setor": "Operação",
+                "setor": "Operação > Caminhões",
                 "km_atual": 12500,
                 "horas_atual": "",
                 "placa": "ABC1D23",
@@ -59,16 +58,6 @@ def _to_str(value: Any) -> str:
     if value is None or pd.isna(value):
         return ""
     return str(value).strip()
-
-
-def _normalizar_nome(texto: Any) -> str:
-    bruto = _to_str(texto)
-    if not bruto:
-        return ""
-    texto = unicodedata.normalize("NFKD", bruto)
-    texto = "".join(c for c in texto if not unicodedata.combining(c))
-    texto = " ".join(texto.lower().split())
-    return texto
 
 
 def _normalizar_codigo(value: Any) -> str:
@@ -113,6 +102,24 @@ def _sanitize_meter(value: Any, campo: str) -> int | None:
     return n_int
 
 
+def _normalizar_nome(texto: Any) -> str:
+    s = _to_str(texto).lower()
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _split_hierarquia_setor(valor: Any) -> list[str]:
+    bruto = _to_str(valor)
+    if not bruto:
+        return []
+    partes = re.split(r"\s*(?:>|/|\\|\|)\s*", bruto)
+    return [_to_str(p) for p in partes if _to_str(p)]
+
+
 def normalizar_colunas(df: pd.DataFrame):
     df = df.copy()
     original_cols = list(df.columns)
@@ -147,7 +154,6 @@ def normalizar_tipo(tipo_original: Any) -> str:
         return "Veículos Leves"
 
     t = str(tipo_original).strip().upper()
-
     if "CAMINH" in t:
         return "Caminhão"
     if "TRATOR" in t:
@@ -156,38 +162,23 @@ def normalizar_tipo(tipo_original: Any) -> str:
         return "Colheitadeira"
     if "PULVER" in t:
         return "Pulverizador"
-
-    if any(k in t for k in [
-        "IMPLEMENTO", "REBOQUE", "GRADE", "SULCADOR", "SUBSOLADOR",
-        "PIPA", "JULIETA", "TANQUE"
-    ]):
+    if any(k in t for k in ["IMPLEMENTO", "REBOQUE", "GRADE", "SULCADOR", "SUBSOLADOR", "PIPA", "JULIETA", "TANQUE"]):
         return "Implemento"
-
-    if any(k in t for k in [
-        "CARREGADEIRA", "MAQUINA", "MÁQUINA", "EMPILHADEIRA",
-        "GERADOR", "ELETROBOMBA", "PIVOT", "PIVÔ", "TURBOMAQ"
-    ]):
+    if any(k in t for k in ["CARREGADEIRA", "MAQUINA", "MÁQUINA", "EMPILHADEIRA", "GERADOR", "ELETROBOMBA", "PIVOT", "PIVÔ", "TURBOMAQ"]):
         return "Máquina"
-
-    if any(k in t for k in [
-        "MOTO", "AUTO", "CARRO", "DRONE", "AVIAO", "AVIÃO",
-        "UTILITARIO", "UTILITÁRIO", "CAMIONETE", "PASSEIO"
-    ]):
+    if any(k in t for k in ["MOTO", "AUTO", "CARRO", "DRONE", "AVIAO", "AVIÃO", "UTILITARIO", "UTILITÁRIO", "CAMIONETE", "PASSEIO"]):
         return "Veículos Leves"
-
     return str(tipo_original).strip().title()
 
 
 def separar_medidor(df: pd.DataFrame):
     if "tipo_horimetro" not in df.columns or "valor_medidor" not in df.columns:
         return df
-
     df = df.copy()
     if "km_atual" not in df.columns:
         df["km_atual"] = None
     if "horas_atual" not in df.columns:
         df["horas_atual"] = None
-
     for i, row in df.iterrows():
         tipo = str(row.get("tipo_horimetro", "")).strip().upper()
         valor = _parse_num(row.get("valor_medidor"))
@@ -199,14 +190,12 @@ def separar_medidor(df: pd.DataFrame):
         elif "HORA" in tipo:
             if pd.isna(row.get("horas_atual")) or _parse_num(row.get("horas_atual")) is None:
                 df.at[i, "horas_atual"] = valor
-
     return df
 
 
 def consolidar_duplicados(df: pd.DataFrame):
     if "codigo" not in df.columns:
         return df, []
-
     df = df.copy()
     df["codigo"] = df["codigo"].apply(_normalizar_codigo)
     duplicados = df[df.duplicated(subset=["codigo"], keep=False)]["codigo"].dropna().astype(str).unique().tolist()
@@ -226,101 +215,30 @@ def _carregar_bytes(file_bytes: bytes, nome_arquivo: str) -> pd.DataFrame:
     return pd.read_excel(BytesIO(file_bytes))
 
 
-def _setores_index() -> tuple[dict[str, Any], list[str]]:
-    conn = get_conn()
-    cur = conn.cursor()
+def _setores_index(cur=None) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    own_conn = None
+    if cur is None:
+        own_conn = get_conn()
+        cur = own_conn.cursor()
     try:
-        cur.execute("select id, nome from setores where coalesce(ativo, true) = true")
+        cur.execute("select id, nome, setor_pai_id, tipo_nivel from setores where coalesce(ativo, true) = true")
         rows = cur.fetchall()
-        idx: dict[str, Any] = {}
-        nomes: list[str] = []
-        for sid, nome in rows:
-            nome_limpo = _to_str(nome)
-            if not nome_limpo:
+        idx = {}
+        nomes = []
+        for sid, nome, setor_pai_id, tipo_nivel in rows:
+            if not nome:
                 continue
-            idx[_normalizar_nome(nome_limpo)] = sid
-            nomes.append(nome_limpo)
+            nomes.append(_to_str(nome))
+            idx[_normalizar_nome(nome)] = {
+                "id": sid,
+                "nome": _to_str(nome),
+                "setor_pai_id": setor_pai_id,
+                "tipo_nivel": _to_str(tipo_nivel) or "setor",
+            }
         return idx, nomes
     finally:
-        release_conn(conn)
-
-
-def _criar_setor_se_ausente(cur, conn, setores_idx: dict[str, Any], setor_nome: Any, colunas_setores: set[str] | None = None) -> Any | None:
-    nome_limpo = _to_str(setor_nome)
-    chave = _normalizar_nome(nome_limpo)
-    if not chave:
-        return None
-
-    existente = setores_idx.get(chave)
-    if existente is not None:
-        return existente
-
-    if colunas_setores is None:
-        colunas_setores = _colunas_tabela(cur, "setores")
-
-    cur.execute(
-        "select id, nome from setores where lower(trim(nome)) = lower(trim(%s)) limit 1",
-        (nome_limpo,),
-    )
-    row = cur.fetchone()
-    if row:
-        setor_id = row[0]
-        setores_idx[chave] = setor_id
-        return setor_id
-
-    insert_cols = ["nome"]
-    insert_vals = [nome_limpo]
-
-    if "tipo_nivel" in colunas_setores:
-        insert_cols.append("tipo_nivel")
-        insert_vals.append("setor")
-    if "ativo" in colunas_setores:
-        insert_cols.append("ativo")
-        insert_vals.append(True)
-
-    placeholders = ", ".join(["%s"] * len(insert_cols))
-    cur.execute(
-        f"insert into setores ({', '.join(insert_cols)}) values ({placeholders}) returning id",
-        tuple(insert_vals),
-    )
-    setor_id = cur.fetchone()[0]
-    setores_idx[chave] = setor_id
-
-    try:
-        auditoria_service.registrar_no_conn(
-            conn,
-            acao="importar_criar_setor",
-            entidade="setores",
-            entidade_id=setor_id,
-            valor_antigo=None,
-            valor_novo={"nome": nome_limpo, "origem": "importacao"},
-        )
-    except Exception:
-        pass
-
-    return setor_id
-
-
-def _resolver_setor_id(setor_nome: Any, setores_idx: dict[str, Any]) -> Any | None:
-    nome_original = _to_str(setor_nome)
-    if not nome_original:
-        return None
-
-    chave = _normalizar_nome(nome_original)
-    if not chave:
-        return None
-
-    encontrado = setores_idx.get(chave)
-    if encontrado is not None:
-        return encontrado
-
-    for nome_idx, sid in setores_idx.items():
-        if nome_idx == chave:
-            return sid
-        if nome_idx in chave or chave in nome_idx:
-            return sid
-
-    return None
+        if own_conn is not None:
+            release_conn(own_conn)
 
 
 def _equipamentos_existentes(cur=None) -> dict[str, dict[str, Any]]:
@@ -356,6 +274,90 @@ def _equipamentos_existentes(cur=None) -> dict[str, dict[str, Any]]:
             release_conn(own_conn)
 
 
+def _resolver_setor_existente(setores_idx: dict[str, dict[str, Any]], setor_nome: str):
+    chave = _normalizar_nome(setor_nome)
+    if not chave:
+        return None
+    exato = setores_idx.get(chave)
+    if exato:
+        return exato
+    for nome_norm, item in setores_idx.items():
+        if nome_norm == chave or nome_norm in chave or chave in nome_norm:
+            return item
+    return None
+
+
+def _criar_setor_no_conn(cur, conn, nome: str, setor_pai_id=None, tipo_nivel: str = "setor"):
+    cur.execute(
+        """
+        insert into setores (nome, tipo_nivel, setor_pai_id, ativo)
+        values (%s, %s, %s, %s)
+        returning id
+        """,
+        (nome, tipo_nivel, setor_pai_id, True),
+    )
+    novo_id = cur.fetchone()[0]
+    auditoria_service.registrar_no_conn(
+        conn,
+        acao="importacao_criar_setor",
+        entidade="setores",
+        entidade_id=novo_id,
+        valor_antigo=None,
+        valor_novo={
+            "nome": nome,
+            "tipo_nivel": tipo_nivel,
+            "setor_pai_id": setor_pai_id,
+            "origem": "importacao_equipamentos",
+        },
+    )
+    return novo_id
+
+
+def _obter_ou_criar_setor(cur, conn, setores_idx: dict[str, dict[str, Any]], caminho_setor: str):
+    partes = _split_hierarquia_setor(caminho_setor)
+    if not partes:
+        return None, [], caminho_setor
+
+    setor_pai_id = None
+    criados = []
+    ultimo_id = None
+
+    for pos, nome in enumerate(partes):
+        normalizado = _normalizar_nome(nome)
+        item_existente = setores_idx.get(normalizado)
+
+        if item_existente and (not setor_pai_id or item_existente.get("setor_pai_id") == setor_pai_id):
+            ultimo_id = item_existente["id"]
+            setor_pai_id = ultimo_id
+            continue
+
+        resolvido = None
+        for _, item in setores_idx.items():
+            if item.get("setor_pai_id") == setor_pai_id and _normalizar_nome(item.get("nome")) == normalizado:
+                resolvido = item
+                break
+
+        if resolvido:
+            ultimo_id = resolvido["id"]
+            setor_pai_id = ultimo_id
+            continue
+
+        tipo_nivel = "departamento" if pos == 0 and len(partes) > 1 else "setor"
+        novo_id = _criar_setor_no_conn(cur, conn, nome, setor_pai_id=setor_pai_id, tipo_nivel=tipo_nivel)
+        item = {
+            "id": novo_id,
+            "nome": nome,
+            "setor_pai_id": setor_pai_id,
+            "tipo_nivel": tipo_nivel,
+        }
+        setores_idx[normalizado] = item
+        criados.append({"id": novo_id, "nome": nome, "caminho_original": caminho_setor})
+        ultimo_id = novo_id
+        setor_pai_id = novo_id
+
+    return ultimo_id, criados, " > ".join(partes)
+
+
 def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
     try:
         bruto = _carregar_bytes(file_bytes, nome_arquivo)
@@ -379,7 +381,7 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
         df, duplicados_arquivo = consolidar_duplicados(df)
         df = df.reset_index(drop=True)
 
-        setores_idx, nomes_setores = _setores_index()
+        setores_idx, _ = _setores_index()
         existentes = _equipamentos_existentes()
 
         erros = []
@@ -387,6 +389,8 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
         linhas_validas = []
         preview_rows = []
         novas = duplicadas_sistema = com_aviso = com_erro = 0
+        setores_a_criar = []
+        setores_a_criar_set = set()
 
         if duplicados_arquivo:
             avisos.append(
@@ -404,6 +408,9 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
 
             linha_erros = []
             linha_avisos = []
+            setor_id = None
+            setor_resolvido = ""
+            acao_setor = "sem setor"
 
             try:
                 km_atual = _sanitize_meter(row.get("km_atual"), "km_atual")
@@ -422,22 +429,25 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
             if not nome:
                 linha_erros.append("nome vazio")
 
-            setor_id = None
             if setor_nome:
-                setor_id = _resolver_setor_id(setor_nome, setores_idx)
-                if setor_id is None:
-                    sugestoes = [s for s in nomes_setores if _normalizar_nome(setor_nome) in _normalizar_nome(s) or _normalizar_nome(s) in _normalizar_nome(setor_nome)]
-                    detalhe = f"setor '{setor_nome}' não encontrado na base atual"
-                    if sugestoes:
-                        detalhe += f". Possível correspondência: {sugestoes[0]}"
-                    else:
-                        detalhe += ". Será criado automaticamente na importação"
-                    linha_avisos.append(detalhe)
+                existente_setor = _resolver_setor_existente(setores_idx, setor_nome)
+                if existente_setor:
+                    setor_id = existente_setor["id"]
+                    setor_resolvido = existente_setor["nome"]
+                    acao_setor = "usar existente"
+                else:
+                    partes = _split_hierarquia_setor(setor_nome)
+                    setor_resolvido = " > ".join(partes) if partes else setor_nome
+                    acao_setor = "criar automaticamente"
+                    chave_preview = _normalizar_nome(setor_resolvido)
+                    if chave_preview and chave_preview not in setores_a_criar_set:
+                        setores_a_criar_set.add(chave_preview)
+                        setores_a_criar.append({"nome": partes[-1] if partes else setor_nome, "caminho_original": setor_resolvido})
+                    linha_avisos.append(f"setor '{setor_nome}' será criado automaticamente")
 
             existente = existentes.get(codigo)
-            acao_prevista = "novo"
+            acao_prevista = "atualizar" if existente else "novo"
             if existente:
-                acao_prevista = "atualizar"
                 duplicadas_sistema += 1
             else:
                 novas += 1
@@ -453,11 +463,13 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
                         "tipo": tipo,
                         "setor": setor_nome,
                         "setor_id": setor_id,
+                        "setor_resolvido": setor_resolvido,
                         "km_atual": km_atual,
                         "horas_atual": horas_atual,
                         "placa": placa,
                         "serie": serie,
                         "acao_prevista": acao_prevista,
+                        "acao_setor": acao_setor,
                     }
                 )
 
@@ -471,6 +483,8 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
                     "nome": nome,
                     "tipo": tipo,
                     "setor": setor_nome,
+                    "setor_resolvido": setor_resolvido,
+                    "ação_setor": acao_setor,
                     "km_atual": km_atual,
                     "horas_atual": horas_atual,
                     "placa": placa,
@@ -491,12 +505,14 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
             "linhas_ok": len(df_ok),
             "linhas_erro": com_erro,
             "colunas_reconhecidas": reconhecidas,
+            "setores_a_criar": setores_a_criar,
             "resumo": {
                 "total_linhas": len(df),
                 "novas": novas,
                 "duplicadas_sistema": duplicadas_sistema,
                 "com_aviso": com_aviso,
                 "com_erro": com_erro,
+                "setores_novos": len(setores_a_criar),
             },
             "detalhe": ", ".join(sorted({a for vals in ALIASES.values() for a in vals})),
         }
@@ -520,7 +536,7 @@ def _colunas_tabela(cur, table_name: str) -> set[str]:
     return {str(r[0]) for r in cur.fetchall()}
 
 
-def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dict[str, Any], modo: str, setor_padrao_id=None) -> bool:
+def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dict[str, Any], modo: str) -> bool:
     updates = []
     params = []
 
@@ -528,7 +544,7 @@ def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dic
         updates.append(f"{campo_db} = %s")
         params.append(valor)
 
-    setor_id = row.get("setor_id") or setor_padrao_id
+    setor_id = row.get("setor_id")
 
     if modo == MODO_ATUALIZAR:
         if row.get("nome") and row.get("nome") != _to_str(existente.get("nome")):
@@ -585,15 +601,14 @@ def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dic
 
 def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORAR, progress_callback=None) -> dict[str, Any]:
     if df is None or df.empty:
-        return {"importados": 0, "atualizados": 0, "preenchidos_vazios": 0, "duplicados": 0, "erros": []}
+        return {"importados": 0, "atualizados": 0, "preenchidos_vazios": 0, "duplicados": 0, "setores_criados": 0, "erros": []}
 
     conn = get_conn()
     cur = conn.cursor()
     try:
         colunas = _colunas_tabela(cur, "equipamentos")
-        colunas_setores = _colunas_tabela(cur, "setores")
         existentes = _equipamentos_existentes(cur)
-        setores_idx, _ = _setores_index()
+        setores_idx, _ = _setores_index(cur)
 
         import_cols = ["codigo", "nome", "tipo", "setor_id", "km_atual", "horas_atual", "ativo"]
         if "placa" in colunas:
@@ -622,38 +637,31 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
             existente = existentes.get(codigo)
             cur.execute("SAVEPOINT importacao_item")
             try:
-                km_seguro = _sanitize_meter(row.get("km_atual"), "km_atual")
-                horas_seguro = _sanitize_meter(row.get("horas_atual"), "horas_atual")
                 row = dict(row)
-                row["km_atual"] = km_seguro
-                row["horas_atual"] = horas_seguro
+                row["km_atual"] = _sanitize_meter(row.get("km_atual"), "km_atual")
+                row["horas_atual"] = _sanitize_meter(row.get("horas_atual"), "horas_atual")
 
                 setor_nome = _to_str(row.get("setor"))
-                setor_id_resolvido = row.get("setor_id")
-                if not setor_id_resolvido and setor_nome:
-                    antes = len(setores_idx)
-                    setor_id_resolvido = _criar_setor_se_ausente(
-                        cur,
-                        conn,
-                        setores_idx,
-                        setor_nome,
-                        colunas_setores=colunas_setores,
-                    )
-                    if len(setores_idx) > antes:
-                        setores_criados += 1
-                row["setor_id"] = setor_id_resolvido or setor_padrao_id
+                if setor_nome:
+                    setor_id, criados_agora, setor_resolvido = _obter_ou_criar_setor(cur, conn, setores_idx, setor_nome)
+                    row["setor_id"] = setor_id
+                    row["setor_resolvido"] = setor_resolvido
+                    setores_criados += len(criados_agora)
+                else:
+                    row["setor_id"] = None
+                    row["setor_resolvido"] = ""
 
                 if existente:
                     if modo_duplicados == MODO_IGNORAR:
                         duplicados += 1
                     elif modo_duplicados == MODO_ATUALIZAR:
-                        if _atualizar_existente(cur, conn, colunas, existente, row, MODO_ATUALIZAR, setor_padrao_id=setor_padrao_id):
+                        if _atualizar_existente(cur, conn, colunas, existente, row, MODO_ATUALIZAR):
                             atualizados += 1
                             existente.update(
                                 {
                                     "nome": row.get("nome") or existente.get("nome"),
                                     "tipo": row.get("tipo") or existente.get("tipo"),
-                                    "setor_id": row.get("setor_id") or setor_padrao_id or existente.get("setor_id"),
+                                    "setor_id": row.get("setor_id") if row.get("setor_id") is not None else existente.get("setor_id"),
                                     "km_atual": float(row.get("km_atual") if row.get("km_atual") is not None else existente.get("km_atual") or 0),
                                     "horas_atual": float(row.get("horas_atual") if row.get("horas_atual") is not None else existente.get("horas_atual") or 0),
                                     "placa": row.get("placa") or existente.get("placa"),
@@ -663,7 +671,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         else:
                             duplicados += 1
                     elif modo_duplicados == MODO_PREENCHER_VAZIOS:
-                        if _atualizar_existente(cur, conn, colunas, existente, row, MODO_PREENCHER_VAZIOS, setor_padrao_id=setor_padrao_id):
+                        if _atualizar_existente(cur, conn, colunas, existente, row, MODO_PREENCHER_VAZIOS):
                             preenchidos_vazios += 1
                             if row.get("km_atual") is not None:
                                 existente["km_atual"] = max(float(existente.get("km_atual") or 0), float(row.get("km_atual") or 0))
@@ -673,8 +681,8 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                                 existente["placa"] = row.get("placa")
                             if not _to_str(existente.get("serie")) and row.get("serie"):
                                 existente["serie"] = row.get("serie")
-                            if not existente.get("setor_id") and (row.get("setor_id") or setor_padrao_id):
-                                existente["setor_id"] = row.get("setor_id") or setor_padrao_id
+                            if not existente.get("setor_id") and row.get("setor_id") is not None:
+                                existente["setor_id"] = row.get("setor_id")
                         else:
                             duplicados += 1
                     else:
@@ -684,7 +692,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         "codigo": codigo,
                         "nome": row.get("nome"),
                         "tipo": row.get("tipo") or "Veículos Leves",
-                        "setor_id": row.get("setor_id") or setor_padrao_id,
+                        "setor_id": row.get("setor_id"),
                         "km_atual": row.get("km_atual") or 0,
                         "horas_atual": row.get("horas_atual") or 0,
                         "ativo": True,
@@ -755,6 +763,5 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
         release_conn(conn)
 
 
-# compatibilidade com versões anteriores
 preparar_importacao = processar_arquivo
 processar_importacao = processar_arquivo
