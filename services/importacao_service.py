@@ -28,8 +28,8 @@ ALIASES = {
     "serie": ["serie", "numero_serie", "n_serie"],
 }
 
-
 CAMPOS_PREVIEW = ["codigo", "nome", "tipo", "setor", "km_atual", "horas_atual", "placa", "serie"]
+_PROGRESS_STEP = 25
 
 
 def get_template_csv() -> bytes:
@@ -210,14 +210,16 @@ def _setores_index() -> tuple[dict[str, Any], list[str]]:
         release_conn(conn)
 
 
-def _equipamentos_existentes() -> dict[str, dict[str, Any]]:
-    conn = get_conn()
-    cur = conn.cursor()
+def _equipamentos_existentes(cur=None) -> dict[str, dict[str, Any]]:
+    own_conn = None
+    if cur is None:
+        own_conn = get_conn()
+        cur = own_conn.cursor()
     try:
         cur.execute(
             """
             select id, codigo, nome, tipo, setor_id,
-                   coalesce(km_atual, 0), coalesce(horas_atual, 0)
+                   km_atual, horas_atual, placa, serie
               from equipamentos
             """
         )
@@ -231,11 +233,14 @@ def _equipamentos_existentes() -> dict[str, dict[str, Any]]:
                 "setor_id": r[4],
                 "km_atual": float(r[5] or 0),
                 "horas_atual": float(r[6] or 0),
+                "placa": _to_str(r[7]),
+                "serie": _to_str(r[8]),
             }
             for r in rows if r and r[1] is not None
         }
     finally:
-        release_conn(conn)
+        if own_conn is not None:
+            release_conn(own_conn)
 
 
 def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
@@ -261,7 +266,7 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
         df, duplicados_arquivo = consolidar_duplicados(df)
         df = df.reset_index(drop=True)
 
-        setores_idx, setores_nomes = _setores_index()
+        setores_idx, _ = _setores_index()
         existentes = _equipamentos_existentes()
 
         erros = []
@@ -389,29 +394,27 @@ def _colunas_tabela(cur, table_name: str) -> set[str]:
 def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dict[str, Any], modo: str, setor_padrao_id=None) -> bool:
     updates = []
     params = []
-    preenchido = False
 
     def add(campo_db: str, valor: Any):
-        nonlocal preenchido
         updates.append(f"{campo_db} = %s")
         params.append(valor)
-        preenchido = True
 
     setor_id = row.get("setor_id") or setor_padrao_id
 
     if modo == MODO_ATUALIZAR:
-        add("nome", row.get("nome"))
-        if "tipo" in colunas:
+        if row.get("nome") and row.get("nome") != _to_str(existente.get("nome")):
+            add("nome", row.get("nome"))
+        if "tipo" in colunas and row.get("tipo") and row.get("tipo") != _to_str(existente.get("tipo")):
             add("tipo", row.get("tipo"))
-        if setor_id is not None and "setor_id" in colunas:
+        if setor_id is not None and "setor_id" in colunas and setor_id != existente.get("setor_id"):
             add("setor_id", setor_id)
-        if row.get("km_atual") is not None and "km_atual" in colunas:
+        if row.get("km_atual") is not None and "km_atual" in colunas and float(row.get("km_atual") or 0) != float(existente.get("km_atual") or 0):
             add("km_atual", row.get("km_atual"))
-        if row.get("horas_atual") is not None and "horas_atual" in colunas:
+        if row.get("horas_atual") is not None and "horas_atual" in colunas and float(row.get("horas_atual") or 0) != float(existente.get("horas_atual") or 0):
             add("horas_atual", row.get("horas_atual"))
-        if row.get("placa") and "placa" in colunas:
+        if row.get("placa") and "placa" in colunas and row.get("placa") != _to_str(existente.get("placa")):
             add("placa", row.get("placa"))
-        if row.get("serie") and "serie" in colunas:
+        if row.get("serie") and "serie" in colunas and row.get("serie") != _to_str(existente.get("serie")):
             add("serie", row.get("serie"))
     elif modo == MODO_PREENCHER_VAZIOS:
         if not _to_str(existente.get("nome")) and row.get("nome"):
@@ -428,16 +431,10 @@ def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dic
             novo_h = max(float(existente.get("horas_atual") or 0), float(row.get("horas_atual") or 0))
             if novo_h != float(existente.get("horas_atual") or 0):
                 add("horas_atual", novo_h)
-        if row.get("placa") and "placa" in colunas:
-            cur.execute("select placa from equipamentos where id = %s", (existente["id"],))
-            atual = _to_str((cur.fetchone() or [None])[0])
-            if not atual:
-                add("placa", row.get("placa"))
-        if row.get("serie") and "serie" in colunas:
-            cur.execute("select serie from equipamentos where id = %s", (existente["id"],))
-            atual = _to_str((cur.fetchone() or [None])[0])
-            if not atual:
-                add("serie", row.get("serie"))
+        if row.get("placa") and "placa" in colunas and not _to_str(existente.get("placa")):
+            add("placa", row.get("placa"))
+        if row.get("serie") and "serie" in colunas and not _to_str(existente.get("serie")):
+            add("serie", row.get("serie"))
     else:
         return False
 
@@ -465,13 +462,31 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
     cur = conn.cursor()
     try:
         colunas = _colunas_tabela(cur, "equipamentos")
-        existentes = _equipamentos_existentes()
+        existentes = _equipamentos_existentes(cur)
+
+        import_cols = ["codigo", "nome", "tipo", "setor_id", "km_atual", "horas_atual", "ativo"]
+        if "placa" in colunas:
+            import_cols.append("placa")
+        if "serie" in colunas:
+            import_cols.append("serie")
+        if "km_inicial_plano" in colunas:
+            import_cols.append("km_inicial_plano")
+        elif "km_base_plano" in colunas:
+            import_cols.append("km_base_plano")
+        if "horas_inicial_plano" in colunas:
+            import_cols.append("horas_inicial_plano")
+        elif "horas_base_plano" in colunas:
+            import_cols.append("horas_base_plano")
+
+        placeholders = ", ".join(["%s"] * len(import_cols))
+        insert_sql = f"insert into equipamentos ({', '.join(import_cols)}) values ({placeholders}) returning id"
 
         importados = atualizados = preenchidos_vazios = duplicados = 0
         erros = []
         total = len(df)
+        rows = df.to_dict(orient="records")
 
-        for i, row in enumerate(df.to_dict(orient="records"), start=1):
+        for i, row in enumerate(rows, start=1):
             codigo = _normalizar_codigo(row.get("codigo"))
             existente = existentes.get(codigo)
             try:
@@ -481,15 +496,38 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                     elif modo_duplicados == MODO_ATUALIZAR:
                         if _atualizar_existente(cur, conn, colunas, existente, row, MODO_ATUALIZAR, setor_padrao_id=setor_padrao_id):
                             atualizados += 1
+                            existente.update(
+                                {
+                                    "nome": row.get("nome") or existente.get("nome"),
+                                    "tipo": row.get("tipo") or existente.get("tipo"),
+                                    "setor_id": row.get("setor_id") or setor_padrao_id or existente.get("setor_id"),
+                                    "km_atual": float(row.get("km_atual") if row.get("km_atual") is not None else existente.get("km_atual") or 0),
+                                    "horas_atual": float(row.get("horas_atual") if row.get("horas_atual") is not None else existente.get("horas_atual") or 0),
+                                    "placa": row.get("placa") or existente.get("placa"),
+                                    "serie": row.get("serie") or existente.get("serie"),
+                                }
+                            )
+                        else:
+                            duplicados += 1
                     elif modo_duplicados == MODO_PREENCHER_VAZIOS:
                         if _atualizar_existente(cur, conn, colunas, existente, row, MODO_PREENCHER_VAZIOS, setor_padrao_id=setor_padrao_id):
                             preenchidos_vazios += 1
+                            if row.get("km_atual") is not None:
+                                existente["km_atual"] = max(float(existente.get("km_atual") or 0), float(row.get("km_atual") or 0))
+                            if row.get("horas_atual") is not None:
+                                existente["horas_atual"] = max(float(existente.get("horas_atual") or 0), float(row.get("horas_atual") or 0))
+                            if not _to_str(existente.get("placa")) and row.get("placa"):
+                                existente["placa"] = row.get("placa")
+                            if not _to_str(existente.get("serie")) and row.get("serie"):
+                                existente["serie"] = row.get("serie")
+                            if not existente.get("setor_id") and (row.get("setor_id") or setor_padrao_id):
+                                existente["setor_id"] = row.get("setor_id") or setor_padrao_id
                         else:
                             duplicados += 1
                     else:
                         duplicados += 1
                 else:
-                    kwargs = {
+                    insert_data = {
                         "codigo": codigo,
                         "nome": row.get("nome"),
                         "tipo": row.get("tipo") or "Veículos Leves",
@@ -497,39 +535,14 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         "km_atual": row.get("km_atual") or 0,
                         "horas_atual": row.get("horas_atual") or 0,
                         "ativo": True,
+                        "placa": row.get("placa") or None,
+                        "serie": row.get("serie") or None,
+                        "km_inicial_plano": row.get("km_atual") or 0,
+                        "km_base_plano": row.get("km_atual") or 0,
+                        "horas_inicial_plano": row.get("horas_atual") or 0,
+                        "horas_base_plano": row.get("horas_atual") or 0,
                     }
-                    if "placa" in colunas:
-                        kwargs["placa"] = row.get("placa") or None
-                    if "serie" in colunas:
-                        kwargs["serie"] = row.get("serie") or None
-
-                    # usar INSERT direto para suportar placa/série se existirem no banco
-                    insert_cols = ["codigo", "nome", "tipo", "setor_id", "km_atual", "horas_atual", "ativo"]
-                    insert_vals = [kwargs[c] for c in insert_cols]
-                    if "placa" in colunas:
-                        insert_cols.append("placa")
-                        insert_vals.append(kwargs.get("placa"))
-                    if "serie" in colunas:
-                        insert_cols.append("serie")
-                        insert_vals.append(kwargs.get("serie"))
-                    if "km_inicial_plano" in colunas:
-                        insert_cols.append("km_inicial_plano")
-                        insert_vals.append(row.get("km_atual") or 0)
-                    elif "km_base_plano" in colunas:
-                        insert_cols.append("km_base_plano")
-                        insert_vals.append(row.get("km_atual") or 0)
-                    if "horas_inicial_plano" in colunas:
-                        insert_cols.append("horas_inicial_plano")
-                        insert_vals.append(row.get("horas_atual") or 0)
-                    elif "horas_base_plano" in colunas:
-                        insert_cols.append("horas_base_plano")
-                        insert_vals.append(row.get("horas_atual") or 0)
-
-                    placeholders = ", ".join(["%s"] * len(insert_cols))
-                    cur.execute(
-                        f"insert into equipamentos ({', '.join(insert_cols)}) values ({placeholders}) returning id",
-                        tuple(insert_vals),
-                    )
+                    cur.execute(insert_sql, tuple(insert_data[c] for c in import_cols))
                     equipamento_id = cur.fetchone()[0]
                     auditoria_service.registrar_no_conn(
                         conn,
@@ -543,16 +556,18 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                     existentes[codigo] = {
                         "id": equipamento_id,
                         "codigo": codigo,
-                        "nome": row.get("nome"),
-                        "tipo": row.get("tipo"),
-                        "setor_id": row.get("setor_id") or setor_padrao_id,
-                        "km_atual": float(row.get("km_atual") or 0),
-                        "horas_atual": float(row.get("horas_atual") or 0),
+                        "nome": insert_data["nome"],
+                        "tipo": insert_data["tipo"],
+                        "setor_id": insert_data["setor_id"],
+                        "km_atual": float(insert_data["km_atual"] or 0),
+                        "horas_atual": float(insert_data["horas_atual"] or 0),
+                        "placa": _to_str(insert_data.get("placa")),
+                        "serie": _to_str(insert_data.get("serie")),
                     }
             except Exception as e:
                 erros.append(f"Código {codigo}: {e}")
 
-            if progress_callback:
+            if progress_callback and (i == total or i == 1 or i % _PROGRESS_STEP == 0):
                 try:
                     progress_callback(i, total, codigo)
                 except Exception:
