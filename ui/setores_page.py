@@ -6,41 +6,19 @@ from ui.theme import render_page_intro
 TIPOS_NIVEL = ["empresa", "unidade", "departamento", "setor", "subsetor"]
 
 
-def _normalizar_id(valor):
-    if valor is None:
-        return ""
-    return str(valor).strip()
-
-
-def _enriquecer_setores_com_contagem(setores: list[dict], equipamentos: list[dict]) -> list[dict]:
-    contagem_por_setor: dict[str, int] = {}
-    for eq in equipamentos or []:
-        setor_id = _normalizar_id(eq.get("setor_id"))
-        if not setor_id:
-            continue
-        contagem_por_setor[setor_id] = contagem_por_setor.get(setor_id, 0) + 1
-
-    itens = []
-    for setor in setores or []:
-        item = dict(setor)
-        item["total_equipamentos"] = int(contagem_por_setor.get(_normalizar_id(item.get("id")), 0))
-        itens.append(item)
-    return itens
-
-
 def _rotulo_setor(item: dict) -> str:
     total = int(item.get("total_equipamentos") or 0)
-    return f"{item.get('nome', '-')} · {total} equipamento(s)"
+    pai = item.get("setor_pai_nome") or "-"
+    return f"{item.get('nome', '-')} · {total} equipamento(s) · pai: {pai}"
 
 
 def render():
-    setores_base = setores_service.listar()
+    setores = setores_service.listar()
     equipamentos = equipamentos_service.listar()
-    setores = _enriquecer_setores_com_contagem(setores_base, equipamentos)
 
     render_page_intro(
         "Estrutura organizacional",
-        "Cadastre, organize e agora também mova rapidamente equipamentos entre setores.",
+        "Cadastre, edite, organize e mova rapidamente equipamentos entre setores.",
         "Cadastros",
     )
 
@@ -49,8 +27,9 @@ def render():
     c2.metric("Setores ativos", sum(1 for item in setores if item.get("ativo")))
     c3.metric("Equipamentos vinculados", sum(int(item.get("total_equipamentos") or 0) for item in setores))
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "Cadastrar setor",
+        "Editar setor",
         "Lista de setores",
         "Ação rápida de vínculo",
         "Excluir setor",
@@ -79,9 +58,7 @@ def render():
             submitted = st.form_submit_button("Salvar setor", type="primary", use_container_width=True)
 
         if submitted:
-            if not nome.strip():
-                st.error("Informe o nome do setor.")
-            else:
+            try:
                 setores_service.criar(
                     nome=nome.strip(),
                     tipo_nivel=tipo_nivel,
@@ -90,8 +67,69 @@ def render():
                 )
                 st.success("Setor cadastrado com sucesso.")
                 st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
 
     with tab2:
+        st.markdown("### Editar setor")
+        if not setores:
+            st.info("Nenhum setor encontrado.")
+        else:
+            setor_editar = st.selectbox(
+                "Selecione o setor",
+                setores,
+                format_func=_rotulo_setor,
+                key="setor_editar_sel",
+            )
+            pais = [
+                item for item in setores
+                if str(item.get("id")) != str(setor_editar.get("id"))
+            ]
+
+            with st.form(f"form_editar_setor_{setor_editar['id']}"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    nome_edit = st.text_input("Nome do setor", value=setor_editar.get("nome", ""))
+                    idx_tipo = TIPOS_NIVEL.index(setor_editar.get("tipo_nivel")) if setor_editar.get("tipo_nivel") in TIPOS_NIVEL else 3
+                    tipo_edit = st.selectbox("Tipo/Nível", TIPOS_NIVEL, index=idx_tipo)
+                with c2:
+                    ativo_edit = st.checkbox("Ativo", value=bool(setor_editar.get("ativo")))
+                    sem_pai = st.checkbox("Sem setor pai", value=not bool(setor_editar.get("setor_pai_id")))
+
+                pai_edit = None
+                if not sem_pai:
+                    if pais:
+                        indice_pai = 0
+                        pai_ids = [str(x.get("id")) for x in pais]
+                        atual_pai = str(setor_editar.get("setor_pai_id") or "")
+                        if atual_pai in pai_ids:
+                            indice_pai = pai_ids.index(atual_pai)
+                        pai_edit = st.selectbox(
+                            "Setor pai",
+                            pais,
+                            index=indice_pai,
+                            format_func=lambda x: x["nome"],
+                        )
+                    else:
+                        st.info("Não há outro setor disponível para vínculo como pai.")
+
+                salvar_edicao = st.form_submit_button("Salvar alterações", type="primary", use_container_width=True)
+
+            if salvar_edicao:
+                try:
+                    setores_service.editar(
+                        setor_id=setor_editar["id"],
+                        nome=nome_edit.strip(),
+                        tipo_nivel=tipo_edit,
+                        setor_pai_id=(None if sem_pai else (pai_edit["id"] if pai_edit else None)),
+                        ativo=ativo_edit,
+                    )
+                    st.success("Setor atualizado com sucesso.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc))
+
+    with tab3:
         if setores:
             df = pd.DataFrame(setores).rename(columns={
                 "nome": "Nome",
@@ -105,7 +143,7 @@ def render():
         else:
             st.info("Nenhum setor encontrado.")
 
-    with tab3:
+    with tab4:
         st.markdown("### Vincular equipamentos rapidamente")
         st.caption("Selecione um setor de destino e mova vários equipamentos de uma vez.")
         setores_ativos = [s for s in setores if s.get("ativo")]
@@ -136,19 +174,19 @@ def render():
                 ]).lower()
                 if termo and termo not in alvo:
                     continue
-                if _normalizar_id(eq.get("setor_id")) == _normalizar_id(setor_destino.get("id")):
+                if str(eq.get("setor_id") or "") == str(setor_destino.get("id")):
                     continue
                 elegiveis.append(eq)
 
             if not elegiveis:
                 st.info("Nenhum equipamento elegível para o filtro informado.")
             else:
+                mapa_elegiveis = {str(eq.get("id")): eq for eq in elegiveis}
                 selecionados = st.multiselect(
                     "Equipamentos",
-                    options=[str(eq.get("id")) for eq in elegiveis],
-                    format_func=lambda eid: next(
-                        f"{eq.get('codigo')} · {eq.get('nome')} · atual: {eq.get('setor_nome') or '-'}"
-                        for eq in elegiveis if str(eq.get("id")) == str(eid)
+                    options=list(mapa_elegiveis.keys()),
+                    format_func=lambda eid: (
+                        f"{mapa_elegiveis[eid].get('codigo')} · {mapa_elegiveis[eid].get('nome')} · atual: {mapa_elegiveis[eid].get('setor_nome') or '-'}"
                     ),
                     key="equipamentos_vinculo_rapido",
                 )
@@ -156,15 +194,18 @@ def render():
                     if not selecionados:
                         st.warning("Selecione ao menos um equipamento.")
                     else:
-                        total = setores_service.vincular_equipamentos(
-                            setor_id=setor_destino["id"],
-                            equipamento_ids=selecionados,
-                        )
-                        equipamentos_service.limpar_cache()
-                        st.success(f"{total} equipamento(s) vinculado(s) ao setor {setor_destino['nome']}.")
-                        st.rerun()
+                        try:
+                            total = setores_service.vincular_equipamentos(
+                                setor_id=setor_destino["id"],
+                                equipamento_ids=[int(x) for x in selecionados],
+                            )
+                            equipamentos_service.limpar_cache()
+                            st.success(f"{total} equipamento(s) vinculado(s) ao setor {setor_destino['nome']}.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(str(exc))
 
-    with tab4:
+    with tab5:
         st.markdown("### Excluir setor")
         st.caption("Você pode mover os vínculos para outro setor ou fazer uma exclusão completa da árvore do setor.")
         if not setores:
@@ -176,7 +217,7 @@ def render():
                 format_func=_rotulo_setor,
                 key="setor_excluir_sel",
             )
-            destinos = [s for s in setores if _normalizar_id(s.get("id")) != _normalizar_id(setor_excluir.get("id"))]
+            destinos = [s for s in setores if str(s.get("id")) != str(setor_excluir.get("id"))]
             modo_exclusao = st.radio(
                 "Modo de exclusão",
                 options=["Mover vínculos para outro setor", "Exclusão completa"],
