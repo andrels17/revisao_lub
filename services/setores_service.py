@@ -1,91 +1,51 @@
 from __future__ import annotations
 
-from typing import Any, Iterable
-from uuid import UUID
+from typing import Iterable, Optional
 
 from database.connection import get_conn, release_conn
 from services import auditoria_service, escopo_service
 
 
-BIGINT_MIN = -(2**63)
-BIGINT_MAX = 2**63 - 1
-
-
-def _is_uuid_like(value: Any) -> bool:
-    if value is None:
-        return False
-    try:
-        UUID(str(value))
-        return True
-    except Exception:
-        return False
-
-
-def _normalizar_setor_id(value: Any, *, permitir_nulo: bool = False) -> str | None:
-    if value is None:
-        if permitir_nulo:
-            return None
-        raise ValueError("Setor não informado.")
-
-    valor = str(value).strip()
-    if not valor:
-        if permitir_nulo:
-            return None
-        raise ValueError("Setor não informado.")
-
-    if not _is_uuid_like(valor):
-        raise ValueError(f"ID de setor inválido: {valor}")
-
-    return valor
-
-
-
-def _normalizar_id_generico(value: Any) -> Any:
+def _normalize_uuid(value) -> Optional[str]:
+    """
+    Normaliza IDs UUID para string.
+    Aceita None, string, UUID-like objects e números.
+    """
     if value is None:
         return None
-
-    if isinstance(value, bool):
-        return int(value)
-
-    texto = str(value).strip()
-    if not texto:
-        return None
-
-    if _is_uuid_like(texto):
-        return texto
-
-    if texto.lstrip("-").isdigit():
-        numero = int(texto)
-        if BIGINT_MIN <= numero <= BIGINT_MAX:
-            return numero
-
-    return texto
+    text = str(value).strip()
+    return text or None
 
 
-
-def _normalizar_lista_ids(valores: Iterable[Any] | None) -> list[Any]:
-    vistos = set()
-    saida = []
-
-    for valor in valores or []:
-        normalizado = _normalizar_id_generico(valor)
-        if normalizado is None:
+def _normalize_uuid_list(values: Iterable) -> list[str]:
+    seen = set()
+    out: list[str] = []
+    for value in values or []:
+        item = _normalize_uuid(value)
+        if not item or item in seen:
             continue
-        chave = str(normalizado)
-        if chave in vistos:
-            continue
-        vistos.add(chave)
-        saida.append(normalizado)
-
-    return saida
+        seen.add(item)
+        out.append(item)
+    return out
 
 
+def _setor_existe(cur, setor_id: str) -> bool:
+    cur.execute("select 1 from setores where id = %s limit 1", (setor_id,))
+    return cur.fetchone() is not None
 
-def _coletar_descendentes(cur, setor_id: str) -> list[str]:
-    raiz = _normalizar_setor_id(setor_id)
+
+def _coletar_descendentes(cur, setor_id) -> list[str]:
+    """
+    Percorre a árvore de setores de forma iterativa.
+    Compatível com UUID e protegido contra loops/ciclos.
+    """
+    raiz = _normalize_uuid(setor_id)
+    if not raiz:
+        return []
+
     pendentes = [raiz]
-    vistos = set()
-    ordem = []
+    vistos: set[str] = set()
+    ordem: list[str] = []
 
     while pendentes:
         atual = pendentes.pop()
@@ -95,7 +55,10 @@ def _coletar_descendentes(cur, setor_id: str) -> list[str]:
         vistos.add(atual)
         ordem.append(atual)
 
-        cur.execute("select id from setores where setor_pai_id = %s", (atual,))
+        cur.execute(
+            "select id from setores where setor_pai_id = %s",
+            (atual,),
+        )
         filhos = [str(r[0]) for r in (cur.fetchall() or []) if r and r[0] is not None]
 
         for filho_id in filhos:
@@ -105,17 +68,14 @@ def _coletar_descendentes(cur, setor_id: str) -> list[str]:
     return ordem
 
 
-
-def _contar_filhos_diretos(cur, setor_id: str) -> int:
-    cur.execute("select count(1) from setores where setor_pai_id = %s", (setor_id,))
-    return int(cur.fetchone()[0] or 0)
-
-
-
-def _contar_equipamentos_diretos(cur, setor_id: str) -> int:
-    cur.execute("select count(1) from equipamentos where setor_id = %s", (setor_id,))
-    return int(cur.fetchone()[0] or 0)
-
+def _setor_esta_na_subarvore(cur, setor_origem_id, possivel_descendente_id) -> bool:
+    origem = _normalize_uuid(setor_origem_id)
+    candidato = _normalize_uuid(possivel_descendente_id)
+    if not origem or not candidato:
+        return False
+    if origem == candidato:
+        return True
+    return candidato in set(_coletar_descendentes(cur, origem))
 
 
 def listar():
@@ -139,7 +99,7 @@ def listar():
             order by s.nome
             """
         )
-        rows = cur.fetchall()
+        rows = cur.fetchall() or []
         itens = [
             {
                 "id": r[0],
@@ -157,21 +117,18 @@ def listar():
         release_conn(conn)
 
 
-
 def criar(nome, tipo_nivel="setor", setor_pai_id=None, ativo=True):
-    nome = str(nome or "").strip()
+    nome = (nome or "").strip()
     if not nome:
         raise ValueError("Informe o nome do setor.")
 
-    setor_pai_id = _normalizar_setor_id(setor_pai_id, permitir_nulo=True)
+    setor_pai_id = _normalize_uuid(setor_pai_id)
 
     conn = get_conn()
     cur = conn.cursor()
     try:
-        if setor_pai_id:
-            cur.execute("select id from setores where id = %s", (setor_pai_id,))
-            if not cur.fetchone():
-                raise ValueError("Setor pai não encontrado.")
+        if setor_pai_id and not _setor_existe(cur, setor_pai_id):
+            raise ValueError("Setor pai não encontrado.")
 
         cur.execute(
             """
@@ -182,6 +139,7 @@ def criar(nome, tipo_nivel="setor", setor_pai_id=None, ativo=True):
             (nome, tipo_nivel, setor_pai_id, bool(ativo)),
         )
         setor_id = cur.fetchone()[0]
+
         auditoria_service.registrar_no_conn(
             conn,
             acao="criar_setor",
@@ -204,17 +162,22 @@ def criar(nome, tipo_nivel="setor", setor_pai_id=None, ativo=True):
         release_conn(conn)
 
 
+def vincular_equipamentos(setor_id, equipamento_ids: list[str] | list[int]):
+    setor_id = _normalize_uuid(setor_id)
+    equipamento_ids_norm = _normalize_uuid_list(equipamento_ids)
 
-def vincular_equipamentos(setor_id, equipamento_ids: list[Any]):
-    setor_id = _normalizar_setor_id(setor_id)
-    equipamento_ids_norm = _normalizar_lista_ids(equipamento_ids)
+    if not setor_id:
+        raise ValueError("Setor inválido.")
     if not equipamento_ids_norm:
         return 0
 
     conn = get_conn()
     cur = conn.cursor()
     try:
-        cur.execute("select id, nome from setores where id = %s", (setor_id,))
+        cur.execute(
+            "select id, nome from setores where id = %s",
+            (setor_id,),
+        )
         setor = cur.fetchone()
         if not setor:
             raise ValueError("Setor não encontrado.")
@@ -223,11 +186,12 @@ def vincular_equipamentos(setor_id, equipamento_ids: list[Any]):
             """
             update equipamentos
                set setor_id = %s
-             where id = any(%s)
+             where id = any(%s::bigint[])
             """,
             (setor_id, equipamento_ids_norm),
         )
         total = cur.rowcount or 0
+
         auditoria_service.registrar_no_conn(
             conn,
             acao="vincular_equipamentos_setor",
@@ -245,13 +209,12 @@ def vincular_equipamentos(setor_id, equipamento_ids: list[Any]):
         release_conn(conn)
 
 
-
 def excluir(setor_id, destino_setor_id=None, exclusao_completa=False):
-    setor_id = _normalizar_setor_id(setor_id)
-    destino_setor_id = _normalizar_setor_id(destino_setor_id, permitir_nulo=True)
+    setor_id = _normalize_uuid(setor_id)
+    destino_setor_id = _normalize_uuid(destino_setor_id)
 
-    if exclusao_completa and destino_setor_id:
-        raise ValueError("Escolha apenas uma opção: exclusão completa ou mover para setor de destino.")
+    if not setor_id:
+        raise ValueError("Setor inválido.")
 
     conn = get_conn()
     cur = conn.cursor()
@@ -264,44 +227,55 @@ def excluir(setor_id, destino_setor_id=None, exclusao_completa=False):
         if not atual:
             raise ValueError("Setor não encontrado.")
 
-        filhos = _contar_filhos_diretos(cur, setor_id)
-        equipamentos = _contar_equipamentos_diretos(cur, setor_id)
-        arvore_ids = _coletar_descendentes(cur, setor_id)
-        arvore_ids_set = set(arvore_ids)
+        if exclusao_completa and destino_setor_id:
+            raise ValueError(
+                "Escolha apenas uma opção: exclusão completa ou mover para setor de destino."
+            )
 
         if destino_setor_id:
             if destino_setor_id == setor_id:
                 raise ValueError("O setor de destino deve ser diferente do setor excluído.")
-
-            cur.execute("select id from setores where id = %s", (destino_setor_id,))
-            if not cur.fetchone():
+            if not _setor_existe(cur, destino_setor_id):
                 raise ValueError("Setor de destino não encontrado.")
-
-            if destino_setor_id in arvore_ids_set:
+            if _setor_esta_na_subarvore(cur, setor_id, destino_setor_id):
                 raise ValueError(
-                    "O setor de destino não pode ser o próprio setor excluído nem um de seus descendentes."
+                    "O setor de destino não pode estar dentro da árvore do setor excluído."
                 )
 
+        cur.execute("select count(1) from setores where setor_pai_id = %s", (setor_id,))
+        filhos = int(cur.fetchone()[0] or 0)
+
+        cur.execute("select count(1) from equipamentos where setor_id = %s", (setor_id,))
+        equipamentos = int(cur.fetchone()[0] or 0)
+
         if exclusao_completa:
+            arvore_ids = _coletar_descendentes(cur, setor_id)
+            if not arvore_ids:
+                raise ValueError("Nenhum setor encontrado para exclusão.")
+
             cur.execute(
-                "select count(1) from equipamentos where setor_id = any(%s)",
+                "select count(1) from equipamentos where setor_id = any(%s::uuid[])",
                 (arvore_ids,),
             )
             total_equipamentos_arvore = int(cur.fetchone()[0] or 0)
 
+            # Evita violações transitórias de FK e deixa o delete mais previsível.
             cur.execute(
-                "update equipamentos set setor_id = null where setor_id = any(%s)",
+                "update equipamentos set setor_id = null where setor_id = any(%s::uuid[])",
                 (arvore_ids,),
             )
             cur.execute(
-                "delete from vinculos_setor_responsavel where setor_id = any(%s)",
+                "delete from vinculos_setor_responsavel where setor_id = any(%s::uuid[])",
                 (arvore_ids,),
             )
             cur.execute(
-                "update setores set setor_pai_id = null where id = any(%s)",
+                "update setores set setor_pai_id = null where id = any(%s::uuid[])",
                 (arvore_ids,),
             )
-            cur.execute("delete from setores where id = any(%s)", (arvore_ids,))
+            cur.execute(
+                "delete from setores where id = any(%s::uuid[])",
+                (arvore_ids,),
+            )
 
             auditoria_service.registrar_no_conn(
                 conn,
@@ -354,7 +328,6 @@ def excluir(setor_id, destino_setor_id=None, exclusao_completa=False):
                 "setor_pai_id": atual[2],
                 "filhos": filhos,
                 "equipamentos": equipamentos,
-                "setores_na_arvore": len(arvore_ids),
             },
             valor_novo={"destino_setor_id": destino_setor_id, "exclusao_completa": False},
         )
