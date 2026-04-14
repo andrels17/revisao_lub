@@ -6,11 +6,10 @@ from database.connection import get_conn, release_conn
 from services import auditoria_service, escopo_service
 
 
+RESPONSAVEL_TABLE = "vinculos_setor_responsavel"
+
+
 def _normalize_uuid(value) -> Optional[str]:
-    """
-    Normaliza IDs UUID para string.
-    Aceita None, string, UUID-like objects e números.
-    """
     if value is None:
         return None
     text = str(value).strip()
@@ -34,11 +33,23 @@ def _setor_existe(cur, setor_id: str) -> bool:
     return cur.fetchone() is not None
 
 
+def _table_exists(cur, table_name: str) -> bool:
+    cur.execute(
+        """
+        select exists (
+            select 1
+              from information_schema.tables
+             where table_schema = current_schema()
+               and table_name = %s
+        )
+        """,
+        (table_name,),
+    )
+    row = cur.fetchone()
+    return bool(row and row[0])
+
+
 def _coletar_descendentes(cur, setor_id) -> list[str]:
-    """
-    Percorre a árvore de setores de forma iterativa.
-    Compatível com UUID e protegido contra loops/ciclos.
-    """
     raiz = _normalize_uuid(setor_id)
     if not raiz:
         return []
@@ -60,7 +71,6 @@ def _coletar_descendentes(cur, setor_id) -> list[str]:
             (atual,),
         )
         filhos = [str(r[0]) for r in (cur.fetchall() or []) if r and r[0] is not None]
-
         for filho_id in filhos:
             if filho_id not in vistos:
                 pendentes.append(filho_id)
@@ -164,7 +174,14 @@ def criar(nome, tipo_nivel="setor", setor_pai_id=None, ativo=True):
 
 def vincular_equipamentos(setor_id, equipamento_ids: list[str] | list[int]):
     setor_id = _normalize_uuid(setor_id)
-    equipamento_ids_norm = _normalize_uuid_list(equipamento_ids)
+    equipamento_ids_norm = []
+    vistos = set()
+    for x in equipamento_ids or []:
+        sx = str(x).strip()
+        if not sx or sx in vistos:
+            continue
+        vistos.add(sx)
+        equipamento_ids_norm.append(sx)
 
     if not setor_id:
         raise ValueError("Setor inválido.")
@@ -174,10 +191,7 @@ def vincular_equipamentos(setor_id, equipamento_ids: list[str] | list[int]):
     conn = get_conn()
     cur = conn.cursor()
     try:
-        cur.execute(
-            "select id, nome from setores where id = %s",
-            (setor_id,),
-        )
+        cur.execute("select id, nome from setores where id = %s", (setor_id,))
         setor = cur.fetchone()
         if not setor:
             raise ValueError("Setor não encontrado.")
@@ -219,6 +233,8 @@ def excluir(setor_id, destino_setor_id=None, exclusao_completa=False):
     conn = get_conn()
     cur = conn.cursor()
     try:
+        has_responsavel_table = _table_exists(cur, RESPONSAVEL_TABLE)
+
         cur.execute(
             "select id, nome, setor_pai_id from setores where id = %s",
             (setor_id,),
@@ -259,15 +275,15 @@ def excluir(setor_id, destino_setor_id=None, exclusao_completa=False):
             )
             total_equipamentos_arvore = int(cur.fetchone()[0] or 0)
 
-            # Evita violações transitórias de FK e deixa o delete mais previsível.
             cur.execute(
                 "update equipamentos set setor_id = null where setor_id = any(%s::uuid[])",
                 (arvore_ids,),
             )
-            cur.execute(
-                "delete from vinculos_setor_responsavel where setor_id = any(%s::uuid[])",
-                (arvore_ids,),
-            )
+            if has_responsavel_table:
+                cur.execute(
+                    f"delete from {RESPONSAVEL_TABLE} where setor_id = any(%s::uuid[])",
+                    (arvore_ids,),
+                )
             cur.execute(
                 "update setores set setor_pai_id = null where id = any(%s::uuid[])",
                 (arvore_ids,),
@@ -289,6 +305,7 @@ def excluir(setor_id, destino_setor_id=None, exclusao_completa=False):
                     "equipamentos_diretos": equipamentos,
                     "setores_excluidos": arvore_ids,
                     "equipamentos_desvinculados": total_equipamentos_arvore,
+                    "removeu_vinculos_responsavel": has_responsavel_table,
                 },
                 valor_novo={"destino_setor_id": None, "exclusao_completa": True},
             )
@@ -313,10 +330,11 @@ def excluir(setor_id, destino_setor_id=None, exclusao_completa=False):
                 "update equipamentos set setor_id = %s where setor_id = %s",
                 (destino_setor_id, setor_id),
             )
-            cur.execute(
-                "update vinculos_setor_responsavel set setor_id = %s where setor_id = %s",
-                (destino_setor_id, setor_id),
-            )
+            if has_responsavel_table:
+                cur.execute(
+                    f"update {RESPONSAVEL_TABLE} set setor_id = %s where setor_id = %s",
+                    (destino_setor_id, setor_id),
+                )
 
         auditoria_service.registrar_no_conn(
             conn,
@@ -328,6 +346,7 @@ def excluir(setor_id, destino_setor_id=None, exclusao_completa=False):
                 "setor_pai_id": atual[2],
                 "filhos": filhos,
                 "equipamentos": equipamentos,
+                "possui_tabela_vinculos_responsavel": has_responsavel_table,
             },
             valor_novo={"destino_setor_id": destino_setor_id, "exclusao_completa": False},
         )
