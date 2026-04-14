@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 from typing import Any
 import math
+import unicodedata
 
 import pandas as pd
 
@@ -16,23 +17,9 @@ MODO_ATUALIZAR = "atualizar"
 MODO_BLOQUEAR = "bloquear"  # compatibilidade
 MODO_PREENCHER_VAZIOS = "preencher_vazios"
 
-
-
 _MAX_BIGINT = 9223372036854775807
+_PROGRESS_STEP = 25
 
-
-def _sanitize_meter(value: Any, campo: str) -> int | None:
-    n = _parse_num(value)
-    if n is None:
-        return None
-    if isinstance(n, float) and (math.isnan(n) or math.isinf(n)):
-        raise ValueError(f"{campo} inválido")
-    if n < 0:
-        raise ValueError(f"{campo} não pode ser negativo")
-    n_int = int(n)
-    if n_int > _MAX_BIGINT:
-        raise ValueError(f"{campo} excede o limite aceito pelo banco")
-    return n_int
 
 ALIASES = {
     "codigo": ["cod_equipamento", "codigo", "id", "cod", "codigo_equipamento"],
@@ -48,7 +35,6 @@ ALIASES = {
 }
 
 CAMPOS_PREVIEW = ["codigo", "nome", "tipo", "setor", "km_atual", "horas_atual", "placa", "serie"]
-_PROGRESS_STEP = 25
 
 
 def get_template_csv() -> bytes:
@@ -73,6 +59,16 @@ def _to_str(value: Any) -> str:
     if value is None or pd.isna(value):
         return ""
     return str(value).strip()
+
+
+def _normalizar_nome(texto: Any) -> str:
+    bruto = _to_str(texto)
+    if not bruto:
+        return ""
+    texto = unicodedata.normalize("NFKD", bruto)
+    texto = "".join(c for c in texto if not unicodedata.combining(c))
+    texto = " ".join(texto.lower().split())
+    return texto
 
 
 def _normalizar_codigo(value: Any) -> str:
@@ -101,6 +97,20 @@ def _parse_num(value: Any):
         return float(s)
     except Exception:
         return None
+
+
+def _sanitize_meter(value: Any, campo: str) -> int | None:
+    n = _parse_num(value)
+    if n is None:
+        return None
+    if isinstance(n, float) and (math.isnan(n) or math.isinf(n)):
+        raise ValueError(f"{campo} inválido")
+    if n < 0:
+        raise ValueError(f"{campo} não pode ser negativo")
+    n_int = int(n)
+    if n_int > _MAX_BIGINT:
+        raise ValueError(f"{campo} excede o limite aceito pelo banco")
+    return n_int
 
 
 def normalizar_colunas(df: pd.DataFrame):
@@ -222,11 +232,39 @@ def _setores_index() -> tuple[dict[str, Any], list[str]]:
     try:
         cur.execute("select id, nome from setores where coalesce(ativo, true) = true")
         rows = cur.fetchall()
-        idx = {str(nome).strip().casefold(): sid for sid, nome in rows if nome}
-        nomes = [str(nome).strip() for _, nome in rows if nome]
+        idx: dict[str, Any] = {}
+        nomes: list[str] = []
+        for sid, nome in rows:
+            nome_limpo = _to_str(nome)
+            if not nome_limpo:
+                continue
+            idx[_normalizar_nome(nome_limpo)] = sid
+            nomes.append(nome_limpo)
         return idx, nomes
     finally:
         release_conn(conn)
+
+
+def _resolver_setor_id(setor_nome: Any, setores_idx: dict[str, Any]) -> Any | None:
+    nome_original = _to_str(setor_nome)
+    if not nome_original:
+        return None
+
+    chave = _normalizar_nome(nome_original)
+    if not chave:
+        return None
+
+    encontrado = setores_idx.get(chave)
+    if encontrado is not None:
+        return encontrado
+
+    for nome_idx, sid in setores_idx.items():
+        if nome_idx == chave:
+            return sid
+        if nome_idx in chave or chave in nome_idx:
+            return sid
+
+    return None
 
 
 def _equipamentos_existentes(cur=None) -> dict[str, dict[str, Any]]:
@@ -285,7 +323,7 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
         df, duplicados_arquivo = consolidar_duplicados(df)
         df = df.reset_index(drop=True)
 
-        setores_idx, _ = _setores_index()
+        setores_idx, nomes_setores = _setores_index()
         existentes = _equipamentos_existentes()
 
         erros = []
@@ -330,9 +368,13 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
 
             setor_id = None
             if setor_nome:
-                setor_id = setores_idx.get(setor_nome.casefold())
+                setor_id = _resolver_setor_id(setor_nome, setores_idx)
                 if setor_id is None:
-                    linha_avisos.append(f"setor '{setor_nome}' não encontrado")
+                    sugestoes = [s for s in nomes_setores if _normalizar_nome(setor_nome) in _normalizar_nome(s) or _normalizar_nome(s) in _normalizar_nome(setor_nome)]
+                    detalhe = f"setor '{setor_nome}' não encontrado"
+                    if sugestoes:
+                        detalhe += f". Possível correspondência: {sugestoes[0]}"
+                    linha_avisos.append(detalhe)
 
             existente = existentes.get(codigo)
             acao_prevista = "novo"
