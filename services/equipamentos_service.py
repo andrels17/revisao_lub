@@ -383,8 +383,8 @@ def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, temp
     try:
         colunas = _ensure_base_planejamento_columns(cur)
         _ensure_grupos_column(cur)
-        km_inicial_plano = 0 if km_inicial_plano is None else km_inicial_plano
-        horas_inicial_plano = 0 if horas_inicial_plano is None else horas_inicial_plano
+        km_inicial_plano = km_atual if km_inicial_plano is None else km_inicial_plano
+        horas_inicial_plano = horas_atual if horas_inicial_plano is None else horas_inicial_plano
 
         insert_cols = [
             "codigo", "nome", "tipo", "setor_id", "grupo_id",

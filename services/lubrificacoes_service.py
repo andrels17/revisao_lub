@@ -25,8 +25,6 @@ def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, le
         leitura_base = leitura_atual
 
     if ultima_execucao <= 0:
-        # Equipamento importado sem histórico anterior: o medidor inicial é a base
-        # do plano, então a primeira troca vence em base + intervalo.
         inicio_ciclo = leitura_base
         proximo_vencimento = inicio_ciclo + intervalo
         diferenca = proximo_vencimento - leitura_atual
@@ -301,7 +299,6 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
             return {}
 
         ultimas_por_item, ultimas_por_nome = _carregar_ultimas_execucoes_batch(cur, equipamento_ids, schema)
-        tolerancia = configuracoes_service.get_tolerancia_padrao()
         status_ordem = {"SEM_BASE": 0, "VENCIDO": 1, "PROXIMO": 2, "EM DIA": 3, "REALIZADO": 4}
         resultado = defaultdict(list)
 
@@ -329,6 +326,7 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
                 ultima = ultimas_por_nome.get(eqp_id, {}).get(nome_ref)
             ultima = float(ultima or 0)
 
+            tolerancia = _tolerancia_por_tipo(tipo_controle)
             status, ref_ciclo, prox_venc, diff = _status_item_ciclo(
                 leitura_atual,
                 ultima,

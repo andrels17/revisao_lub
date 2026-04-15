@@ -36,6 +36,12 @@ def _status_por_diferenca(diff, tolerancia):
     return "EM DIA"
 
 
+def _tolerancia_por_tipo(tipo_controle: str) -> int:
+    if str(tipo_controle or '').lower() == 'horas':
+        return int(configuracoes_service.get_tolerancia_proximo_horas())
+    return int(configuracoes_service.get_tolerancia_proximo_km())
+
+
 def _valor_leitura_execucao(tipo_controle, km_execucao, horas_execucao):
     return _normalizar_numero(horas_execucao if tipo_controle == "horas" else km_execucao)
 
@@ -283,11 +289,10 @@ def _construir_controles(modo="dashboard"):
 
         exec_rows = _carregar_execucoes_revisao(cur)
         execucoes = _agrupar_execucoes_por_etapa(exec_rows, tipo_por_equipamento)
-        tolerancia = configuracoes_service.get_tolerancia_padrao()
-
         itens = []
         for base in bases:
             base["ciclo_maximo"] = ciclo_por_template.get(base["template_id"], base["gatilho_valor"])
+            tolerancia = _tolerancia_por_tipo(base.get("tipo_controle") or "km")
             itens.append(_montar_item_controle(base, execucoes.get(base["equipamento_id"], {}), tolerancia, modo=modo))
 
         itens.sort(key=lambda x: (STATUS_ORDEM.get(x["status"], 99), x["diferenca"], x["codigo"], x["etapa"]))

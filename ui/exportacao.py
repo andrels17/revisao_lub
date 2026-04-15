@@ -154,6 +154,8 @@ def _pdf_bytes_relatorio_manutencao(
     data_fim,
     setor_nome=None,
     equipamento_nome=None,
+    setor_id=None,
+    equipamento_id=None,
 ) -> bytes:
     # ── imports ──────────────────────────────────────────────────────────────
     try:
@@ -174,6 +176,7 @@ def _pdf_bytes_relatorio_manutencao(
         _enriquecer_macro_lubrificacoes,
         _resumir_macro,
     )
+    from services import prioridades_service
 
     # ── paleta ───────────────────────────────────────────────────────────────
     C_NAVY     = colors.HexColor("#0f2744")
@@ -233,6 +236,10 @@ def _pdf_bytes_relatorio_manutencao(
     gerado_em  = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
     setor_txt  = _safe_text(setor_nome, "Todos")
     eqp_txt    = _safe_text(equipamento_nome, "Todos")
+    sem_mov = prioridades_service.resumo_sem_movimentacao(setor_id=setor_id, equipamento_id=equipamento_id, limite=10)
+    sem_mov_qtd = int(sem_mov.get("quantidade", 0))
+    sem_mov_threshold = int(sem_mov.get("threshold", 0))
+    sem_mov_top10 = pd.DataFrame(sem_mov.get("top10") or [])
 
     # ── helpers ──────────────────────────────────────────────────────────────
     PW = A4[0] - 24 * mm   # usable width
@@ -245,52 +252,6 @@ def _pdf_bytes_relatorio_manutencao(
         if desc:
             elems.append(Paragraph(desc, s_sec_desc))
         return elems
-
-    def bullet_box(title: str, items: list[str], bg_color=C_GRAY_LT, border_color=C_GRAY_MID) -> Table:
-        linhas = [Paragraph(f"<b>{_safe_text(title)}</b>", s_body)]
-        if items:
-            for item in items:
-                linhas.append(Paragraph(f"• {_safe_text(item)}", s_body))
-        else:
-            linhas.append(Paragraph("• Sem destaques no período selecionado.", s_body))
-        data = [[linhas]]
-        t = Table(data, colWidths=[PW])
-        t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), bg_color),
-            ("BOX", (0, 0), (-1, -1), 0.6, border_color),
-            ("LEFTPADDING", (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING", (0, 0), (-1, -1), 7),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-        ]))
-        return t
-
-    def rank_table(df_rank: pd.DataFrame, value_col: str, title: str, color_hdr) -> Table | None:
-        if df_rank is None or df_rank.empty:
-            return None
-        top = df_rank.head(5).copy()
-        hdr_style = S(f"rk_{title}", fontName="Helvetica-Bold", fontSize=8, textColor=C_WHITE, alignment=TA_CENTER)
-        left_style = S(f"rk_l_{title}", fontName="Helvetica", fontSize=8, textColor=C_GRAY, leading=10)
-        val_style = S(f"rk_v_{title}", fontName="Helvetica-Bold", fontSize=8, textColor=C_NAVY, alignment=TA_CENTER)
-        rows = [[Paragraph("Departamento", hdr_style), Paragraph(title, hdr_style)]]
-        for _, row in top.iterrows():
-            rows.append([
-                Paragraph(_safe_text(row.get("Setor")), left_style),
-                Paragraph(str(_safe_int(row.get(value_col))), val_style),
-            ])
-        t = Table(rows, colWidths=[PW * 0.72, PW * 0.28], repeatRows=1)
-        stripe = [("BACKGROUND", (0, i), (-1, i), C_STRIPE if i % 2 == 0 else C_WHITE) for i in range(1, len(rows))]
-        t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), color_hdr),
-            *stripe,
-            ("BOX", (0, 0), (-1, -1), 0.5, C_GRAY_MID),
-            ("INNERGRID", (0, 1), (-1, -1), 0.3, C_GRAY_MID),
-            ("LEFTPADDING", (0, 0), (-1, -1), 5),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        return t
 
     def kpi_table(items: list[tuple]) -> Table:
         """items = [(label, value, color_bg, color_txt), ...]"""
@@ -489,70 +450,10 @@ def _pdf_bytes_relatorio_manutencao(
         ("Revisões",           total_rev,  None,       C_BLUE),
         ("Lubrificações",      total_lub,  None,       C_GREEN),
         ("Equipamentos",       total_eqp,  None,       C_GRAY),
+        ("Sem movimentação",   sem_mov_qtd, None,      C_AMBER),
     ]
     elements.append(kpi_table(kpi_items))
     elements.append(Spacer(1, 4 * mm))
-
-    # ── Resumo executivo ─────────────────────────────────────────────────────
-    total_no_prazo = no_prazo_rev + no_prazo_lub
-    total_atrasadas = atrasadas_rev + atrasadas_lub
-    total_controladas = total_no_prazo + total_atrasadas
-    pct_prazo_geral = round((total_no_prazo / total_controladas) * 100) if total_controladas else 0
-
-    frames_rank = []
-    if not df_rev.empty and "Setor" in df_rev.columns:
-        frames_rank.append(df_rev[["Setor"]].assign(Tipo="Revisão"))
-    if not df_lub.empty and "Setor" in df_lub.columns:
-        frames_rank.append(df_lub[["Setor"]].assign(Tipo="Lubrificação"))
-    ranking_setores = pd.concat(frames_rank, ignore_index=True).groupby("Setor", dropna=False).size().reset_index(name="Execuções") if frames_rank else pd.DataFrame(columns=["Setor", "Execuções"])
-    ranking_atrasos = (
-        pd.concat([
-            resumo_rev[["Departamento", "Atrasadas"]].rename(columns={"Departamento": "Setor"}) if not resumo_rev.empty else pd.DataFrame(columns=["Setor", "Atrasadas"]),
-            resumo_lub[["Departamento", "Atrasadas"]].rename(columns={"Departamento": "Setor"}) if not resumo_lub.empty else pd.DataFrame(columns=["Setor", "Atrasadas"]),
-        ], ignore_index=True)
-        .groupby("Setor", dropna=False)["Atrasadas"].sum().reset_index()
-        .sort_values(["Atrasadas", "Setor"], ascending=[False, True])
-    )
-
-    insights = []
-    if not ranking_setores.empty:
-        lider = ranking_setores.sort_values(["Execuções", "Setor"], ascending=[False, True]).iloc[0]
-        insights.append(f"{_safe_text(lider.get('Setor'))} concentrou o maior volume do período, com {_safe_int(lider.get('Execuções'))} execução(ões).")
-    if total_atrasadas > 0 and not ranking_atrasos.empty:
-        critico = ranking_atrasos.iloc[0]
-        insights.append(f"{_safe_text(critico.get('Setor'))} lidera os atrasos observados, com {_safe_int(critico.get('Atrasadas'))} ocorrência(s).")
-    if total_controladas > 0:
-        insights.append(f"A aderência geral ao prazo ficou em {pct_prazo_geral}%, considerando revisões e lubrificações consolidadas.")
-    if total_rev and total_lub:
-        dominante = "revisões" if total_rev >= total_lub else "lubrificações"
-        insights.append(f"O mix operacional foi puxado por {dominante}, com {total_rev} revisão(ões) e {total_lub} lubrificação(ões) no período.")
-
-    exec_items = [
-        ("Aderência ao prazo", f"{pct_prazo_geral}%", C_BLUE_LT, C_NAVY),
-        ("Atrasos mapeados", total_atrasadas, C_RED_LT, C_RED),
-        ("Departamentos ativos", ranking_setores["Setor"].nunique() if not ranking_setores.empty else 0, C_GREEN_LT, C_GREEN),
-        ("Itens controlados", total_controladas, C_GRAY_LT, C_NAVY),
-    ]
-
-    elements += section_header(
-        "Resumo executivo",
-        "Leitura rápida para gestão, destacando aderência ao prazo, concentração operacional e principais pontos de atenção.",
-    )
-    elements.append(kpi_table(exec_items))
-    elements.append(Spacer(1, 3 * mm))
-    elements.append(bullet_box("Principais leituras", insights, bg_color=colors.HexColor("#f8fbff"), border_color=colors.HexColor("#dbe7f5")))
-    elements.append(Spacer(1, 3 * mm))
-
-    rk_exec = rank_table(ranking_setores.sort_values(["Execuções", "Setor"], ascending=[False, True]), "Execuções", "Execuções", C_BLUE)
-    if rk_exec:
-        elements.append(Paragraph("Top departamentos por volume", s_tbl_sub))
-        elements.append(rk_exec)
-        elements.append(Spacer(1, 3 * mm))
-    rk_att = rank_table(ranking_atrasos[ranking_atrasos["Atrasadas"] > 0], "Atrasadas", "Atrasos", colors.HexColor("#b91c1c"))
-    if rk_att:
-        elements.append(Paragraph("Departamentos que merecem atenção", s_tbl_sub))
-        elements.append(rk_att)
-        elements.append(Spacer(1, 4 * mm))
 
     # ── Quantitativo por departamento ────────────────────────────────────────
     elements += section_header(
@@ -578,6 +479,28 @@ def _pdf_bytes_relatorio_manutencao(
     if not has_quant:
         elements.append(Paragraph("Sem dados no período selecionado.", s_empty))
         elements.append(Spacer(1, 4 * mm))
+
+    if sem_mov_qtd > 0:
+        elements += section_header(
+            "Sem movimentação / sem leitura",
+            f"Equipamentos acima da janela configurada de {sem_mov_threshold} dia(s) sem atualização de KM/Horas.",
+        )
+        if not sem_mov_top10.empty:
+            cols = [c for c in ["Equipamento", "Setor", "Dias sem leitura", "Última leitura"] if c in sem_mov_top10.columns]
+            sm_rows = _dataframe_para_tabela(sem_mov_top10[cols], max_rows=10)
+            if sm_rows:
+                sm_tbl = Table(sm_rows, repeatRows=1, colWidths=[PW * 0.40, PW * 0.22, PW * 0.18, PW * 0.20])
+                sm_tbl.setStyle(TableStyle([
+                    ("BACKGROUND", (0,0), (-1,0), C_AMBER),
+                    ("TEXTCOLOR", (0,0), (-1,0), C_WHITE),
+                    ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0,0), (-1,-1), 7),
+                    ("GRID", (0,0), (-1,-1), 0.25, C_GRAY_MID),
+                    ("ROWBACKGROUNDS", (0,1), (-1,-1), [C_WHITE, C_STRIPE]),
+                    ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                ]))
+                elements.append(sm_tbl)
+                elements.append(Spacer(1, 4 * mm))
 
     # ── Macro revisões ───────────────────────────────────────────────────────
     elements += section_header(
@@ -750,6 +673,7 @@ def _pdf_bytes_relatorio_manutencao_OLD(
         _enriquecer_macro_lubrificacoes,
         _resumir_macro,
     )
+    from services import prioridades_service
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -1110,6 +1034,8 @@ def botao_exportar_pdf_relatorio_manutencao(
     data_fim,
     setor_nome=None,
     equipamento_nome=None,
+    setor_id=None,
+    equipamento_id=None,
     key: str | None = None,
 ):
     if (df_rev is None or df_rev.empty) and (df_lub is None or df_lub.empty):

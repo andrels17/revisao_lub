@@ -7,12 +7,9 @@ from typing import Any
 import streamlit as st
 
 from database.connection import get_conn, release_conn
-from services import equipamentos_service, lubrificacoes_service, revisoes_service
+from services import configuracoes_service, equipamentos_service, lubrificacoes_service, revisoes_service
 
 TTL_PRIORIDADES = 90
-LEITURA_DIAS_ALERTA = 7
-PROXIMO_KM_ALERTA = 500.0
-PROXIMO_HORAS_ALERTA = 50.0
 STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "SEM_LEITURA": 2, "PARADO": 3, "EM DIA": 4, "REALIZADO": 5}
 
 
@@ -270,7 +267,7 @@ def carregar_prioridades() -> dict[str, Any]:
         ultima = ultimas_leituras.get(str(eq_id))
         dt_ultima = _normalize_dt((ultima or {}).get("data_leitura"))
         dias = 999 if dt_ultima is None else max((agora - dt_ultima).days, 0)
-        if dt_ultima is None or dias >= LEITURA_DIAS_ALERTA:
+        if dt_ultima is None or dias >= int(configuracoes_service.get_dias_sem_leitura()):
             item_leitura = _criar_item_sem_leitura(eqp, ultima)
             sem_leitura.append(item_leitura)
             itens.append(item_leitura)
@@ -371,3 +368,35 @@ def limpar_cache() -> None:
             fn.clear()
         except Exception:
             pass
+
+
+def resumo_sem_movimentacao(setor_id: str | None = None, equipamento_id: str | None = None, limite: int = 10) -> dict[str, Any]:
+    equipamentos = equipamentos_service.listar()
+    if setor_id:
+        equipamentos = [e for e in equipamentos if str(e.get("setor_id") or "") == str(setor_id)]
+    if equipamento_id:
+        equipamentos = [e for e in equipamentos if str(e.get("id") or "") == str(equipamento_id)]
+
+    threshold = int(configuracoes_service.get_dias_sem_leitura())
+    if not equipamentos:
+        return {"quantidade": 0, "threshold": threshold, "top10": []}
+
+    leituras = _carregar_ultimas_leituras()
+    agora = _agora_utc()
+    ranking: list[dict[str, Any]] = []
+    for eq in equipamentos:
+        ultima = leituras.get(str(eq.get("id")))
+        data_leitura = _normalize_dt((ultima or {}).get("data_leitura"))
+        dias = 999 if data_leitura is None else max((agora - data_leitura).days, 0)
+        if data_leitura is None or dias >= threshold:
+            ranking.append({
+                "Equipamento": f"{eq.get('codigo') or '-'} — {eq.get('nome') or '-'}",
+                "Código": eq.get("codigo") or "-",
+                "Nome": eq.get("nome") or "-",
+                "Setor": eq.get("setor_nome") or "-",
+                "Dias sem leitura": int(dias),
+                "Última leitura": data_leitura.strftime("%d/%m/%Y") if data_leitura else "Sem registro",
+            })
+
+    ranking.sort(key=lambda x: (-int(x["Dias sem leitura"]), str(x["Equipamento"])))
+    return {"quantidade": len(ranking), "threshold": threshold, "top10": ranking[:limite]}

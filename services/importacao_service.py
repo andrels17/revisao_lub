@@ -31,12 +31,14 @@ ALIASES = {
     "valor_medidor": ["km_atual", "valor_medidor", "medidor_atual", "hodometro", "hodometro_atual", "km"],
     "km_atual": ["km_atual_destino"],
     "horas_atual": ["horas_atual", "horimetro_atual", "horas"],
+    "km_inicial_plano": ["km_inicial_plano", "km_base_plano", "km_ultima_revisao", "km_ultima_lubrificacao"],
+    "horas_inicial_plano": ["horas_inicial_plano", "horas_base_plano", "horas_ultima_revisao", "horas_ultima_lubrificacao"],
     "ativo": ["ativo", "status"],
     "placa": ["placa"],
     "serie": ["serie", "numero_serie", "n_serie"],
 }
 
-CAMPOS_PREVIEW = ["codigo", "nome", "grupo", "tipo", "setor", "km_atual", "horas_atual", "ativo", "placa", "serie"]
+CAMPOS_PREVIEW = ["codigo", "nome", "grupo", "tipo", "setor", "km_atual", "horas_atual", "km_inicial_plano", "horas_inicial_plano", "ativo", "placa", "serie"]
 
 
 def get_template_csv() -> bytes:
@@ -52,6 +54,8 @@ def get_template_csv() -> bytes:
                 "ATIVO": "S",
                 "PLACA": "ABC1D23",
                 "SERIE": "SER-001",
+                "KM_INICIAL_PLANO": 12500,
+                "HORAS_INICIAL_PLANO": 0,
             }
         ]
     )
@@ -993,6 +997,8 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                 row = dict(row)
                 row["km_atual"] = _sanitize_meter(row.get("km_atual"), "km_atual")
                 row["horas_atual"] = _sanitize_meter(row.get("horas_atual"), "horas_atual")
+                row["km_inicial_plano"] = _sanitize_meter(row.get("km_inicial_plano"), "km_inicial_plano")
+                row["horas_inicial_plano"] = _sanitize_meter(row.get("horas_inicial_plano"), "horas_inicial_plano")
 
                 setor_nome = _to_str(row.get("setor"))
                 if setor_nome:
@@ -1069,10 +1075,10 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         "ativo": bool(row.get("ativo", True)),
                         "placa": row.get("placa") or None,
                         "serie": row.get("serie") or None,
-                        "km_inicial_plano": row.get("km_inicial_plano") or 0,
-                        "km_base_plano": row.get("km_base_plano") or row.get("km_inicial_plano") or 0,
-                        "horas_inicial_plano": row.get("horas_inicial_plano") or 0,
-                        "horas_base_plano": row.get("horas_base_plano") or row.get("horas_inicial_plano") or 0,
+                        "km_inicial_plano": row.get("km_inicial_plano") if row.get("km_inicial_plano") is not None else (row.get("km_atual") or 0),
+                        "km_base_plano": row.get("km_inicial_plano") if row.get("km_inicial_plano") is not None else (row.get("km_atual") or 0),
+                        "horas_inicial_plano": row.get("horas_inicial_plano") if row.get("horas_inicial_plano") is not None else (row.get("horas_atual") or 0),
+                        "horas_base_plano": row.get("horas_inicial_plano") if row.get("horas_inicial_plano") is not None else (row.get("horas_atual") or 0),
                     }
                     cur.execute(insert_sql, tuple(insert_data[c] for c in import_cols))
                     equipamento_id = cur.fetchone()[0]

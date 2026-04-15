@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from database.connection import get_conn, release_conn
+from services import prioridades_service
 from ui.exportacao import botao_exportar_excel, botao_exportar_pdf_relatorio_manutencao
 
 try:
@@ -169,14 +170,8 @@ def _carregar_setores():
     conn = get_conn()
     cur = conn.cursor()
     try:
-        try:
-            cur.execute("select id, nome from setores where coalesce(ativo, true) = true order by nome")
-            rows = cur.fetchall()
-        except Exception:
-            conn.rollback()
-            cur.execute("select id, nome from setores order by nome")
-            rows = cur.fetchall()
-        return rows
+        cur.execute("select id, nome from setores where ativo = true order by nome")
+        return cur.fetchall()
     finally:
         release_conn(conn)
 
@@ -186,28 +181,13 @@ def _carregar_equipamentos(setor_id=None):
     cur = conn.cursor()
     try:
         if setor_id:
-            try:
-                cur.execute(
-                    "select id, codigo, nome from equipamentos where coalesce(ativo, true) = true and setor_id = %s order by codigo, nome",
-                    (setor_id,),
-                )
-                rows = cur.fetchall()
-            except Exception:
-                conn.rollback()
-                cur.execute(
-                    "select id, codigo, nome from equipamentos where setor_id = %s order by codigo, nome",
-                    (setor_id,),
-                )
-                rows = cur.fetchall()
+            cur.execute(
+                "select id, codigo, nome from equipamentos where ativo = true and setor_id = %s order by codigo",
+                (setor_id,),
+            )
         else:
-            try:
-                cur.execute("select id, codigo, nome from equipamentos where coalesce(ativo, true) = true order by codigo, nome")
-                rows = cur.fetchall()
-            except Exception:
-                conn.rollback()
-                cur.execute("select id, codigo, nome from equipamentos order by codigo, nome")
-                rows = cur.fetchall()
-        return rows
+            cur.execute("select id, codigo, nome from equipamentos where ativo = true order by codigo")
+        return cur.fetchall()
     finally:
         release_conn(conn)
 
@@ -561,6 +541,22 @@ def _colunas_publicas_lubrificacoes(df: pd.DataFrame) -> pd.DataFrame:
     return base[colunas]
 
 
+
+
+def _render_sem_movimentacao(setor_id=None, equipamento_id=None) -> None:
+    resumo = prioridades_service.resumo_sem_movimentacao(setor_id=setor_id, equipamento_id=equipamento_id, limite=10)
+    total = int(resumo.get("quantidade", 0))
+    threshold = int(resumo.get("threshold", 0))
+    top10 = resumo.get("top10") or []
+    st.markdown("<div class='section-card'><h3>Sem movimentação / sem leitura</h3><p>Leitura operacional para destacar equipamentos acima da janela configurada sem atualização de KM/Horas.</p></div>", unsafe_allow_html=True)
+    k1, k2 = st.columns(2)
+    k1.metric("Equipamentos acima da janela", total)
+    k2.metric("Janela configurada", f"{threshold} dia(s)")
+    if not top10:
+        st.success("Nenhum equipamento acima da janela configurada para o recorte atual.")
+        return
+    st.dataframe(pd.DataFrame(top10), use_container_width=True, hide_index=True)
+
 def _render_page_header() -> None:
     st.markdown(
         """
@@ -852,13 +848,6 @@ def render():
     df_rev = _filtrar_busca(df_rev, busca, ["Código", "Equipamento", "Setor", "Responsável", "Status", "Observações"])
     df_lub = _filtrar_busca(df_lub, busca, ["Código", "Equipamento", "Setor", "Responsável", "Item", "Produto", "Observações"])
 
-    if not equipamentos:
-        st.warning("Nenhum equipamento foi encontrado para os filtros atuais. Ajustei o carregamento para considerar registros com campo ativo nulo, mas se ainda aparecer vazio vale revisar a tabela de equipamentos.")
-
-    total_exec_periodo = len(df_rev) + len(df_lub)
-    if equipamentos and total_exec_periodo == 0:
-        st.info("Os equipamentos foram carregados, mas não há execuções no período selecionado. Tente ampliar a data inicial para localizar revisões e lubrificações mais antigas.")
-
     df_rev_macro = _enriquecer_macro_revisoes(df_rev)
     df_lub_macro = _enriquecer_macro_lubrificacoes(df_lub)
 
@@ -882,6 +871,8 @@ def render():
             data_fim,
             setor_nome=setor_nome,
             equipamento_nome=equipamento_nome,
+            setor_id=setor_id,
+            equipamento_id=eqp_id,
             key="exp_rel_pdf_exec",
         )
 
@@ -890,6 +881,7 @@ def render():
     with tab_exec:
         st.markdown("<div class='section-card'><h3>Highlights do período</h3><p>Leitura rápida para gestão com foco em volume, concentração e responsáveis.</p></div>", unsafe_allow_html=True)
         _render_highlights(df_rev, df_lub)
+        _render_sem_movimentacao(setor_id=setor_id, equipamento_id=eqp_id)
 
         macro_rev_tab, macro_lub_tab = st.tabs(["Macro de revisões", "Macro de lubrificações"])
         with macro_rev_tab:

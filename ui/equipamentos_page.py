@@ -850,6 +850,13 @@ def render():
             with c7:
                 novo_ativo = st.checkbox("Ativo", value=True, key="novo_eq_ativo")
 
+            st.caption("Opcional: informe a base do plano quando o controle já começar de uma revisão/lubrificação anterior. Se deixar como está, o sistema usa o KM/Horas atuais como marco inicial.")
+            c8, c9 = st.columns(2)
+            with c8:
+                novo_km_inicial = st.number_input("KM inicial do plano", min_value=0.0, value=float(novo_km or 0), step=1.0, key="novo_eq_km_inicial")
+            with c9:
+                novo_horas_inicial = st.number_input("Horas iniciais do plano", min_value=0.0, value=float(novo_horas or 0), step=1.0, key="novo_eq_horas_inicial")
+
             if st.button("Cadastrar equipamento", type="primary", use_container_width=False, key="novo_eq_submit"):
                 codigo = (novo_codigo or '').strip()
                 nome = (novo_nome or '').strip()
@@ -866,8 +873,8 @@ def render():
                             km_atual=novo_km,
                             horas_atual=novo_horas,
                             ativo=novo_ativo,
-                            km_inicial_plano=novo_km,
-                            horas_inicial_plano=novo_horas,
+                            km_inicial_plano=novo_km_inicial,
+                            horas_inicial_plano=novo_horas_inicial,
                         )
                         _carregar_equipamento.clear()
                         _revisoes_eq.clear()
