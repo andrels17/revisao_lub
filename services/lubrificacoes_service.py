@@ -10,13 +10,17 @@ from services import cache_service, configuracoes_service
 # ── helpers de status ────────────────────────────────────────────────────────
 
 def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, leitura_base=0):
-    if intervalo <= 0:
-        return "EM DIA", max(0.0, leitura_atual), max(0.0, leitura_atual), 0.0
-
-    leitura_atual   = float(leitura_atual   or 0)
+    leitura_atual = float(leitura_atual or 0)
     ultima_execucao = float(ultima_execucao or 0)
-    intervalo       = float(intervalo       or 0)
-    leitura_base    = float(leitura_base    or 0)
+    intervalo = float(intervalo or 0)
+    leitura_base = float(leitura_base or 0)
+
+    if intervalo <= 0:
+        return "SEM_BASE", leitura_base, leitura_atual, 0.0
+
+    # Sem histórico válido: mostrar como primeira troca pendente, em vez de ocultar.
+    if ultima_execucao <= 0:
+        return "SEM_BASE", leitura_base, leitura_atual, 0.0
 
     offset_atual = max(0.0, leitura_atual - leitura_base)
     ciclo_atual = int(offset_atual // intervalo) if offset_atual > 0 else 0
@@ -27,7 +31,7 @@ def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, le
     inicio_ciclo = leitura_base + (ciclo_atual * intervalo)
     proximo_vencimento = inicio_ciclo + intervalo
 
-    if ultima_execucao > 0 and ciclo_ultima == ciclo_atual:
+    if ciclo_ultima == ciclo_atual:
         return "REALIZADO", inicio_ciclo, proximo_vencimento, max(0.0, proximo_vencimento - leitura_atual)
 
     falta = proximo_vencimento - leitura_atual
@@ -128,7 +132,7 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
         # Busca ultimas execuções de uma vez só
         ultimas = _carregar_ultimas_execucoes_batch(cur, equipamento_ids)
 
-        STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2, "REALIZADO": 3}
+        STATUS_ORDEM = {"SEM_BASE": 0, "VENCIDO": 1, "PROXIMO": 2, "EM DIA": 3, "REALIZADO": 4}
         resultado = defaultdict(list)
         tolerancia = configuracoes_service.get_tolerancia_padrao()
 

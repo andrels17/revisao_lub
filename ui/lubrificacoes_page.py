@@ -40,6 +40,7 @@ def _render_page_header() -> None:
 
 def _render_kpi_cards(contagem: dict[str, int]) -> None:
     cards = [
+        ("status-info", "🟣 Primeira troca", contagem.get("SEM_BASE", 0), "Sem referência inicial"),
         ("status-danger", "🔴 Vencidos", contagem.get("VENCIDO", 0), "Trocas urgentes"),
         ("status-warning", "🟡 Próximos", contagem.get("PROXIMO", 0), "Janela de atenção"),
         ("status-success", "🟢 Em dia", contagem.get("EM DIA", 0), "Dentro do ciclo"),
@@ -79,9 +80,12 @@ def _carregar_pendencias_batch():
 
 
 def _calc_progresso(item: dict) -> int:
+    if item.get("status") == "SEM_BASE":
+        return 0
+
     atual = float(item.get("atual", 0) or 0)
     vencimento = float(item.get("vencimento", 0) or 0)
-    intervalo = float(item.get("intervalo_valor", 0) or vencimento or 1)
+    intervalo = float(item.get("intervalo") or item.get("intervalo_valor", 0) or vencimento or 1)
     inicio_ciclo = max(0.0, vencimento - intervalo)
     span = vencimento - inicio_ciclo
     if span <= 0:
@@ -91,6 +95,11 @@ def _calc_progresso(item: dict) -> int:
 
 def _status_resumo(item: dict) -> str:
     unidade = _fmt_unidade(item.get("tipo_controle", "km"))
+    if item.get("status") == "SEM_BASE":
+        atual = float(item.get("atual", 0) or 0)
+        intervalo = float(item.get("intervalo", item.get("intervalo_valor", 0)) or 0)
+        return f"Registrar 1ª troca na leitura atual ({atual:.0f} {unidade}) • ciclo {intervalo:.0f} {unidade}"
+
     falta = float(item.get("diferenca", item.get("falta", 0)) or 0)
     if falta <= 0:
         return f"Vencido há {abs(falta):.0f} {unidade}"
@@ -143,7 +152,10 @@ def _render_card_lub(eqp: dict, item: dict, idx: int) -> None:
             st.caption("Ativo")
 
     with right:
-        st.metric("Progresso", f"{progresso}%")
+        if status == "SEM_BASE":
+            st.metric("Ciclo", f"{float(item.get("intervalo", 0) or 0):.0f} {unidade}")
+        else:
+            st.metric("Progresso", f"{progresso}%")
         if st.button("Detalhes", key=f"det_lub_{eqp['id']}_{idx}", use_container_width=True):
             st.session_state["lub_detalhe"] = {
                 "eqp_id": eqp["id"],
@@ -211,10 +223,13 @@ def _render_detalhe_lub(eqp: dict, item: dict, idx: int) -> None:
     st.caption(f"Produto: **{item.get('tipo_produto') or '—'}**")
     st.progress(progresso)
 
+    intervalo = float(item.get("intervalo", item.get("intervalo_valor", 0)) or 0)
+    st.caption(f"Intervalo configurado do item: **{intervalo:.0f} {unidade}**")
+
     if ult > 0:
         st.caption(f"Última execução registrada: {ult:.0f} {unidade}")
     else:
-        st.caption("Sem execução registrada neste ciclo.")
+        st.caption("Sem referência inicial registrada. Faça a primeira baixa informando a leitura real da troca para iniciar o ciclo.")
 
     st.markdown("**Registrar lubrificação agora**")
     _form_rapido(eqp, item, key_suffix=f"lub_{eqp['id']}_{item.get('item_id', idx)}")
@@ -240,7 +255,7 @@ def _form_rapido(eqp, item, key_suffix):
                 horas_exec = st.number_input(
                     f"Horímetro na execução ({unidade})",
                     min_value=0.0,
-                    value=leitura_sug,
+                    value=float(item.get("atual", leitura_sug) or leitura_sug),
                     step=1.0,
                     key=f"h_{key_suffix}",
                 )
@@ -249,7 +264,7 @@ def _form_rapido(eqp, item, key_suffix):
                 km_exec = st.number_input(
                     f"Hodômetro na execução ({unidade})",
                     min_value=0.0,
-                    value=leitura_sug,
+                    value=float(item.get("atual", leitura_sug) or leitura_sug),
                     step=1.0,
                     key=f"k_{key_suffix}",
                 )
@@ -346,13 +361,13 @@ def _render_tabela(itens, titulo):
 def _render_pendencias():
     pendencias, _ = _carregar_pendencias_batch()
     if not pendencias:
-        st.success("Nenhuma lubrificação pendente no momento.")
+        st.success("Nenhum item de lubrificação encontrado para o escopo atual.")
         return
 
     setores = sorted({p["eqp"].get("setor_nome", "-") for p in pendencias})
     grupos = sorted({(p["eqp"].get("grupo_nome") or p["eqp"].get("grupo") or "—") for p in pendencias})
     eqps = sorted({f"{p['eqp']['codigo']} — {p['eqp']['nome']}" for p in pendencias})
-    status_opts = ["Todos", "VENCIDO", "PROXIMO", "EM DIA", "REALIZADO"]
+    status_opts = ["Todos", "SEM_BASE", "VENCIDO", "PROXIMO", "EM DIA", "REALIZADO"]
 
     st.markdown("<div class='filters-shell'><div class='filters-title'>Filtros operacionais</div>", unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
@@ -382,13 +397,15 @@ def _render_pendencias():
 
     st.divider()
 
+    sem_base = [p for p in filtradas if p["item"]["status"] == "SEM_BASE"]
     vencidos = [p for p in filtradas if p["item"]["status"] == "VENCIDO"]
     proximos = [p for p in filtradas if p["item"]["status"] == "PROXIMO"]
     em_dia = [p for p in filtradas if p["item"]["status"] == "EM DIA"]
     realizados = [p for p in filtradas if p["item"]["status"] == "REALIZADO"]
 
-    tab_v, tab_p, tab_d, tab_r, tab_tabela = st.tabs(
+    tab_sb, tab_v, tab_p, tab_d, tab_r, tab_tabela = st.tabs(
         [
+            f"🟣 Primeira troca ({len(sem_base)})",
             f"🔴 Vencidos ({len(vencidos)})",
             f"🟡 Próximos ({len(proximos)})",
             f"🟢 Em dia ({len(em_dia)})",
@@ -396,6 +413,9 @@ def _render_pendencias():
             "📋 Tabela completa",
         ]
     )
+
+    with tab_sb:
+        _render_cards_listagem(sem_base, "Nenhum item aguardando primeira referência.", "sem_base")
 
     with tab_v:
         _render_cards_listagem(vencidos, "Nenhuma lubrificação vencida.", "vencidos")
@@ -428,6 +448,7 @@ def _render_execucao():
         return
 
     itens_pendentes = lubrificacoes_service.calcular_proximas_lubrificacoes(eqp["id"])
+    st.caption("Itens sem histórico agora aparecem como primeira troca, para você informar a leitura real da execução e iniciar o ciclo.")
     vinculos_op = vinculos_service.listar_por_equipamento(eqp["id"])
     ids_op = {v["responsavel_id"] for v in vinculos_op}
     resp_lista = [r for r in responsaveis if r["id"] in ids_op] or responsaveis

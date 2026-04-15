@@ -9,6 +9,7 @@ Centraliza STATUS_LABEL, STATUS_ORDEM, STATUS_COR e TOLERANCIA_PADRAO.
 TOLERANCIA_PADRAO = 10
 
 STATUS_LABEL = {
+    "SEM_BASE":  "🟣 Primeira troca",
     "VENCIDO":   "🔴 Vencido",
     "PROXIMO":   "🟡 Próximo",
     "EM DIA":    "🟢 Em dia",
@@ -19,13 +20,15 @@ STATUS_LABEL = {
 STATUS_LABELS = STATUS_LABEL
 
 STATUS_ORDEM = {
-    "VENCIDO":   0,
-    "PROXIMO":   1,
-    "EM DIA":    2,
-    "REALIZADO": 3,
+    "SEM_BASE":  0,
+    "VENCIDO":   1,
+    "PROXIMO":   2,
+    "EM DIA":    3,
+    "REALIZADO": 4,
 }
 
 STATUS_COR = {
+    "SEM_BASE":  "#8b5cf6",
     "VENCIDO":   "#ef4444",
     "PROXIMO":   "#f59e0b",
     "EM DIA":    "#22c55e",
