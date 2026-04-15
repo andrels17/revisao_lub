@@ -361,21 +361,13 @@ def _render_tabela(itens, titulo):
 def _render_pendencias():
     pendencias, _ = _carregar_pendencias_batch()
     if not pendencias:
-        diag = lubrificacoes_service.diagnosticar_carregamento()
         st.success("Nenhuma lubrificação pendente no momento.")
-        if diag:
-            st.caption(
-                f"Diagnóstico rápido — equipamentos com template: {diag.get('equipamentos_com_template', 0)} • itens de template: {diag.get('itens_template', 0)} • templates com itens: {diag.get('templates_com_itens', 0)} • execuções: {diag.get('execucoes_lubrificacao', 0)}"
-            )
-            motivo = diag.get('motivo')
-            if motivo:
-                st.info(str(motivo))
         return
 
     setores = sorted({p["eqp"].get("setor_nome", "-") for p in pendencias})
     grupos = sorted({(p["eqp"].get("grupo_nome") or p["eqp"].get("grupo") or "—") for p in pendencias})
     eqps = sorted({f"{p['eqp']['codigo']} — {p['eqp']['nome']}" for p in pendencias})
-    status_opts = ["Todos", "VENCIDO", "PROXIMO", "EM DIA", "REALIZADO"]
+    status_opts = ["Todos", "SEM_BASE", "VENCIDO", "PROXIMO", "EM DIA", "REALIZADO"]
 
     st.markdown("<div class='filters-shell'><div class='filters-title'>Filtros operacionais</div>", unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
@@ -405,13 +397,15 @@ def _render_pendencias():
 
     st.divider()
 
+    primeira_troca = [p for p in filtradas if p["item"]["status"] == "SEM_BASE"]
     vencidos = [p for p in filtradas if p["item"]["status"] == "VENCIDO"]
     proximos = [p for p in filtradas if p["item"]["status"] == "PROXIMO"]
     em_dia = [p for p in filtradas if p["item"]["status"] == "EM DIA"]
     realizados = [p for p in filtradas if p["item"]["status"] == "REALIZADO"]
 
-    tab_v, tab_p, tab_d, tab_r, tab_tabela = st.tabs(
+    tab_b, tab_v, tab_p, tab_d, tab_r, tab_tabela = st.tabs(
         [
+            f"🟣 Primeira troca ({len(primeira_troca)})",
             f"🔴 Vencidos ({len(vencidos)})",
             f"🟡 Próximos ({len(proximos)})",
             f"🟢 Em dia ({len(em_dia)})",
@@ -419,6 +413,9 @@ def _render_pendencias():
             "📋 Tabela completa",
         ]
     )
+
+    with tab_b:
+        _render_primeira_troca(primeira_troca)
 
     with tab_v:
         _render_cards_listagem(vencidos, "Nenhuma lubrificação vencida.", "vencidos")
@@ -435,6 +432,59 @@ def _render_pendencias():
     with tab_tabela:
         st.caption("Visão consolidada de todos os itens filtrados.")
         _render_tabela(filtradas, "Todos os itens")
+
+
+def _render_primeira_troca(itens: list[dict]) -> None:
+    if not itens:
+        st.success("Nenhum item aguardando primeira troca.")
+        return
+
+    st.caption("Fluxo por frota: abra o equipamento e registre a primeira baixa dos compartimentos que ainda não têm referência inicial.")
+
+    agrupado = {}
+    for p in itens:
+        eqp = p["eqp"]
+        agrupado.setdefault(eqp.get("id"), {"eqp": eqp, "itens": []})["itens"].append(p)
+
+    grupos = sorted(agrupado.values(), key=lambda g: str(g["eqp"].get("codigo", "")))
+
+    for grupo in grupos:
+        eqp = grupo["eqp"]
+        itens_eqp = grupo["itens"]
+        codigo = str(eqp.get("codigo", "—"))
+        nome = str(eqp.get("nome", "—"))
+        grupo_nome = eqp.get("grupo_nome") or eqp.get("grupo") or "—"
+        setor = eqp.get("setor_nome") or "—"
+
+        with st.expander(f"{codigo} — {nome} • {len(itens_eqp)} compartimento(s)", expanded=False):
+            st.caption(f"{grupo_nome} • {setor}")
+            for idx, payload in enumerate(itens_eqp):
+                item = payload["item"]
+                unidade = _fmt_unidade(item.get("tipo_controle", "km"))
+                atual = float(item.get("atual", 0) or 0)
+                intervalo = float(item.get("intervalo", item.get("intervalo_valor", 0)) or 0)
+                proxima = float(item.get("vencimento", 0) or 0)
+                card = st.container(border=True)
+                with card:
+                    top_l, top_r = st.columns([6, 2], vertical_alignment="center")
+                    with top_l:
+                        st.markdown(f"**{item.get('item') or 'Lubrificação'}**")
+                        st.caption(
+                            f"Produto: {item.get('tipo_produto') or '—'} • Leitura atual: {atual:.0f} {unidade} • Ciclo: {intervalo:.0f} {unidade} • Próxima troca: {proxima:.0f} {unidade}"
+                        )
+                    with top_r:
+                        if st.button("Dar baixa", key=f"primeira_baixa_{eqp['id']}_{item.get('item_id', idx)}", use_container_width=True, type="primary"):
+                            st.session_state["lub_detalhe"] = {
+                                "eqp_id": eqp["id"],
+                                "item_id": item.get("item_id"),
+                                "idx": idx,
+                            }
+                            st.rerun()
+
+                    detalhe = st.session_state.get("lub_detalhe")
+                    if detalhe and detalhe.get("eqp_id") == eqp.get("id") and detalhe.get("item_id") == item.get("item_id"):
+                        st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
+                        _render_detalhe_lub(eqp, item, idx)
 
 
 def _render_execucao():
@@ -541,8 +591,6 @@ def render():
         st.markdown("<div style='height:.35rem'></div>", unsafe_allow_html=True)
         if st.button("🔄 Atualizar", use_container_width=True):
             _carregar_pendencias_batch.clear()
-            lubrificacoes_service.calcular_proximas_lubrificacoes_batch.clear()
-            lubrificacoes_service.diagnosticar_carregamento.clear()
             st.rerun()
 
     st.markdown(
