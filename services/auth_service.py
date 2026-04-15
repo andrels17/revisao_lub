@@ -48,7 +48,7 @@ ROLE_PAGINAS: dict[str, set[str]] = {
 
 ROLE_PAGINAS["admin"] = {
     "📊 Dashboard",
-    "🏢 Setores", "🚜 Equipamentos", "👷 Responsáveis",
+    "🏢 Setores", "🗂️ Grupos", "🚜 Equipamentos", "👷 Responsáveis",
     "🔗 Vínculos", "📋 Templates",
     "📏 Leituras KM / Horas", "🔧 Controle de Revisões",
     "🛢️ Controle de Lubrificações",
@@ -59,7 +59,7 @@ ROLE_PAGINAS["admin"] = {
 }
 ROLE_PAGINAS["gestor"] = {
     "📊 Dashboard",
-    "🏢 Setores", "🚜 Equipamentos", "👷 Responsáveis",
+    "🏢 Setores", "🗂️ Grupos", "🚜 Equipamentos", "👷 Responsáveis",
     "🔗 Vínculos", "📋 Templates",
     "📏 Leituras KM / Horas", "🔧 Controle de Revisões",
     "🛢️ Controle de Lubrificações",
