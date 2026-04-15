@@ -21,10 +21,20 @@ def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, le
     intervalo = float(intervalo or 0)
     leitura_base = float(leitura_base or 0)
 
+    if leitura_base > leitura_atual:
+        leitura_base = leitura_atual
+
     if ultima_execucao <= 0:
-        proximo_vencimento = leitura_base + intervalo
+        # Equipamento importado sem histórico anterior: o medidor inicial é a base
+        # do plano, então a primeira troca vence em base + intervalo.
+        inicio_ciclo = leitura_base
+        proximo_vencimento = inicio_ciclo + intervalo
         diferenca = proximo_vencimento - leitura_atual
-        return "SEM_BASE", leitura_base, proximo_vencimento, diferenca
+        if leitura_atual >= proximo_vencimento:
+            return "VENCIDO", inicio_ciclo, proximo_vencimento, diferenca
+        if diferenca <= tolerancia:
+            return "PROXIMO", inicio_ciclo, proximo_vencimento, diferenca
+        return "EM DIA", inicio_ciclo, proximo_vencimento, diferenca
 
     offset_atual = max(0.0, leitura_atual - leitura_base)
     ciclo_atual = int(offset_atual // intervalo) if offset_atual > 0 else 0
@@ -310,22 +320,14 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
             tipo_controle = _normalizar_tipo_controle(tipo_controle)
             leitura_atual = float(horas_atual if tipo_controle == "horas" else km_atual)
             leitura_base = float(horas_inicial_plano if tipo_controle == "horas" else km_inicial_plano)
+            if leitura_base > leitura_atual:
+                leitura_base = leitura_atual
 
             nome_ref = str(nome_item or "").strip().lower()
             ultima = ultimas_por_item.get(eqp_id, {}).get(item_id)
             if ultima is None and nome_ref:
                 ultima = ultimas_por_nome.get(eqp_id, {}).get(nome_ref)
             ultima = float(ultima or 0)
-
-            # Compatibilidade com bases importadas: quando o plano nasce com o
-            # medidor atual gravado como base e ainda não houve nenhuma troca, a
-            # lubrificação fica permanentemente sem itens pendentes. Nessas
-            # situações assumimos backlog a partir de 0.
-            if abs(leitura_base - leitura_atual) < 1e-9 and leitura_atual > 0 and ultima <= 0:
-                leitura_base = 0.0
-
-            if leitura_base > leitura_atual:
-                leitura_base = leitura_atual
 
             status, ref_ciclo, prox_venc, diff = _status_item_ciclo(
                 leitura_atual,
