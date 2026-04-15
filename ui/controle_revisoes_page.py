@@ -178,26 +178,94 @@ def _inject_css():
         .integration-check label { font-size:.78rem; color:#dbeafe; }
         .integration-origin { font-size:.72rem; color:#93c5fd; margin-top:.35rem; font-weight:700; }
 
-        .rev-list-card {
+        .rev-list-row {
             border: 1px solid rgba(148,163,184,.12);
-            border-radius: 12px;
-            padding: .8rem 1rem;
-            background: #0d1929;
-            margin-bottom: .55rem;
+            border-radius: 16px;
+            background: linear-gradient(180deg, rgba(13,25,41,.96), rgba(9,19,32,.96));
+            padding: .95rem 1rem;
+            margin-bottom: .7rem;
         }
-        .rev-list-card:hover { border-color: rgba(148,163,184,.24); }
-        .rev-list-code { font-size: .72rem; color: #8fa4c0; font-weight: 600; margin-bottom: .14rem; }
-        .rev-list-title { font-size: .96rem; font-weight: 700; color: #e8f1ff; }
-        .rev-list-meta { font-size: .78rem; color: #8fa4c0; margin-top: .14rem; }
-        .rev-list-badges { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.42rem; }
+        .rev-list-row:hover { border-color: rgba(96,165,250,.28); }
+        .rev-list-code {
+            display:inline-flex;
+            align-items:center;
+            justify-content:center;
+            min-width: 92px;
+            padding: .22rem .65rem;
+            border-radius: 999px;
+            font-size: 1.12rem;
+            line-height: 1;
+            font-weight: 800;
+            color: #f8fbff;
+            background: rgba(79,140,255,.12);
+            border: 1px solid rgba(96,165,250,.25);
+            margin-bottom: .42rem;
+            letter-spacing: .02em;
+        }
+        .rev-list-title {
+            font-size: 1rem;
+            font-weight: 800;
+            color: #e8f1ff;
+            line-height: 1.25;
+            margin-bottom: .18rem;
+        }
+        .rev-list-step {
+            display:inline-block;
+            padding: .14rem .5rem;
+            border-radius: 999px;
+            font-size: .69rem;
+            font-weight: 800;
+            color: #c7dbff;
+            background: rgba(59,130,246,.12);
+            border: 1px solid rgba(96,165,250,.18);
+            margin-bottom: .4rem;
+        }
+        .rev-list-meta {
+            font-size: .77rem;
+            color: #8fa4c0;
+            margin-top: .04rem;
+        }
+        .rev-list-context {
+            font-size: .77rem;
+            color: #9bb0ca;
+            margin-top: .14rem;
+        }
+        .rev-list-badges { display:flex; flex-wrap:wrap; gap:.34rem; margin-top:.55rem; }
         .rev-chip {
             display: inline-block;
-            padding: .14rem .45rem;
+            padding: .14rem .48rem;
             border-radius: 999px;
             font-size: .69rem;
             font-weight: 700;
         }
         .rev-chip-neutral { background: rgba(148,163,184,.09); color: #94a8c4; }
+        .rev-sidebox {
+            border: 1px solid rgba(148,163,184,.12);
+            border-radius: 14px;
+            background: rgba(255,255,255,.025);
+            padding: .85rem .9rem;
+            height: 100%;
+        }
+        .rev-sidebox-label {
+            font-size: .72rem;
+            color: #8fa4c0;
+            margin-bottom: .18rem;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            font-weight: 700;
+        }
+        .rev-sidebox-value {
+            font-size: 1.9rem;
+            line-height: 1;
+            font-weight: 800;
+            color: #f8fbff;
+            margin-bottom: .18rem;
+        }
+        .rev-sidebox-sub {
+            font-size: .72rem;
+            color: #8fa4c0;
+            line-height: 1.35;
+        }
         .rev-modal-shell { animation: revFadeSlide .18s ease-out; }
         @keyframes revFadeSlide {
             from { opacity: 0; transform: translateY(6px); }
@@ -499,24 +567,42 @@ def _render_card_resumido(item, idx):
     vencidas = int(item.get("equipamento_vencidas") or 0)
     proximas = int(item.get("equipamento_proximas") or 0)
     ativo = bool(item.get("equipamento_ativo", True))
+    codigo = html.escape(str(item.get("codigo") or "-"))
+    nome = html.escape(str(item.get("equipamento_nome") or "-"))
+    etapa = html.escape(str(item.get("etapa") or "-"))
+    grupo = html.escape(str(item.get("grupo_nome") or item.get("grupo") or "—"))
+    setor = html.escape(str(item.get("setor_nome") or "—"))
+    leitura = f'{_fmt_valor(item.get("leitura_atual"))} {resumo["unidade"]}'
 
-    col_info, col_prog, col_btn = st.columns([6, 1.2, 1.1], gap="small")
+    col_info, col_prog, col_btn = st.columns([7.2, 1.45, 1.25], gap="small")
     with col_info:
         st.markdown(
-            f'<div class="rev-list-code">{html.escape(str(item.get("codigo") or "-"))}</div>'
-            f'<div class="rev-list-title">{html.escape(str(item.get("equipamento_nome") or "-"))} · {html.escape(str(item.get("etapa") or "-"))}</div>'
-            f'<div class="rev-list-meta">{html.escape(str(item.get("setor_nome") or "—"))} · {html.escape(resumo["situacao"])} · leitura {_fmt_valor(item.get("leitura_atual"))} {resumo["unidade"]}</div>'
+            f'<div class="rev-list-row">'
+            f'<div class="rev-list-code">{codigo}</div>'
+            f'<div class="rev-list-step">{etapa}</div>'
+            f'<div class="rev-list-title">{nome}</div>'
+            f'<div class="rev-list-context">{grupo} • {setor}</div>'
+            f'<div class="rev-list-meta">{html.escape(resumo["situacao"])} • leitura {leitura}</div>'
             f'<div class="rev-list-badges">'
             f'<span class="rev-b {resumo["badge_cls"]}">{html.escape(resumo["badge_txt"])}</span>'
             f'<span class="rev-chip rev-chip-neutral">{vencidas} vencida(s)</span>'
             f'<span class="rev-chip rev-chip-neutral">{proximas} próxima(s)</span>'
             f'<span class="rev-chip rev-chip-neutral">{"Ativo" if ativo else "Inativo"}</span>'
+            f'</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
     with col_prog:
-        st.metric("Progresso", f'{resumo["progresso"]:.0f}%')
+        st.markdown(
+            f'<div class="rev-sidebox">'
+            f'<div class="rev-sidebox-label">Progresso</div>'
+            f'<div class="rev-sidebox-value">{resumo["progresso"]:.0f}%</div>'
+            f'<div class="rev-sidebox-sub">{html.escape(resumo["situacao"])}<br>Leitura {leitura}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
     with col_btn:
+        st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
         if st.button("Detalhes", key=f"rev_det_{item['equipamento_id']}_{idx}", use_container_width=True):
             _abrir_detalhes_revisao(item)
             st.rerun()
