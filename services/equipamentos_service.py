@@ -48,6 +48,31 @@ def _ensure_base_planejamento_columns(cur) -> set[str]:
     return colunas
 
 
+
+
+def _ensure_grupos_column(cur) -> None:
+    try:
+        cur.execute(
+            """
+            create table if not exists grupos (
+                id uuid primary key,
+                nome text not null,
+                setor_id uuid null,
+                ativo boolean not null default true,
+                created_at timestamptz not null default now(),
+                updated_at timestamptz not null default now()
+            )
+            """
+        )
+        cur.execute("create index if not exists idx_grupos_setor on grupos(setor_id)")
+        cur.execute("alter table equipamentos add column if not exists grupo_id uuid")
+        cur.execute("create index if not exists idx_equipamentos_grupo_id on equipamentos(grupo_id)")
+    except Exception:
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
+
 def _expr_base(colunas: set[str], prefer_col: str, legacy_col: str, atual_col: str) -> str:
     if prefer_col in colunas and legacy_col in colunas:
         return f"coalesce(e.{prefer_col}, e.{legacy_col}, e.{atual_col}, 0)"
@@ -64,6 +89,7 @@ def listar() -> list[dict[str, Any]]:
     cur = conn.cursor()
     try:
         colunas = _ensure_base_planejamento_columns(cur)
+        _ensure_grupos_column(cur)
         cur.execute(
             f"""
             select
@@ -78,10 +104,13 @@ def listar() -> list[dict[str, Any]]:
                 e.template_revisao_id,
                 e.setor_id,
                 coalesce(s.nome, '-') as setor_nome,
+                e.grupo_id,
+                coalesce(g.nome, '-') as grupo_nome,
                 e.template_lubrificacao_id,
                 coalesce(e.ativo, true) as ativo
             from equipamentos e
             left join setores s on s.id = e.setor_id
+            left join grupos g on g.id = e.grupo_id
             order by e.codigo, e.nome
             """
         )
@@ -101,8 +130,10 @@ def listar() -> list[dict[str, Any]]:
                 "template_revisao_id": r[8],
                 "setor_id": r[9],
                 "setor_nome": r[10],
-                "template_lubrificacao_id": r[11],
-                "ativo": bool(r[12]),
+                "grupo_id": r[11],
+                "grupo_nome": r[12],
+                "template_lubrificacao_id": r[13],
+                "ativo": bool(r[14]),
             }
             for r in rows
         ]
@@ -159,6 +190,7 @@ def buscar(termo: str = "", somente_ativos: bool = False) -> list[dict[str, Any]
                 str(item.get("nome", "")),
                 str(item.get("tipo", "")),
                 str(item.get("setor_nome", "")),
+                str(item.get("grupo_nome", "")),
             ]
         ).lower()
         return termo_norm in alvo
@@ -172,6 +204,7 @@ def obter(equipamento_id):
     cur = conn.cursor()
     try:
         colunas = _ensure_base_planejamento_columns(cur)
+        _ensure_grupos_column(cur)
         cur.execute(
             f"""
             select
@@ -189,9 +222,12 @@ def obter(equipamento_id):
                 coalesce(tl.nome, '-') as template_lubrificacao_nome,
                 e.setor_id,
                 coalesce(s.nome, '-') as setor_nome,
+                e.grupo_id,
+                coalesce(g.nome, '-') as grupo_nome,
                 coalesce(e.ativo, true) as ativo
             from equipamentos e
             left join setores s on s.id = e.setor_id
+            left join grupos g on g.id = e.grupo_id
             left join templates_revisao tr on tr.id = e.template_revisao_id
             left join templates_lubrificacao tl on tl.id = e.template_lubrificacao_id
             where e.id = %s
@@ -218,7 +254,9 @@ def obter(equipamento_id):
             "template_lubrificacao_nome": r[11],
             "setor_id": r[12],
             "setor_nome": r[13],
-            "ativo": bool(r[14]),
+            "grupo_id": r[14],
+            "grupo_nome": r[15],
+            "ativo": bool(r[16]),
         }
         if not escopo_service.pode_ver_equipamento(item):
             return None
@@ -323,7 +361,7 @@ def carregar_snapshot_equipamentos() -> list[dict[str, Any]]:
     return rows
 
 
-def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, ativo=True, km_inicial_plano=None, horas_inicial_plano=None):
+def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, ativo=True, km_inicial_plano=None, horas_inicial_plano=None, grupo_id=None):
     return criar_completo(
         codigo=codigo,
         nome=nome,
@@ -335,24 +373,26 @@ def criar(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revi
         ativo=ativo,
         km_inicial_plano=km_inicial_plano,
         horas_inicial_plano=horas_inicial_plano,
+        grupo_id=grupo_id,
     )
 
 
-def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, template_lubrificacao_id=None, ativo=True, km_inicial_plano=None, horas_inicial_plano=None):
+def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, template_revisao_id=None, template_lubrificacao_id=None, ativo=True, km_inicial_plano=None, horas_inicial_plano=None, grupo_id=None):
     conn = get_conn()
     cur = conn.cursor()
     try:
         colunas = _ensure_base_planejamento_columns(cur)
+        _ensure_grupos_column(cur)
         km_inicial_plano = km_atual if km_inicial_plano is None else km_inicial_plano
         horas_inicial_plano = horas_atual if horas_inicial_plano is None else horas_inicial_plano
 
         insert_cols = [
-            "codigo", "nome", "tipo", "setor_id",
+            "codigo", "nome", "tipo", "setor_id", "grupo_id",
             "km_atual", "horas_atual",
             "template_revisao_id", "template_lubrificacao_id", "ativo",
         ]
         values = [
-            codigo, nome, tipo, setor_id,
+            codigo, nome, tipo, setor_id, grupo_id,
             km_atual, horas_atual,
             template_revisao_id, template_lubrificacao_id, ativo,
         ]
@@ -390,6 +430,7 @@ def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, temp
                 "nome": nome,
                 "tipo": tipo,
                 "setor_id": setor_id,
+                "grupo_id": grupo_id,
                 "km_atual": km_atual,
                 "horas_atual": horas_atual,
                 "template_revisao_id": template_revisao_id,
@@ -406,7 +447,7 @@ def criar_completo(codigo, nome, tipo, setor_id, km_atual=0, horas_atual=0, temp
         _safe_close(conn)
 
 
-def atualizar_inline(equipamento_id, *, nome, tipo, setor_id, ativo, km_inicial_plano=None, horas_inicial_plano=None):
+def atualizar_inline(equipamento_id, *, nome, tipo, setor_id, ativo, km_inicial_plano=None, horas_inicial_plano=None, grupo_id=None):
     atual = obter(equipamento_id)
     if not atual:
         raise ValueError("Equipamento não encontrado ou fora do escopo.")
@@ -415,11 +456,13 @@ def atualizar_inline(equipamento_id, *, nome, tipo, setor_id, ativo, km_inicial_
     cur = conn.cursor()
     try:
         colunas = _ensure_base_planejamento_columns(cur)
-        params = [nome, tipo, setor_id, bool(ativo)]
+        _ensure_grupos_column(cur)
+        params = [nome, tipo, setor_id, grupo_id, bool(ativo)]
         set_parts = [
             "nome = %s",
             "tipo = %s",
             "setor_id = %s",
+            "grupo_id = %s",
             "ativo = %s",
         ]
         if "km_inicial_plano" in colunas:
@@ -452,6 +495,7 @@ def atualizar_inline(equipamento_id, *, nome, tipo, setor_id, ativo, km_inicial_
                 "nome": atual.get("nome"),
                 "tipo": atual.get("tipo"),
                 "setor_id": atual.get("setor_id"),
+                "grupo_id": atual.get("grupo_id"),
                 "ativo": atual.get("ativo"),
                 "km_inicial_plano": atual.get("km_inicial_plano", atual.get("km_base_plano")),
                 "horas_inicial_plano": atual.get("horas_inicial_plano", atual.get("horas_base_plano")),
@@ -460,6 +504,7 @@ def atualizar_inline(equipamento_id, *, nome, tipo, setor_id, ativo, km_inicial_
                 "nome": nome,
                 "tipo": tipo,
                 "setor_id": setor_id,
+                "grupo_id": grupo_id,
                 "ativo": bool(ativo),
                 "km_inicial_plano": km_inicial_plano,
                 "horas_inicial_plano": horas_inicial_plano,
