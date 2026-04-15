@@ -25,6 +25,102 @@ def _fmt_unidade(tipo_controle):
     return "h" if tipo_controle == "horas" else "km"
 
 
+
+
+
+def _render_primeira_troca_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        .pt-modal-hero {
+            padding: 1rem 1.1rem;
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 18px;
+            background: linear-gradient(180deg, rgba(59,130,246,.12), rgba(15,23,42,.35));
+            margin-bottom: .9rem;
+        }
+        .pt-modal-eyebrow {
+            font-size: .78rem;
+            color: rgba(191,219,254,.9);
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            margin-bottom: .2rem;
+        }
+        .pt-modal-title {
+            font-size: 1.35rem;
+            font-weight: 700;
+            margin: 0;
+        }
+        .pt-modal-sub {
+            color: rgba(226,232,240,.88);
+            margin-top: .25rem;
+            font-size: .92rem;
+        }
+        .pt-chip-row {
+            display: flex;
+            gap: .5rem;
+            flex-wrap: wrap;
+            margin-top: .7rem;
+        }
+        .pt-chip {
+            padding: .35rem .65rem;
+            border-radius: 999px;
+            background: rgba(15,23,42,.52);
+            border: 1px solid rgba(255,255,255,.08);
+            font-size: .82rem;
+        }
+        .pt-item-shell {
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 18px;
+            padding: .95rem 1rem;
+            background: rgba(2,6,23,.22);
+            margin-bottom: .8rem;
+        }
+        .pt-item-title {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: .15rem;
+        }
+        .pt-item-sub {
+            color: rgba(203,213,225,.82);
+            font-size: .88rem;
+            margin-bottom: .8rem;
+        }
+        .pt-mini-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: .65rem;
+            margin-top: .15rem;
+        }
+        .pt-mini-card {
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 14px;
+            padding: .7rem .8rem;
+            background: rgba(15,23,42,.36);
+        }
+        .pt-mini-label {
+            font-size: .75rem;
+            color: rgba(148,163,184,.95);
+            margin-bottom: .18rem;
+        }
+        .pt-mini-value {
+            font-size: 1rem;
+            font-weight: 700;
+            color: rgba(248,250,252,.98);
+        }
+        .pt-list-row {
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 16px;
+            padding: .85rem 1rem;
+            margin-bottom: .7rem;
+            background: rgba(2,6,23,.16);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _render_page_header() -> None:
     st.markdown(
         """
@@ -443,17 +539,28 @@ def _registrar_lubrificacao_primeira_troca(eqp: dict, item: dict, key_suffix: st
 
 
 def _render_primeira_troca_dialog(eqp: dict, itens_eqp: list[dict]) -> None:
+    _render_primeira_troca_styles()
     grupo = eqp.get("grupo_nome") or eqp.get("grupo") or "—"
     setor = eqp.get("setor_nome") or "—"
     leitura = float(eqp.get("km_atual") or eqp.get("horas_atual") or 0)
     unidade_eqp = "km" if eqp.get("km_atual") not in (None, "") else "h"
 
-    st.caption(f"{grupo} • {setor}")
-    c1, c2, c3 = st.columns([3, 2, 2])
-    c1.markdown(f"### {eqp.get('codigo')} — {eqp.get('nome')}")
-    c2.metric("Compartimentos pendentes", len(itens_eqp))
-    c3.metric(f"Leitura atual ({unidade_eqp})", f"{leitura:.0f}")
-    st.divider()
+    st.markdown(
+        f"""
+        <div class="pt-modal-hero">
+            <div class="pt-modal-eyebrow">Primeira troca · Baixa inicial</div>
+            <div class="pt-modal-title">{html.escape(str(eqp.get('codigo')))} — {html.escape(str(eqp.get('nome')))}</div>
+            <div class="pt-modal-sub">Registre a primeira execução real para iniciar o ciclo dos compartimentos desta frota.</div>
+            <div class="pt-chip-row">
+                <div class="pt-chip">Grupo: <strong>{html.escape(str(grupo))}</strong></div>
+                <div class="pt-chip">Departamento: <strong>{html.escape(str(setor))}</strong></div>
+                <div class="pt-chip">Compartimentos pendentes: <strong>{len(itens_eqp)}</strong></div>
+                <div class="pt-chip">Leitura atual: <strong>{leitura:.0f} {unidade_eqp}</strong></div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     for idx, p in enumerate(itens_eqp):
         item = p["item"]
@@ -462,27 +569,42 @@ def _render_primeira_troca_dialog(eqp: dict, itens_eqp: list[dict]) -> None:
         vencimento = float(item.get("vencimento", 0) or 0)
         intervalo = float(item.get("intervalo", item.get("intervalo_valor", 0)) or 0)
         item_key = f"{eqp['id']}_{item.get('item_id', idx)}"
+        produto = item.get("tipo_produto") or "—"
+        item_nome = item.get("item") or "Lubrificação"
 
-        shell_left, shell_right = st.columns([5, 1.4], vertical_alignment="center")
-        with shell_left:
-            st.markdown(f"**{item.get('item') or 'Lubrificação'}**")
-            st.caption(
-                f"Produto: {item.get('tipo_produto') or '—'} • Leitura atual: {atual:.0f} {unidade} • "
-                f"Ciclo: {intervalo:.0f} {unidade} • Próxima troca: {vencimento:.0f} {unidade}"
-            )
-        with shell_right:
-            abrir = st.button("Dar baixa", key=f"abrir_baixa_{item_key}", use_container_width=True)
+        st.markdown(
+            f"""
+            <div class="pt-item-shell">
+                <div class="pt-item-title">{html.escape(str(item_nome))}</div>
+                <div class="pt-item-sub">Produto: {html.escape(str(produto))} • Compartimento em primeira troca</div>
+                <div class="pt-mini-grid">
+                    <div class="pt-mini-card"><div class="pt-mini-label">Leitura atual</div><div class="pt-mini-value">{atual:.0f} {unidade}</div></div>
+                    <div class="pt-mini-card"><div class="pt-mini-label">Ciclo</div><div class="pt-mini-value">{intervalo:.0f} {unidade}</div></div>
+                    <div class="pt-mini-card"><div class="pt-mini-label">Próxima troca</div><div class="pt-mini-value">{vencimento:.0f} {unidade}</div></div>
+                    <div class="pt-mini-card"><div class="pt-mini-label">Status</div><div class="pt-mini-value">Primeira troca</div></div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        a1, a2 = st.columns([1.35, 4.65], vertical_alignment="center")
+        with a1:
+            abrir = st.button("Dar baixa", key=f"abrir_baixa_{item_key}", use_container_width=True, type="primary")
             if abrir:
                 st.session_state["lub_primeira_item"] = item_key
                 st.rerun()
+        with a2:
+            st.caption("Abra o formulário apenas quando for apontar a primeira troca real do compartimento.")
 
         if st.session_state.get("lub_primeira_item") == item_key:
             with st.container(border=True):
                 _registrar_lubrificacao_primeira_troca(eqp, item, item_key)
-                if st.button("Cancelar", key=f"cancelar_baixa_{item_key}", use_container_width=True):
-                    st.session_state.pop("lub_primeira_item", None)
-                    st.rerun()
-        st.divider()
+                c1, c2 = st.columns([1.2, 4.8])
+                with c1:
+                    if st.button("Cancelar", key=f"cancelar_baixa_{item_key}", use_container_width=True):
+                        st.session_state.pop("lub_primeira_item", None)
+                        st.rerun()
+        st.markdown("<div style='height:.35rem'></div>", unsafe_allow_html=True)
 
 
 def _render_primeira_troca_listagem(itens: list[dict]) -> None:
@@ -543,11 +665,13 @@ def _render_primeira_troca_listagem(itens: list[dict]) -> None:
     with nav3:
         st.caption(f"Mostrando {min((pagina_atual-1)*por_pagina + 1, total)}–{min(pagina_atual*por_pagina, total)} de {total} frotas • Página {pagina_atual} de {total_paginas}")
     with nav4:
-        st.caption("Clique em ‘Ver compartimentos’ para abrir o pop-up.")
+        st.caption("Clique em ‘Ver compartimentos’ para abrir o pop-up com os cards dos compartimentos.")
 
     inicio = (pagina_atual - 1) * por_pagina
     fim = inicio + por_pagina
     pagina_registros = registros[inicio:fim]
+
+    _render_primeira_troca_styles()
 
     for registro in pagina_registros:
         eqp = registro["eqp"]
@@ -558,20 +682,21 @@ def _render_primeira_troca_listagem(itens: list[dict]) -> None:
         leitura_un = "km" if eqp.get("km_atual") not in (None, "") else "h"
         leitura_txt = f"{float(leitura_valor or 0):.0f} {leitura_un}"
 
-        col_a, col_b, col_c, col_d = st.columns([3.3, 2.2, 1.6, 1.4], vertical_alignment="center")
+        st.markdown("<div class='pt-list-row'>", unsafe_allow_html=True)
+        col_a, col_b, col_c, col_d = st.columns([3.2, 1.7, 1.5, 1.4], vertical_alignment="center")
         with col_a:
             st.markdown(f"**{eqp.get('codigo')} — {eqp.get('nome')}**")
             st.caption(f"{grupo} • {setor}")
         with col_b:
-            st.caption(f"Compartimentos pendentes: **{len(itens_eqp)}**")
+            st.caption(f"Compartimentos: **{len(itens_eqp)}**")
         with col_c:
-            st.caption(f"Leitura atual: **{leitura_txt}**")
+            st.caption(f"Leitura: **{leitura_txt}**")
         with col_d:
-            if st.button("Ver compartimentos", key=f"ver_comp_{eqp['id']}", use_container_width=True):
+            if st.button("Ver compartimentos", key=f"ver_comp_{eqp['id']}", use_container_width=True, type="primary"):
                 st.session_state["lub_primeira_modal_eqp"] = eqp["id"]
                 st.session_state.pop("lub_primeira_item", None)
                 st.rerun()
-        st.divider()
+        st.markdown("</div>", unsafe_allow_html=True)
 
     modal_eqp_id = st.session_state.get("lub_primeira_modal_eqp")
     if modal_eqp_id:
