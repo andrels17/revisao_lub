@@ -21,18 +21,10 @@ def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, le
     intervalo = float(intervalo or 0)
     leitura_base = float(leitura_base or 0)
 
-    if leitura_base > leitura_atual:
-        leitura_base = leitura_atual
-
     if ultima_execucao <= 0:
-        inicio_ciclo = leitura_base
-        proximo_vencimento = inicio_ciclo + intervalo
+        proximo_vencimento = leitura_base + intervalo
         diferenca = proximo_vencimento - leitura_atual
-        if leitura_atual >= proximo_vencimento:
-            return "VENCIDO", inicio_ciclo, proximo_vencimento, diferenca
-        if diferenca <= tolerancia:
-            return "PROXIMO", inicio_ciclo, proximo_vencimento, diferenca
-        return "EM DIA", inicio_ciclo, proximo_vencimento, diferenca
+        return "SEM_BASE", leitura_base, proximo_vencimento, diferenca
 
     offset_atual = max(0.0, leitura_atual - leitura_base)
     ciclo_atual = int(offset_atual // intervalo) if offset_atual > 0 else 0
@@ -299,6 +291,7 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
             return {}
 
         ultimas_por_item, ultimas_por_nome = _carregar_ultimas_execucoes_batch(cur, equipamento_ids, schema)
+        tolerancia = configuracoes_service.get_tolerancia_padrao()
         status_ordem = {"SEM_BASE": 0, "VENCIDO": 1, "PROXIMO": 2, "EM DIA": 3, "REALIZADO": 4}
         resultado = defaultdict(list)
 
@@ -326,7 +319,6 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
                 ultima = ultimas_por_nome.get(eqp_id, {}).get(nome_ref)
             ultima = float(ultima or 0)
 
-            tolerancia = _tolerancia_por_tipo(tipo_controle)
             status, ref_ciclo, prox_venc, diff = _status_item_ciclo(
                 leitura_atual,
                 ultima,
