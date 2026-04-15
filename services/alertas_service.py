@@ -22,59 +22,65 @@ def gerar_link_whatsapp(telefone: str, mensagem: str) -> str:
 
 def _data_estimada(falta: float, unidade: str) -> str:
     if falta <= 0:
-        return "imediatamente (já vencido)"
+        return "execução imediata (item já vencido)"
     return f"em aproximadamente {falta:.0f} {unidade}"
+
+
+def _linha_situacao(status: str, falta: float, unidade: str) -> str:
+    if status == "VENCIDO":
+        return f"Situação: *Vencido* há {abs(falta):.0f} {unidade}"
+    if status == "PROXIMO":
+        return f"Situação: *Próximo do vencimento* — faltam {falta:.0f} {unidade}"
+    return f"Situação: {status or '-'}"
 
 
 def montar_mensagem_revisao(equipamento: dict, etapa: dict, responsavel_nome: str) -> str:
     tipo = etapa.get("tipo_controle", "")
     unidade = "h" if tipo == "horas" else "km"
-    falta = float(etapa.get("diferenca", etapa.get("falta", 0)))
+    falta = float(etapa.get("diferenca", etapa.get("falta", 0)) or 0)
     status = etapa.get("status", "-")
-
-    linhas_status = ""
-    if status == "VENCIDO":
-        linhas_status = f"⚠️ *VENCIDO* há {abs(falta):.0f} {unidade} — ação imediata necessária!\n"
-    elif status == "PROXIMO":
-        linhas_status = f"⏰ Próximo do vencimento — faltam {falta:.0f} {unidade}\n"
+    leitura_atual = float(etapa.get("atual", etapa.get("leitura_atual", 0)) or 0)
+    vencimento = float(etapa.get("vencimento", etapa.get("vencimento_ciclo", 0)) or 0)
+    etapa_nome = etapa.get("etapa", etapa.get("nome_etapa", "-"))
 
     return (
-        f"🔧 *ALERTA DE REVISÃO*\n\n"
+        f"*Alerta de revisão*\n\n"
+        f"Olá, *{responsavel_nome}*.\n"
+        f"Foi identificada uma revisão que exige acompanhamento.\n\n"
         f"Equipamento: *{equipamento.get('codigo', '')} - {equipamento.get('nome', '')}*\n"
         f"Setor: {equipamento.get('setor_nome', '-')}\n"
-        f"Etapa: {etapa.get('etapa', etapa.get('nome_etapa', '-'))}\n\n"
-        f"Leitura atual: {float(etapa.get('atual', etapa.get('leitura_atual', 0))):.0f} {unidade}\n"
-        f"Vencimento:    {float(etapa.get('vencimento', etapa.get('vencimento_ciclo', 0))):.0f} {unidade}\n"
-        f"{linhas_status}\n"
-        f"Prazo estimado: {_data_estimada(falta, unidade)}\n\n"
-        f"Responsável: {responsavel_nome}\n\n"
-        f"Por favor, providencie a execução da revisão."
+        f"Etapa: {etapa_nome}\n"
+        f"Leitura atual: {leitura_atual:.0f} {unidade}\n"
+        f"Vencimento: {vencimento:.0f} {unidade}\n"
+        f"{_linha_situacao(status, falta, unidade)}\n"
+        f"Janela estimada: {_data_estimada(falta, unidade)}\n\n"
+        f"Ação recomendada: programar a execução da revisão e registrar o apontamento no sistema."
     )
 
 
 def montar_mensagem_lubrificacao(equipamento: dict, item: dict, responsavel_nome: str) -> str:
     tipo = item.get("tipo_controle", "")
     unidade = "h" if tipo == "horas" else "km"
-    falta = float(item.get("diferenca", item.get("falta", 0)))
+    falta = float(item.get("diferenca", item.get("falta", 0)) or 0)
     status = item.get("status", "-")
-
-    linhas_status = ""
-    if status == "VENCIDO":
-        linhas_status = f"⚠️ *VENCIDO* há {abs(falta):.0f} {unidade} — ação imediata necessária!\n"
-    elif status == "PROXIMO":
-        linhas_status = f"⏰ Próximo do vencimento — faltam {falta:.0f} {unidade}\n"
+    leitura_atual = float(item.get("atual", 0) or 0)
+    vencimento = float(item.get("vencimento", 0) or 0)
+    item_nome = item.get("item", "-")
+    produto = item.get("tipo_produto", "-")
 
     return (
-        f"🛢️ *ALERTA DE LUBRIFICAÇÃO*\n\n"
+        f"*Alerta de lubrificação*\n\n"
+        f"Olá, *{responsavel_nome}*.\n"
+        f"Foi identificado um item de lubrificação que exige acompanhamento.\n\n"
         f"Equipamento: *{equipamento.get('codigo', '')} - {equipamento.get('nome', '')}*\n"
         f"Setor: {equipamento.get('setor_nome', '-')}\n"
-        f"Item: {item.get('item', '-')} ({item.get('tipo_produto', '-')})\n\n"
-        f"Leitura atual: {float(item.get('atual', 0)):.0f} {unidade}\n"
-        f"Próxima troca: {float(item.get('vencimento', 0)):.0f} {unidade}\n"
-        f"{linhas_status}\n"
-        f"Prazo estimado: {_data_estimada(falta, unidade)}\n\n"
-        f"Responsável: {responsavel_nome}\n\n"
-        f"Por favor, providencie a lubrificação."
+        f"Item: {item_nome}\n"
+        f"Produto: {produto}\n"
+        f"Leitura atual: {leitura_atual:.0f} {unidade}\n"
+        f"Próxima troca: {vencimento:.0f} {unidade}\n"
+        f"{_linha_situacao(status, falta, unidade)}\n"
+        f"Janela estimada: {_data_estimada(falta, unidade)}\n\n"
+        f"Ação recomendada: programar a lubrificação e registrar o apontamento no sistema."
     )
 
 

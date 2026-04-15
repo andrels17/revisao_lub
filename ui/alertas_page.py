@@ -79,6 +79,17 @@ def _inject_styles():
         .batch-recipient .title{font-size:.92rem;font-weight:800;color:#f3f8ff;margin-bottom:.15rem;}
         .batch-recipient .sub{font-size:.78rem;color:#9db0c7;margin-bottom:.35rem;}
         .batch-lines{color:#d8e6f8;font-size:.82rem;line-height:1.5;margin:.2rem 0 .45rem 0;}
+
+        .alert-core-grid{display:grid;grid-template-columns:1.1fr .9fr .9fr .9fr;gap:.55rem;margin:.75rem 0 .55rem 0;}
+        .alert-core-item{background:rgba(8,16,29,.40);border:1px solid rgba(148,163,184,.10);border-radius:14px;padding:.7rem .8rem;}
+        .alert-core-item .k{font-size:.68rem;color:#8ea6c4;text-transform:uppercase;font-weight:700;letter-spacing:.04em;}
+        .alert-core-item .v{font-size:.92rem;color:#eef5ff;font-weight:800;margin-top:.12rem;line-height:1.35;}
+        .alert-code{display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .5rem;border-radius:10px;background:rgba(79,140,255,.10);border:1px solid rgba(79,140,255,.18);color:#dcebff;font-size:.72rem;font-weight:800;margin-bottom:.35rem;}
+        .alert-actions-note{color:#8ea6c4;font-size:.76rem;margin-top:.2rem;}
+        .queue-card .eqp{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;}
+        .queue-code-chip{display:inline-flex;align-items:center;padding:.2rem .55rem;border-radius:999px;background:rgba(79,140,255,.12);border:1px solid rgba(79,140,255,.18);font-size:.72rem;font-weight:900;color:#e4f0ff;letter-spacing:.02em;}
+        .queue-title{font-size:.98rem;font-weight:800;color:#f2f7ff;}
+        .queue-reason{margin-top:.6rem;padding:.7rem .8rem;border-radius:12px;background:rgba(7,17,31,.55);border:1px solid rgba(148,163,184,.08);color:#dbe7f6;font-size:.8rem;line-height:1.45;}
         </style>
         """,
         unsafe_allow_html=True,
@@ -340,22 +351,28 @@ def _render_card_alerta(item_payload: dict, tipo: str, mapa_operacionais: dict, 
     mensagem = _mensagem_alerta(tipo, eqp, item, nome_destinatario)
     telefone = (destinatario or {}).get("telefone") or ""
     link = alertas_service.gerar_link_whatsapp(telefone, mensagem) if telefone else ""
+    codigo = eqp.get("codigo", "-")
+    nome = eqp.get("nome", "-")
+    operacional = [d.get("nome") for d in destinatarios if d.get("papel") == "Operacional"]
+    gestao = [d.get("nome") for d in destinatarios if d.get("papel") == "Gestão"]
 
     st.markdown("<div class='alerts-card'>", unsafe_allow_html=True)
     st.markdown(
         f"<div class='alert-badges'>{_queue_badge(status_label, 'danger' if status_raw == 'VENCIDO' else 'warning')}{_queue_badge('Revisão' if tipo == 'revisao' else 'Lubrificação')}{_queue_badge('Enviado hoje', 'info') if enviado_hoje else ''}</div>",
         unsafe_allow_html=True,
     )
-    st.markdown(f"<div class='eqp'>{eqp.get('codigo', '-')} — {eqp.get('nome', '-')}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='alert-code'>Frota {codigo}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='eqp'>{nome}</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='item'>{titulo_item}</div>", unsafe_allow_html=True)
     st.markdown(
         f"""
-        <div class="meta">
-            Setor: <strong>{eqp.get('setor_nome', '-')}</strong> &nbsp;•&nbsp;
-            Atual: <strong>{float(item.get('atual', 0) or 0):.0f} {unidade}</strong> &nbsp;•&nbsp;
-            Vencimento: <strong>{float(item.get('vencimento', item.get('vencimento_ciclo', 0)) or 0):.0f} {unidade}</strong> &nbsp;•&nbsp;
-            Diferença: <strong>{falta:.0f} {unidade}</strong>
+        <div class='alert-core-grid'>
+            <div class='alert-core-item'><div class='k'>Setor</div><div class='v'>{eqp.get('setor_nome', '-')}</div></div>
+            <div class='alert-core-item'><div class='k'>Atual</div><div class='v'>{float(item.get('atual', 0) or 0):.0f} {unidade}</div></div>
+            <div class='alert-core-item'><div class='k'>Vencimento</div><div class='v'>{float(item.get('vencimento', item.get('vencimento_ciclo', 0)) or 0):.0f} {unidade}</div></div>
+            <div class='alert-core-item'><div class='k'>Diferença</div><div class='v'>{falta:.0f} {unidade}</div></div>
         </div>
+        <div class='resp'>Operacional: <strong>{', '.join(operacional) if operacional else '-'}</strong><br>Gestão: <strong>{', '.join(gestao) if gestao else '-'}</strong></div>
         """,
         unsafe_allow_html=True,
     )
@@ -364,6 +381,7 @@ def _render_card_alerta(item_payload: dict, tipo: str, mapa_operacionais: dict, 
     with a1:
         if link:
             st.link_button("Abrir WhatsApp", link, use_container_width=True)
+            st.markdown("<div class='alert-actions-note'>Abre a mensagem já pronta para o destinatário selecionado.</div>", unsafe_allow_html=True)
         else:
             st.button("Sem telefone", disabled=True, key=f"nolink_{tipo}_{eqp['id']}_{titulo_item}", use_container_width=True)
     with a2:
@@ -376,7 +394,7 @@ def _render_card_alerta(item_payload: dict, tipo: str, mapa_operacionais: dict, 
             st.success("Envio registrado.")
             _refresh_central()
 
-    with st.expander("Mensagem pronta"):
+    with st.expander("Mensagem pronta", expanded=False):
         st.markdown("<div class='alert-message'>", unsafe_allow_html=True)
         st.code(mensagem)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -510,10 +528,18 @@ def _render_queue_card(item: dict):
     ultimo_txt = ultimo.strftime("%d/%m/%Y %H:%M") if hasattr(ultimo, "strftime") else "-"
     falta = float(item.get("falta", 0) or 0)
     unidade = "h" if str(item.get("item", "")).lower().find("hora") >= 0 else "km"
+    equipamento = item.get("equipamento") or "-"
+    if " - " in equipamento:
+        codigo, nome = equipamento.split(" - ", 1)
+    else:
+        codigo, nome = equipamento, equipamento
 
     st.markdown("<div class='queue-card'>", unsafe_allow_html=True)
     st.markdown(f"<div class='alert-badges'>{''.join(badges)}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='eqp'>{item.get('equipamento')}</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='eqp'><span class='queue-code-chip'>{codigo}</span><span class='queue-title'>{nome}</span></div>",
+        unsafe_allow_html=True,
+    )
     st.markdown(f"<div class='item'>{item.get('item')}</div>", unsafe_allow_html=True)
     st.markdown(
         f"""
@@ -524,12 +550,11 @@ def _render_queue_card(item: dict):
             <div class='compact-item'><div class='k'>Último envio</div><div class='v'>{ultimo_txt}</div></div>
         </div>
         <div class='resp'>Operacional: <strong>{item.get('responsaveis_operacionais') or '-'}</strong><br>Gestão: <strong>{item.get('gestao') or '-'}</strong></div>
+        <div class='queue-reason'><strong>Motivo da fila:</strong> {item.get('motivo_fila') or '-'}</div>
         """,
         unsafe_allow_html=True,
     )
-    st.caption(f"Motivo da fila: {item.get('motivo_fila') or '-'}")
     st.markdown("</div>", unsafe_allow_html=True)
-
 
 
 
