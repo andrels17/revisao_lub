@@ -358,6 +358,238 @@ def _render_tabela(itens, titulo):
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
+
+
+def _filtrar_pendencias_base(pendencias: list[dict], setor_f, grupo_f, eqp_f, status_f):
+    filtradas = pendencias
+    if setor_f:
+        filtradas = [p for p in filtradas if p["eqp"].get("setor_nome", "-") in setor_f]
+    if grupo_f:
+        filtradas = [p for p in filtradas if (p["eqp"].get("grupo_nome") or p["eqp"].get("grupo") or "—") in grupo_f]
+    if eqp_f:
+        codigos_sel = {e.split(" — ", 1)[0] for e in eqp_f}
+        filtradas = [p for p in filtradas if str(p["eqp"].get("codigo")) in codigos_sel]
+    if status_f != "Todos":
+        filtradas = [p for p in filtradas if p["item"]["status"] == status_f]
+    return filtradas
+
+
+def _registrar_lubrificacao_primeira_troca(eqp: dict, item: dict, key_suffix: str) -> None:
+    tipo = item.get("tipo_controle", "km")
+    unidade = _fmt_unidade(tipo)
+    leitura_atual = float(item.get("atual", 0) or 0)
+
+    vinculos_op = vinculos_service.listar_por_equipamento(eqp["id"])
+    ids_op = {v["responsavel_id"] for v in vinculos_op}
+    todos_resp = [r for r in responsaveis_service.listar() if r.get("ativo")]
+    resp_lista = [r for r in todos_resp if r["id"] in ids_op] or todos_resp
+
+    st.markdown("#### Registrar primeira troca")
+    with st.form(f"form_primeira_troca_{key_suffix}", clear_on_submit=True):
+        c1, c2 = st.columns(2)
+        with c1:
+            if tipo == "horas":
+                horas_exec = st.number_input(
+                    f"Horímetro na execução ({unidade})",
+                    min_value=0.0,
+                    value=leitura_atual,
+                    step=1.0,
+                    key=f"pt_h_{key_suffix}",
+                )
+                km_exec = None
+            else:
+                km_exec = st.number_input(
+                    f"Hodômetro na execução ({unidade})",
+                    min_value=0.0,
+                    value=leitura_atual,
+                    step=1.0,
+                    key=f"pt_k_{key_suffix}",
+                )
+                horas_exec = None
+            data_exec = st.date_input(
+                "Data da execução",
+                value=datetime.date.today(),
+                key=f"pt_d_{key_suffix}",
+            )
+        with c2:
+            resp = st.selectbox(
+                "Responsável",
+                [None] + resp_lista,
+                format_func=lambda r: "— não informar —" if r is None else r["nome"],
+                key=f"pt_r_{key_suffix}",
+            )
+            obs = st.text_area("Observações", height=90, key=f"pt_o_{key_suffix}")
+
+        salvar = st.form_submit_button("✅ Confirmar baixa", use_container_width=True, type="primary")
+        if salvar:
+            lubrificacoes_service.registrar_execucao(
+                {
+                    "equipamento_id": eqp["id"],
+                    "item_id": item.get("item_id"),
+                    "responsavel_id": resp["id"] if resp else None,
+                    "nome_item": item.get("item") or "Lubrificação",
+                    "tipo_produto": item.get("tipo_produto"),
+                    "data_execucao": data_exec,
+                    "km_execucao": km_exec,
+                    "horas_execucao": horas_exec,
+                    "observacoes": obs.strip() or None,
+                }
+            )
+            _carregar_pendencias_batch.clear()
+            st.session_state.pop("lub_primeira_item", None)
+            st.session_state.pop("lub_primeira_modal_eqp", None)
+            st.success("Primeira troca registrada com sucesso.")
+            st.rerun()
+
+
+def _render_primeira_troca_dialog(eqp: dict, itens_eqp: list[dict]) -> None:
+    grupo = eqp.get("grupo_nome") or eqp.get("grupo") or "—"
+    setor = eqp.get("setor_nome") or "—"
+    leitura = float(eqp.get("km_atual") or eqp.get("horas_atual") or 0)
+    unidade_eqp = "km" if eqp.get("km_atual") not in (None, "") else "h"
+
+    st.caption(f"{grupo} • {setor}")
+    c1, c2, c3 = st.columns([3, 2, 2])
+    c1.markdown(f"### {eqp.get('codigo')} — {eqp.get('nome')}")
+    c2.metric("Compartimentos pendentes", len(itens_eqp))
+    c3.metric(f"Leitura atual ({unidade_eqp})", f"{leitura:.0f}")
+    st.divider()
+
+    for idx, p in enumerate(itens_eqp):
+        item = p["item"]
+        unidade = _fmt_unidade(item.get("tipo_controle", "km"))
+        atual = float(item.get("atual", 0) or 0)
+        vencimento = float(item.get("vencimento", 0) or 0)
+        intervalo = float(item.get("intervalo", item.get("intervalo_valor", 0)) or 0)
+        item_key = f"{eqp['id']}_{item.get('item_id', idx)}"
+
+        shell_left, shell_right = st.columns([5, 1.4], vertical_alignment="center")
+        with shell_left:
+            st.markdown(f"**{item.get('item') or 'Lubrificação'}**")
+            st.caption(
+                f"Produto: {item.get('tipo_produto') or '—'} • Leitura atual: {atual:.0f} {unidade} • "
+                f"Ciclo: {intervalo:.0f} {unidade} • Próxima troca: {vencimento:.0f} {unidade}"
+            )
+        with shell_right:
+            abrir = st.button("Dar baixa", key=f"abrir_baixa_{item_key}", use_container_width=True)
+            if abrir:
+                st.session_state["lub_primeira_item"] = item_key
+                st.rerun()
+
+        if st.session_state.get("lub_primeira_item") == item_key:
+            with st.container(border=True):
+                _registrar_lubrificacao_primeira_troca(eqp, item, item_key)
+                if st.button("Cancelar", key=f"cancelar_baixa_{item_key}", use_container_width=True):
+                    st.session_state.pop("lub_primeira_item", None)
+                    st.rerun()
+        st.divider()
+
+
+def _render_primeira_troca_listagem(itens: list[dict]) -> None:
+    if not itens:
+        st.success("Nenhum item aguardando primeira troca.")
+        return
+
+    st.caption("Fluxo por frota: abra o equipamento e registre a primeira baixa dos compartimentos que ainda não têm referência inicial.")
+
+    top1, top2, top3, top4 = st.columns([2.4, 1.5, 1.2, 1.1])
+    with top1:
+        busca = st.text_input("Buscar frota", placeholder="Código, nome, grupo...", key="lub_primeira_busca")
+    with top2:
+        ordenar = st.selectbox("Ordenar", ["Código", "Nome", "Grupo"], key="lub_primeira_ordem")
+    with top3:
+        por_pagina = st.selectbox("Itens por página", [10, 20, 30, 50], index=1, key="lub_primeira_por_pagina")
+    with top4:
+        pagina_atual = st.number_input("Página", min_value=1, value=1, step=1, key="lub_primeira_pagina")
+
+    agrupado = {}
+    for p in itens:
+        eqp = p["eqp"]
+        agrupado.setdefault(eqp["id"], {"eqp": eqp, "itens": []})["itens"].append(p)
+
+    registros = list(agrupado.values())
+    if busca:
+        termo = busca.strip().lower()
+        registros = [
+            r for r in registros
+            if termo in str(r["eqp"].get("codigo", "")).lower()
+            or termo in str(r["eqp"].get("nome", "")).lower()
+            or termo in str(r["eqp"].get("grupo_nome") or r["eqp"].get("grupo") or "").lower()
+            or termo in str(r["eqp"].get("setor_nome", "")).lower()
+        ]
+
+    if ordenar == "Nome":
+        registros.sort(key=lambda r: str(r["eqp"].get("nome", "")))
+    elif ordenar == "Grupo":
+        registros.sort(key=lambda r: str(r["eqp"].get("grupo_nome") or r["eqp"].get("grupo") or ""))
+    else:
+        registros.sort(key=lambda r: str(r["eqp"].get("codigo", "")))
+
+    total = len(registros)
+    total_paginas = max(1, (total + por_pagina - 1) // por_pagina)
+    if pagina_atual > total_paginas:
+        st.session_state["lub_primeira_pagina"] = 1
+        pagina_atual = 1
+
+    nav1, nav2, nav3, nav4 = st.columns([1, 1, 3, 1.4], vertical_alignment="center")
+    with nav1:
+        if st.button("◀", key="lub_primeira_prev", disabled=pagina_atual <= 1, use_container_width=True):
+            st.session_state["lub_primeira_pagina"] = max(1, pagina_atual - 1)
+            st.rerun()
+    with nav2:
+        if st.button("▶", key="lub_primeira_next", disabled=pagina_atual >= total_paginas, use_container_width=True):
+            st.session_state["lub_primeira_pagina"] = min(total_paginas, pagina_atual + 1)
+            st.rerun()
+    with nav3:
+        st.caption(f"Mostrando {min((pagina_atual-1)*por_pagina + 1, total)}–{min(pagina_atual*por_pagina, total)} de {total} frotas • Página {pagina_atual} de {total_paginas}")
+    with nav4:
+        st.caption("Clique em ‘Ver compartimentos’ para abrir o pop-up.")
+
+    inicio = (pagina_atual - 1) * por_pagina
+    fim = inicio + por_pagina
+    pagina_registros = registros[inicio:fim]
+
+    for registro in pagina_registros:
+        eqp = registro["eqp"]
+        itens_eqp = registro["itens"]
+        grupo = eqp.get("grupo_nome") or eqp.get("grupo") or "—"
+        setor = eqp.get("setor_nome") or "—"
+        leitura_valor = eqp.get("km_atual") if eqp.get("km_atual") not in (None, "") else eqp.get("horas_atual")
+        leitura_un = "km" if eqp.get("km_atual") not in (None, "") else "h"
+        leitura_txt = f"{float(leitura_valor or 0):.0f} {leitura_un}"
+
+        col_a, col_b, col_c, col_d = st.columns([3.3, 2.2, 1.6, 1.4], vertical_alignment="center")
+        with col_a:
+            st.markdown(f"**{eqp.get('codigo')} — {eqp.get('nome')}**")
+            st.caption(f"{grupo} • {setor}")
+        with col_b:
+            st.caption(f"Compartimentos pendentes: **{len(itens_eqp)}**")
+        with col_c:
+            st.caption(f"Leitura atual: **{leitura_txt}**")
+        with col_d:
+            if st.button("Ver compartimentos", key=f"ver_comp_{eqp['id']}", use_container_width=True):
+                st.session_state["lub_primeira_modal_eqp"] = eqp["id"]
+                st.session_state.pop("lub_primeira_item", None)
+                st.rerun()
+        st.divider()
+
+    modal_eqp_id = st.session_state.get("lub_primeira_modal_eqp")
+    if modal_eqp_id:
+        selecionado = agrupado.get(modal_eqp_id)
+        if selecionado:
+            if hasattr(st, "dialog"):
+                @st.dialog("Primeira troca", width="large")
+                def _dlg_primeira_troca():
+                    _render_primeira_troca_dialog(selecionado["eqp"], selecionado["itens"])
+                    if st.button("Fechar", key="fechar_dialog_primeira_troca", use_container_width=True):
+                        st.session_state.pop("lub_primeira_modal_eqp", None)
+                        st.session_state.pop("lub_primeira_item", None)
+                        st.rerun()
+                _dlg_primeira_troca()
+            else:
+                st.info("Seu Streamlit não suporta diálogo nativo. Atualize o app para usar pop-up.")
+                with st.container(border=True):
+                    _render_primeira_troca_dialog(selecionado["eqp"], selecionado["itens"])
 def _render_pendencias():
     pendencias, _ = _carregar_pendencias_batch()
     if not pendencias:
@@ -381,16 +613,7 @@ def _render_pendencias():
         status_f = st.selectbox("Status", status_opts, key="lub_status")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    filtradas = pendencias
-    if setor_f:
-        filtradas = [p for p in filtradas if p["eqp"].get("setor_nome", "-") in setor_f]
-    if grupo_f:
-        filtradas = [p for p in filtradas if (p["eqp"].get("grupo_nome") or p["eqp"].get("grupo") or "—") in grupo_f]
-    if eqp_f:
-        codigos_sel = {e.split(" — ", 1)[0] for e in eqp_f}
-        filtradas = [p for p in filtradas if p["eqp"]["codigo"] in codigos_sel]
-    if status_f != "Todos":
-        filtradas = [p for p in filtradas if p["item"]["status"] == status_f]
+    filtradas = _filtrar_pendencias_base(pendencias, setor_f, grupo_f, eqp_f, status_f)
 
     contagem = {s: sum(1 for p in filtradas if p["item"]["status"] == s) for s in STATUS_ORDEM}
     _render_kpi_cards(contagem)
@@ -403,7 +626,7 @@ def _render_pendencias():
     em_dia = [p for p in filtradas if p["item"]["status"] == "EM DIA"]
     realizados = [p for p in filtradas if p["item"]["status"] == "REALIZADO"]
 
-    tab_b, tab_v, tab_p, tab_d, tab_r, tab_tabela = st.tabs(
+    tab_s, tab_v, tab_p, tab_d, tab_r, tab_tabela = st.tabs(
         [
             f"🟣 Primeira troca ({len(primeira_troca)})",
             f"🔴 Vencidos ({len(vencidos)})",
@@ -414,78 +637,19 @@ def _render_pendencias():
         ]
     )
 
-    with tab_b:
-        _render_primeira_troca(primeira_troca)
-
+    with tab_s:
+        _render_primeira_troca_listagem(primeira_troca)
     with tab_v:
         _render_cards_listagem(vencidos, "Nenhuma lubrificação vencida.", "vencidos")
-
     with tab_p:
         _render_cards_listagem(proximos, "Nenhuma lubrificação próxima do vencimento.", "proximos")
-
     with tab_d:
         _render_tabela([p for p in em_dia], "Em dia")
-
     with tab_r:
         _render_tabela([p for p in realizados], "Realizados neste ciclo")
-
     with tab_tabela:
         st.caption("Visão consolidada de todos os itens filtrados.")
         _render_tabela(filtradas, "Todos os itens")
-
-
-def _render_primeira_troca(itens: list[dict]) -> None:
-    if not itens:
-        st.success("Nenhum item aguardando primeira troca.")
-        return
-
-    st.caption("Fluxo por frota: abra o equipamento e registre a primeira baixa dos compartimentos que ainda não têm referência inicial.")
-
-    agrupado = {}
-    for p in itens:
-        eqp = p["eqp"]
-        agrupado.setdefault(eqp.get("id"), {"eqp": eqp, "itens": []})["itens"].append(p)
-
-    grupos = sorted(agrupado.values(), key=lambda g: str(g["eqp"].get("codigo", "")))
-
-    for grupo in grupos:
-        eqp = grupo["eqp"]
-        itens_eqp = grupo["itens"]
-        codigo = str(eqp.get("codigo", "—"))
-        nome = str(eqp.get("nome", "—"))
-        grupo_nome = eqp.get("grupo_nome") or eqp.get("grupo") or "—"
-        setor = eqp.get("setor_nome") or "—"
-
-        with st.expander(f"{codigo} — {nome} • {len(itens_eqp)} compartimento(s)", expanded=False):
-            st.caption(f"{grupo_nome} • {setor}")
-            for idx, payload in enumerate(itens_eqp):
-                item = payload["item"]
-                unidade = _fmt_unidade(item.get("tipo_controle", "km"))
-                atual = float(item.get("atual", 0) or 0)
-                intervalo = float(item.get("intervalo", item.get("intervalo_valor", 0)) or 0)
-                proxima = float(item.get("vencimento", 0) or 0)
-                card = st.container(border=True)
-                with card:
-                    top_l, top_r = st.columns([6, 2], vertical_alignment="center")
-                    with top_l:
-                        st.markdown(f"**{item.get('item') or 'Lubrificação'}**")
-                        st.caption(
-                            f"Produto: {item.get('tipo_produto') or '—'} • Leitura atual: {atual:.0f} {unidade} • Ciclo: {intervalo:.0f} {unidade} • Próxima troca: {proxima:.0f} {unidade}"
-                        )
-                    with top_r:
-                        if st.button("Dar baixa", key=f"primeira_baixa_{eqp['id']}_{item.get('item_id', idx)}", use_container_width=True, type="primary"):
-                            st.session_state["lub_detalhe"] = {
-                                "eqp_id": eqp["id"],
-                                "item_id": item.get("item_id"),
-                                "idx": idx,
-                            }
-                            st.rerun()
-
-                    detalhe = st.session_state.get("lub_detalhe")
-                    if detalhe and detalhe.get("eqp_id") == eqp.get("id") and detalhe.get("item_id") == item.get("item_id"):
-                        st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
-                        _render_detalhe_lub(eqp, item, idx)
-
 
 def _render_execucao():
     st.subheader("Registrar Lubrificação")
