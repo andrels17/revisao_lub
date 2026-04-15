@@ -1,13 +1,15 @@
+from __future__ import annotations
+
 from collections import defaultdict
 
-import streamlit as st
 import psycopg2
+import streamlit as st
 
 from database.connection import get_conn, release_conn
 from services import cache_service, configuracoes_service
 
 
-# ── helpers de status ────────────────────────────────────────────────────────
+# ── helpers ─────────────────────────────────────────────────────────────────
 
 def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, leitura_base=0):
     if intervalo <= 0:
@@ -41,21 +43,7 @@ def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, le
     return "EM DIA", inicio_ciclo, proximo_vencimento, falta
 
 
-# ── batch loading (1 query para todos os equipamentos) ───────────────────────
-
-def _colunas_equipamentos(cur):
-    cur.execute(
-        """
-        select column_name
-          from information_schema.columns
-         where table_schema = 'public'
-           and table_name = 'equipamentos'
-        """
-    )
-    return {str(r[0]) for r in cur.fetchall()}
-
-
-def _colunas_tabela(cur, table_name):
+def _colunas_tabela(cur, table_name: str) -> set[str]:
     cur.execute(
         """
         select column_name
@@ -68,92 +56,232 @@ def _colunas_tabela(cur, table_name):
     return {str(r[0]) for r in cur.fetchall()}
 
 
-def _pick_column(columns, *candidates):
+def _pick_column(columns: set[str], *candidates: str) -> str | None:
     for candidate in candidates:
         if candidate in columns:
             return candidate
     return None
 
 
-def _carregar_ultimas_execucoes_batch(cur, equipamento_ids):
-    """
-    Retorna dict: {equipamento_id: {item_id: ultima_leitura}}
-    Em vez de 1 query por item, faz UMA query para todos os equipamentos.
-    """
-    if not equipamento_ids:
-        return {}
+def _expr_base(colunas: set[str], prefer_col: str, legacy_col: str, atual_col: str) -> str:
+    if prefer_col in colunas and legacy_col in colunas:
+        return f"coalesce(e.{prefer_col}, e.{legacy_col}, e.{atual_col}, 0)"
+    if prefer_col in colunas:
+        return f"coalesce(e.{prefer_col}, e.{atual_col}, 0)"
+    if legacy_col in colunas:
+        return f"coalesce(e.{legacy_col}, e.{atual_col}, 0)"
+    return f"coalesce(e.{atual_col}, 0)"
+
+
+def _normalizar_tipo_controle(valor: str | None) -> str:
+    texto = str(valor or "").strip().lower()
+    if "hora" in texto:
+        return "horas"
+    return "km"
+
+
+def _schema_lubrificacao(cur) -> dict[str, object]:
+    eq_cols = _colunas_tabela(cur, "equipamentos")
+    tl_cols = _colunas_tabela(cur, "templates_lubrificacao")
+    it_cols = _colunas_tabela(cur, "itens_template_lubrificacao")
+    ex_cols = _colunas_tabela(cur, "execucoes_lubrificacao")
+
+    return {
+        "eq_cols": eq_cols,
+        "tl_cols": tl_cols,
+        "it_cols": it_cols,
+        "ex_cols": ex_cols,
+        "item_fk_col": _pick_column(it_cols, "template_id", "template_lubrificacao_id", "lubrificacao_template_id"),
+        "item_nome_col": _pick_column(it_cols, "nome_item", "nome", "item", "descricao"),
+        "item_prod_col": _pick_column(it_cols, "tipo_produto", "produto", "tipo", "nome_produto"),
+        "item_intervalo_col": _pick_column(it_cols, "intervalo_valor", "intervalo", "valor_intervalo"),
+        "item_ativo_col": _pick_column(it_cols, "ativo"),
+        "exec_item_col": _pick_column(ex_cols, "item_id"),
+        "exec_nome_col": _pick_column(ex_cols, "nome_item", "item", "descricao"),
+        "exec_km_col": _pick_column(ex_cols, "km_execucao", "km", "km_atual"),
+        "exec_horas_col": _pick_column(ex_cols, "horas_execucao", "horas", "horimetro"),
+        "template_tipo_col": _pick_column(tl_cols, "tipo_controle"),
+    }
+
+
+def _carregar_ultimas_execucoes_batch(cur, equipamento_ids, schema):
+    if not equipamento_ids or not schema.get("exec_km_col") or not schema.get("exec_horas_col"):
+        return {}, {}
+
     placeholders = ",".join(["%s"] * len(equipamento_ids))
-    cur.execute(
-        f"""
-        select
-            el.equipamento_id,
-            el.item_id,
-            tl.tipo_controle,
-            max(case when tl.tipo_controle = 'horas' then el.horas_execucao
-                     else el.km_execucao end) as ultima
-        from execucoes_lubrificacao el
-        join equipamentos e on e.id = el.equipamento_id
-        join templates_lubrificacao tl on tl.id = e.template_lubrificacao_id
-        where el.equipamento_id in ({placeholders})
-          and el.item_id is not null
-        group by el.equipamento_id, el.item_id, tl.tipo_controle
-        """,
-        list(equipamento_ids),
-    )
-    resultado = defaultdict(dict)
-    for eqp_id, item_id, _tipo, ultima in cur.fetchall():
-        resultado[eqp_id][item_id] = float(ultima or 0)
-    return resultado
+    ex_item_col = schema.get("exec_item_col")
+    ex_nome_col = schema.get("exec_nome_col")
+    ex_km_col = schema["exec_km_col"]
+    ex_horas_col = schema["exec_horas_col"]
+    template_tipo_col = schema.get("template_tipo_col") or "tipo_controle"
+
+    item_map: dict = defaultdict(dict)
+    nome_map: dict = defaultdict(dict)
+
+    if ex_item_col:
+        cur.execute(
+            f"""
+            select
+                el.equipamento_id,
+                el.{ex_item_col} as item_ref,
+                tl.{template_tipo_col} as tipo_controle,
+                max(
+                    case
+                        when lower(coalesce(tl.{template_tipo_col}, 'km')) like '%hora%'
+                            then coalesce(el.{ex_horas_col}, 0)
+                        else coalesce(el.{ex_km_col}, 0)
+                    end
+                ) as ultima
+            from execucoes_lubrificacao el
+            join equipamentos e on e.id = el.equipamento_id
+            join templates_lubrificacao tl on tl.id = e.template_lubrificacao_id
+            where el.equipamento_id in ({placeholders})
+              and el.{ex_item_col} is not null
+            group by el.equipamento_id, el.{ex_item_col}, tl.{template_tipo_col}
+            """,
+            list(equipamento_ids),
+        )
+        for eqp_id, item_ref, _tipo, ultima in cur.fetchall():
+            item_map[eqp_id][item_ref] = float(ultima or 0)
+
+    if ex_nome_col:
+        cur.execute(
+            f"""
+            select
+                el.equipamento_id,
+                lower(trim(coalesce(el.{ex_nome_col}, ''))) as nome_ref,
+                tl.{template_tipo_col} as tipo_controle,
+                max(
+                    case
+                        when lower(coalesce(tl.{template_tipo_col}, 'km')) like '%hora%'
+                            then coalesce(el.{ex_horas_col}, 0)
+                        else coalesce(el.{ex_km_col}, 0)
+                    end
+                ) as ultima
+            from execucoes_lubrificacao el
+            join equipamentos e on e.id = el.equipamento_id
+            join templates_lubrificacao tl on tl.id = e.template_lubrificacao_id
+            where el.equipamento_id in ({placeholders})
+              and nullif(trim(coalesce(el.{ex_nome_col}, '')), '') is not null
+            group by el.equipamento_id, lower(trim(coalesce(el.{ex_nome_col}, ''))), tl.{template_tipo_col}
+            """,
+            list(equipamento_ids),
+        )
+        for eqp_id, nome_ref, _tipo, ultima in cur.fetchall():
+            nome_map[eqp_id][nome_ref] = float(ultima or 0)
+
+    return dict(item_map), dict(nome_map)
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def diagnosticar_carregamento():
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        schema = _schema_lubrificacao(cur)
+        diag = {
+            "equipamentos_com_template": 0,
+            "itens_template": 0,
+            "templates_com_itens": 0,
+            "execucoes_lubrificacao": 0,
+            "motivo": None,
+        }
+
+        cur.execute("select count(*) from equipamentos where template_lubrificacao_id is not null")
+        diag["equipamentos_com_template"] = int(cur.fetchone()[0] or 0)
+
+        if not schema.get("item_fk_col"):
+            diag["motivo"] = "A tabela itens_template_lubrificacao não possui coluna de vínculo com o template."
+            return diag
+
+        item_intervalo_col = schema.get("item_intervalo_col")
+        item_ativo_col = schema.get("item_ativo_col")
+        if not schema.get("item_nome_col") or not item_intervalo_col:
+            diag["motivo"] = "A tabela itens_template_lubrificacao não possui colunas mínimas para cálculo."
+            return diag
+
+        ativo_where = f"where coalesce({item_ativo_col}, true) = true" if item_ativo_col else ""
+        cur.execute(f"select count(*) from itens_template_lubrificacao {ativo_where}")
+        diag["itens_template"] = int(cur.fetchone()[0] or 0)
+
+        cur.execute(
+            f"""
+            select count(distinct {schema['item_fk_col']})
+              from itens_template_lubrificacao
+              {ativo_where}
+            """
+        )
+        diag["templates_com_itens"] = int(cur.fetchone()[0] or 0)
+
+        if schema.get("ex_cols"):
+            cur.execute("select count(*) from execucoes_lubrificacao")
+            diag["execucoes_lubrificacao"] = int(cur.fetchone()[0] or 0)
+
+        if diag["equipamentos_com_template"] <= 0:
+            diag["motivo"] = "Nenhum equipamento está vinculado a template de lubrificação."
+        elif diag["itens_template"] <= 0:
+            diag["motivo"] = "Os templates existem, mas não há itens de lubrificação ativos cadastrados."
+        elif diag["templates_com_itens"] <= 0:
+            diag["motivo"] = "Os itens de lubrificação não estão ligados ao template esperado."
+        else:
+            diag["motivo"] = "Estrutura encontrada. Se a tela continuar vazia, o problema era de compatibilidade da consulta."
+        return diag
+    except Exception as exc:  # noqa: BLE001
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"motivo": f"Falha ao diagnosticar: {exc}"}
+    finally:
+        release_conn(conn)
 
 
 @st.cache_data(ttl=120, show_spinner=False)
 def calcular_proximas_lubrificacoes_batch(equipamento_ids):
-    """
-    Calcula lubrificações para VÁRIOS equipamentos de uma só vez.
-    Retorna dict {equipamento_id: [lista_de_itens]}.
-    Usado pelo dashboard e alertas para evitar N+1.
-    """
     if not equipamento_ids:
         return {}
 
     conn = get_conn()
-    cur  = conn.cursor()
+    cur = conn.cursor()
     try:
-        placeholders = ",".join(["%s"] * len(equipamento_ids))
-        colunas = _colunas_equipamentos(cur)
-        cols_itl = _colunas_tabela(cur, "itens_template_lubrificacao")
-        nome_col = _pick_column(cols_itl, "nome_item", "nome", "item", "descricao")
-        produto_col = _pick_column(cols_itl, "tipo_produto", "produto", "tipo", "nome_produto")
-        intervalo_col = _pick_column(cols_itl, "intervalo_valor", "intervalo", "valor_intervalo")
-        ativo_col = _pick_column(cols_itl, "ativo")
+        schema = _schema_lubrificacao(cur)
+        item_fk_col = schema.get("item_fk_col")
+        item_nome_col = schema.get("item_nome_col")
+        item_prod_col = schema.get("item_prod_col")
+        item_intervalo_col = schema.get("item_intervalo_col")
+        item_ativo_col = schema.get("item_ativo_col")
+        template_tipo_col = schema.get("template_tipo_col") or "tipo_controle"
+        eq_cols = schema["eq_cols"]
 
-        if not nome_col or not intervalo_col:
+        if not item_fk_col or not item_nome_col or not item_intervalo_col:
             return {}
 
-        km_base_expr = "coalesce(e.km_inicial_plano, e.km_base_plano, e.km_atual, 0)" if "km_inicial_plano" in colunas and "km_base_plano" in colunas else ("coalesce(e.km_inicial_plano, e.km_atual, 0)" if "km_inicial_plano" in colunas else ("coalesce(e.km_base_plano, e.km_atual, 0)" if "km_base_plano" in colunas else "coalesce(e.km_atual, 0)"))
-        horas_base_expr = "coalesce(e.horas_inicial_plano, e.horas_base_plano, e.horas_atual, 0)" if "horas_inicial_plano" in colunas and "horas_base_plano" in colunas else ("coalesce(e.horas_inicial_plano, e.horas_atual, 0)" if "horas_inicial_plano" in colunas else ("coalesce(e.horas_base_plano, e.horas_atual, 0)" if "horas_base_plano" in colunas else "coalesce(e.horas_atual, 0)"))
-        nome_expr = f"itl.{nome_col}"
-        produto_expr = f"itl.{produto_col}" if produto_col else "null::text"
-        intervalo_expr = f"coalesce(itl.{intervalo_col}, 0)"
-        ativo_pred = f" and coalesce(itl.{ativo_col}, true) = true" if ativo_col else ""
+        placeholders = ",".join(["%s"] * len(equipamento_ids))
+        km_base_expr = _expr_base(eq_cols, "km_inicial_plano", "km_base_plano", "km_atual")
+        horas_base_expr = _expr_base(eq_cols, "horas_inicial_plano", "horas_base_plano", "horas_atual")
+        nome_expr = f"itl.{item_nome_col}"
+        produto_expr = f"itl.{item_prod_col}" if item_prod_col else "null::text"
+        intervalo_expr = f"coalesce(itl.{item_intervalo_col}, 0)"
+        ativo_pred = f" and coalesce(itl.{item_ativo_col}, true) = true" if item_ativo_col else ""
 
         cur.execute(
             f"""
             select
                 e.id as equipamento_id,
-                e.km_atual,
-                e.horas_atual,
+                coalesce(e.km_atual, 0) as km_atual,
+                coalesce(e.horas_atual, 0) as horas_atual,
                 {km_base_expr} as km_inicial_plano,
                 {horas_base_expr} as horas_inicial_plano,
-                tl.tipo_controle,
+                tl.{template_tipo_col} as tipo_controle,
                 itl.id as item_id,
                 {nome_expr} as nome_item,
                 {produto_expr} as tipo_produto,
                 {intervalo_expr} as intervalo_valor
             from equipamentos e
-            join templates_lubrificacao tl  on tl.id  = e.template_lubrificacao_id
-            join itens_template_lubrificacao itl on itl.template_id = tl.id{ativo_pred}
+            join templates_lubrificacao tl on tl.id = e.template_lubrificacao_id
+            join itens_template_lubrificacao itl on itl.{item_fk_col} = tl.id{ativo_pred}
             where e.id in ({placeholders})
+              and e.template_lubrificacao_id is not null
             order by e.id, {intervalo_expr}, {nome_expr}
             """,
             list(equipamento_ids),
@@ -162,20 +290,34 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
         if not rows:
             return {}
 
-        # Busca ultimas execuções de uma vez só
-        ultimas = _carregar_ultimas_execucoes_batch(cur, equipamento_ids)
-
-        STATUS_ORDEM = {"SEM_BASE": 0, "VENCIDO": 1, "PROXIMO": 2, "EM DIA": 3, "REALIZADO": 4}
-        resultado = defaultdict(list)
+        ultimas_por_item, ultimas_por_nome = _carregar_ultimas_execucoes_batch(cur, equipamento_ids, schema)
         tolerancia = configuracoes_service.get_tolerancia_padrao()
+        status_ordem = {"SEM_BASE": 0, "VENCIDO": 1, "PROXIMO": 2, "EM DIA": 3, "REALIZADO": 4}
+        resultado = defaultdict(list)
 
-        for eqp_id, km_atual, horas_atual, km_inicial_plano, horas_inicial_plano, tipo_controle, item_id, nome_item, tipo_produto, intervalo in rows:
+        for (
+            eqp_id,
+            km_atual,
+            horas_atual,
+            km_inicial_plano,
+            horas_inicial_plano,
+            tipo_controle,
+            item_id,
+            nome_item,
+            tipo_produto,
+            intervalo,
+        ) in rows:
+            tipo_controle = _normalizar_tipo_controle(tipo_controle)
             leitura_atual = float(horas_atual if tipo_controle == "horas" else km_atual)
             leitura_base = float(horas_inicial_plano if tipo_controle == "horas" else km_inicial_plano)
-            leitura_atual_ref = float(horas_atual if tipo_controle == "horas" else km_atual)
-            if leitura_base > leitura_atual_ref:
-                leitura_base = leitura_atual_ref
-            ultima = ultimas.get(eqp_id, {}).get(item_id, 0.0)
+            if leitura_base > leitura_atual:
+                leitura_base = leitura_atual
+
+            nome_ref = str(nome_item or "").strip().lower()
+            ultima = ultimas_por_item.get(eqp_id, {}).get(item_id)
+            if ultima is None and nome_ref:
+                ultima = ultimas_por_nome.get(eqp_id, {}).get(nome_ref)
+            ultima = float(ultima or 0)
 
             status, ref_ciclo, prox_venc, diff = _status_item_ciclo(
                 leitura_atual,
@@ -185,42 +327,44 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
                 leitura_base=leitura_base,
             )
 
-            resultado[eqp_id].append({
-                "item_id":          item_id,
-                "item":             nome_item,
-                "tipo_produto":     tipo_produto or "-",
-                "referencia_ciclo": ref_ciclo,
-                "vencimento":       prox_venc,
-                "atual":            leitura_atual,
-                "leitura_base_plano": leitura_base,
-                "km_inicial_plano": float(km_inicial_plano or 0),
-                "horas_inicial_plano": float(horas_inicial_plano or 0),
-                "km_base_plano":     float(km_inicial_plano or 0),
-                "horas_base_plano":  float(horas_inicial_plano or 0),
-                "ultima_execucao":  ultima,
-                "status":           status,
-                "diferenca":        diff,
-                "tipo_controle":    tipo_controle,
-                "intervalo":        float(intervalo),
-            })
+            resultado[eqp_id].append(
+                {
+                    "item_id": item_id,
+                    "item": nome_item,
+                    "tipo_produto": tipo_produto or "-",
+                    "referencia_ciclo": ref_ciclo,
+                    "vencimento": prox_venc,
+                    "atual": leitura_atual,
+                    "leitura_base_plano": leitura_base,
+                    "km_inicial_plano": float(km_inicial_plano or 0),
+                    "horas_inicial_plano": float(horas_inicial_plano or 0),
+                    "km_base_plano": float(km_inicial_plano or 0),
+                    "horas_base_plano": float(horas_inicial_plano or 0),
+                    "ultima_execucao": ultima,
+                    "status": status,
+                    "diferenca": diff,
+                    "tipo_controle": tipo_controle,
+                    "intervalo": float(intervalo or 0),
+                }
+            )
 
-        # Ordena por status e diferença dentro de cada equipamento
         for eqp_id in resultado:
             resultado[eqp_id].sort(
-                key=lambda x: (STATUS_ORDEM.get(x["status"], 99), x["diferenca"], x["item"])
+                key=lambda x: (status_ordem.get(x["status"], 99), x["diferenca"], str(x["item"] or ""))
             )
 
         return dict(resultado)
-
-    except (psycopg2.errors.UndefinedTable, psycopg2.errors.UndefinedColumn):
-        conn.rollback()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return {}
     finally:
         release_conn(conn)
 
 
 def calcular_proximas_lubrificacoes(equipamento_id):
-    """Mantém interface original para compatibilidade (painel 360° do equipamento)."""
     resultado = calcular_proximas_lubrificacoes_batch([equipamento_id])
     return resultado.get(equipamento_id, [])
 
@@ -239,7 +383,7 @@ def registrar_execucao(dados):
     )
 
     conn = get_conn()
-    cur  = conn.cursor()
+    cur = conn.cursor()
     try:
         cur.execute(
             """
@@ -265,8 +409,8 @@ def registrar_execucao(dados):
         cur.execute(
             """
             update equipamentos
-               set km_atual    = greatest(km_atual,    %s),
-                   horas_atual = greatest(horas_atual, %s)
+               set km_atual    = greatest(coalesce(km_atual, 0),    coalesce(%s, 0)),
+                   horas_atual = greatest(coalesce(horas_atual, 0), coalesce(%s, 0))
              where id = %s
             """,
             (dados.get("km_execucao", 0), dados.get("horas_execucao", 0), dados["equipamento_id"]),
@@ -294,7 +438,7 @@ def registrar_execucao(dados):
 @st.cache_data(ttl=90, show_spinner=False)
 def listar_por_equipamento(equipamento_id):
     conn = get_conn()
-    cur  = conn.cursor()
+    cur = conn.cursor()
     try:
         cur.execute(
             """
@@ -311,12 +455,12 @@ def listar_por_equipamento(equipamento_id):
         rows = cur.fetchall()
         return [
             {
-                "id":          r[0],
-                "data":        r[1],
-                "item":        r[2],
-                "produto":     r[3] or "-",
-                "km":          float(r[4] or 0),
-                "horas":       float(r[5] or 0),
+                "id": r[0],
+                "data": r[1],
+                "item": r[2],
+                "produto": r[3] or "-",
+                "km": float(r[4] or 0),
+                "horas": float(r[5] or 0),
                 "responsavel": r[6],
                 "observacoes": r[7] or "",
             }
@@ -332,7 +476,7 @@ def listar_por_equipamento(equipamento_id):
 @st.cache_data(ttl=120, show_spinner=False)
 def listar_todos():
     conn = get_conn()
-    cur  = conn.cursor()
+    cur = conn.cursor()
     try:
         cur.execute(
             """
@@ -345,7 +489,7 @@ def listar_todos():
                    el.observacoes
             from execucoes_lubrificacao el
             join equipamentos eq on eq.id = el.equipamento_id
-            left join setores s   on s.id  = eq.setor_id
+            left join setores s on s.id = eq.setor_id
             left join responsaveis r on r.id = el.responsavel_id
             order by el.data_execucao desc, el.id desc
             """
@@ -353,14 +497,14 @@ def listar_todos():
         rows = cur.fetchall()
         return [
             {
-                "id":          r[0],
-                "data":        r[1],
+                "id": r[0],
+                "data": r[1],
                 "equipamento": r[2],
-                "setor":       r[3],
-                "item":        r[4],
-                "produto":     r[5] or "-",
-                "km":          float(r[6] or 0),
-                "horas":       float(r[7] or 0),
+                "setor": r[3],
+                "item": r[4],
+                "produto": r[5] or "-",
+                "km": float(r[6] or 0),
+                "horas": float(r[7] or 0),
                 "responsavel": r[8],
                 "observacoes": r[9] or "",
             }
