@@ -10,24 +10,23 @@ from services import cache_service, configuracoes_service
 # ── helpers de status ────────────────────────────────────────────────────────
 
 def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, leitura_base=0):
+    if intervalo <= 0:
+        atual = max(0.0, float(leitura_atual or 0))
+        return "EM DIA", atual, atual, 0.0
+
     leitura_atual = float(leitura_atual or 0)
     ultima_execucao = float(ultima_execucao or 0)
     intervalo = float(intervalo or 0)
     leitura_base = float(leitura_base or 0)
 
-    if intervalo <= 0:
-        return "SEM_BASE", leitura_base, leitura_atual, 0.0
-
-    # Sem histórico válido: mostrar como primeira troca pendente, em vez de ocultar.
     if ultima_execucao <= 0:
-        return "SEM_BASE", leitura_base, leitura_atual, 0.0
+        proximo_vencimento = leitura_base + intervalo
+        diferenca = proximo_vencimento - leitura_atual
+        return "SEM_BASE", leitura_base, proximo_vencimento, diferenca
 
     offset_atual = max(0.0, leitura_atual - leitura_base)
     ciclo_atual = int(offset_atual // intervalo) if offset_atual > 0 else 0
-    if ultima_execucao > leitura_base:
-        ciclo_ultima = int((ultima_execucao - leitura_base) // intervalo)
-    else:
-        ciclo_ultima = -1
+    ciclo_ultima = int((max(ultima_execucao, leitura_base) - leitura_base) // intervalo)
     inicio_ciclo = leitura_base + (ciclo_atual * intervalo)
     proximo_vencimento = inicio_ciclo + intervalo
 

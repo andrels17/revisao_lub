@@ -153,7 +153,7 @@ def _render_card_lub(eqp: dict, item: dict, idx: int) -> None:
 
     with right:
         if status == "SEM_BASE":
-            st.metric("Ciclo", f"{float(item.get("intervalo", 0) or 0):.0f} {unidade}")
+            st.metric("Ciclo", f"{float(item.get('intervalo', 0) or 0):.0f} {unidade}")
         else:
             st.metric("Progresso", f"{progresso}%")
         if st.button("Detalhes", key=f"det_lub_{eqp['id']}_{idx}", use_container_width=True):
@@ -255,7 +255,7 @@ def _form_rapido(eqp, item, key_suffix):
                 horas_exec = st.number_input(
                     f"Horímetro na execução ({unidade})",
                     min_value=0.0,
-                    value=float(item.get("atual", leitura_sug) or leitura_sug),
+                    value=leitura_sug,
                     step=1.0,
                     key=f"h_{key_suffix}",
                 )
@@ -264,7 +264,7 @@ def _form_rapido(eqp, item, key_suffix):
                 km_exec = st.number_input(
                     f"Hodômetro na execução ({unidade})",
                     min_value=0.0,
-                    value=float(item.get("atual", leitura_sug) or leitura_sug),
+                    value=leitura_sug,
                     step=1.0,
                     key=f"k_{key_suffix}",
                 )
@@ -361,13 +361,13 @@ def _render_tabela(itens, titulo):
 def _render_pendencias():
     pendencias, _ = _carregar_pendencias_batch()
     if not pendencias:
-        st.success("Nenhum item de lubrificação encontrado para o escopo atual.")
+        st.success("Nenhuma lubrificação pendente no momento.")
         return
 
     setores = sorted({p["eqp"].get("setor_nome", "-") for p in pendencias})
     grupos = sorted({(p["eqp"].get("grupo_nome") or p["eqp"].get("grupo") or "—") for p in pendencias})
     eqps = sorted({f"{p['eqp']['codigo']} — {p['eqp']['nome']}" for p in pendencias})
-    status_opts = ["Todos", "SEM_BASE", "VENCIDO", "PROXIMO", "EM DIA", "REALIZADO"]
+    status_opts = ["Todos", "VENCIDO", "PROXIMO", "EM DIA", "REALIZADO"]
 
     st.markdown("<div class='filters-shell'><div class='filters-title'>Filtros operacionais</div>", unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
@@ -397,15 +397,13 @@ def _render_pendencias():
 
     st.divider()
 
-    sem_base = [p for p in filtradas if p["item"]["status"] == "SEM_BASE"]
     vencidos = [p for p in filtradas if p["item"]["status"] == "VENCIDO"]
     proximos = [p for p in filtradas if p["item"]["status"] == "PROXIMO"]
     em_dia = [p for p in filtradas if p["item"]["status"] == "EM DIA"]
     realizados = [p for p in filtradas if p["item"]["status"] == "REALIZADO"]
 
-    tab_sb, tab_v, tab_p, tab_d, tab_r, tab_tabela = st.tabs(
+    tab_v, tab_p, tab_d, tab_r, tab_tabela = st.tabs(
         [
-            f"🟣 Primeira troca ({len(sem_base)})",
             f"🔴 Vencidos ({len(vencidos)})",
             f"🟡 Próximos ({len(proximos)})",
             f"🟢 Em dia ({len(em_dia)})",
@@ -413,9 +411,6 @@ def _render_pendencias():
             "📋 Tabela completa",
         ]
     )
-
-    with tab_sb:
-        _render_cards_listagem(sem_base, "Nenhum item aguardando primeira referência.", "sem_base")
 
     with tab_v:
         _render_cards_listagem(vencidos, "Nenhuma lubrificação vencida.", "vencidos")
@@ -448,7 +443,6 @@ def _render_execucao():
         return
 
     itens_pendentes = lubrificacoes_service.calcular_proximas_lubrificacoes(eqp["id"])
-    st.caption("Itens sem histórico agora aparecem como primeira troca, para você informar a leitura real da execução e iniciar o ciclo.")
     vinculos_op = vinculos_service.listar_por_equipamento(eqp["id"])
     ids_op = {v["responsavel_id"] for v in vinculos_op}
     resp_lista = [r for r in responsaveis if r["id"] in ids_op] or responsaveis
