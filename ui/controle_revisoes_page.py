@@ -29,6 +29,14 @@ def _badge(status):
     return STATUS_LABEL.get(status, status)
 
 
+def _fmt_valor(v):
+    try:
+        n = float(v or 0)
+        return f"{int(n)}" if n.is_integer() else f"{n:g}"
+    except Exception:
+        return str(v or "0")
+
+
 def _barra_progresso(leitura_atual, inicio_ciclo, fim_ciclo):
     span = fim_ciclo - inicio_ciclo
     if span <= 0:
@@ -169,6 +177,32 @@ def _inject_css():
         .integration-check input { width:15px; height:15px; accent-color:#60a5fa; }
         .integration-check label { font-size:.78rem; color:#dbeafe; }
         .integration-origin { font-size:.72rem; color:#93c5fd; margin-top:.35rem; font-weight:700; }
+
+        .rev-list-card {
+            border: 1px solid rgba(148,163,184,.12);
+            border-radius: 12px;
+            padding: .8rem 1rem;
+            background: #0d1929;
+            margin-bottom: .55rem;
+        }
+        .rev-list-card:hover { border-color: rgba(148,163,184,.24); }
+        .rev-list-code { font-size: .72rem; color: #8fa4c0; font-weight: 600; margin-bottom: .14rem; }
+        .rev-list-title { font-size: .96rem; font-weight: 700; color: #e8f1ff; }
+        .rev-list-meta { font-size: .78rem; color: #8fa4c0; margin-top: .14rem; }
+        .rev-list-badges { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.42rem; }
+        .rev-chip {
+            display: inline-block;
+            padding: .14rem .45rem;
+            border-radius: 999px;
+            font-size: .69rem;
+            font-weight: 700;
+        }
+        .rev-chip-neutral { background: rgba(148,163,184,.09); color: #94a8c4; }
+        .rev-modal-shell { animation: revFadeSlide .18s ease-out; }
+        @keyframes revFadeSlide {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -428,76 +462,144 @@ def _form_registrar(item, key_suffix, integracao=None):
             st.rerun()
 
 
-# ── card de item (expander simplificado) ─────────────────────────────────────
+# ── cards resumidos + detalhe sob demanda ───────────────────────────────────
 
-def _card_pendencia(item, idx, mapa_vinculos=None, templates_lub=None, cache_analises=None):
-    tipo      = item["tipo_controle"]
-    unidade   = _fmt_unidade(tipo)
-    falta     = float(item.get("falta", item.get("diferenca", 0)))
+def _resumo_item(item):
+    tipo = item["tipo_controle"]
+    unidade = _fmt_unidade(tipo)
+    falta = float(item.get("falta", item.get("diferenca", 0)) or 0)
     progresso = _barra_progresso(
         item["leitura_atual"],
         item.get("ciclo_atual_inicio", 0),
         item.get("ciclo_atual_fim", item.get("proximo_vencimento", item["leitura_atual"] + 1)),
     )
     status = item["status"]
-    dot_cls  = {"VENCIDO": "vencido", "PROXIMO": "proximo"}.get(status, "emdia")
-    card_cls = {"VENCIDO": "status-vencido", "PROXIMO": "status-proximo"}.get(status, "status-emdia")
     badge_cls = {"VENCIDO": "rev-b-danger", "PROXIMO": "rev-b-warning"}.get(status, "rev-b-ok")
-    badge_txt = _badge(status)
-
     if falta <= 0:
         situacao = f"Vencido há {abs(falta):.0f} {unidade}"
     else:
-        situacao = f"Falta {falta:.0f} {unidade}"
+        situacao = f"Faltam {falta:.0f} {unidade}"
+    return {
+        "unidade": unidade,
+        "falta": falta,
+        "progresso": progresso,
+        "status": status,
+        "badge_cls": badge_cls,
+        "badge_txt": _badge(status),
+        "situacao": situacao,
+    }
 
+
+def _abrir_detalhes_revisao(item):
+    st.session_state["rev_modal_item"] = item
+
+
+def _render_card_resumido(item, idx):
+    resumo = _resumo_item(item)
+    vencidas = int(item.get("equipamento_vencidas") or 0)
+    proximas = int(item.get("equipamento_proximas") or 0)
+    ativo = bool(item.get("equipamento_ativo", True))
+
+    col_info, col_prog, col_btn = st.columns([6, 1.2, 1.1], gap="small")
+    with col_info:
+        st.markdown(
+            f'<div class="rev-list-code">{html.escape(str(item.get("codigo") or "-"))}</div>'
+            f'<div class="rev-list-title">{html.escape(str(item.get("equipamento_nome") or "-"))} · {html.escape(str(item.get("etapa") or "-"))}</div>'
+            f'<div class="rev-list-meta">{html.escape(str(item.get("setor_nome") or "—"))} · {html.escape(resumo["situacao"])} · leitura {_fmt_valor(item.get("leitura_atual"))} {resumo["unidade"]}</div>'
+            f'<div class="rev-list-badges">'
+            f'<span class="rev-b {resumo["badge_cls"]}">{html.escape(resumo["badge_txt"])}</span>'
+            f'<span class="rev-chip rev-chip-neutral">{vencidas} vencida(s)</span>'
+            f'<span class="rev-chip rev-chip-neutral">{proximas} próxima(s)</span>'
+            f'<span class="rev-chip rev-chip-neutral">{"Ativo" if ativo else "Inativo"}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    with col_prog:
+        st.metric("Progresso", f'{resumo["progresso"]:.0f}%')
+    with col_btn:
+        if st.button("Detalhes", key=f"rev_det_{item['equipamento_id']}_{idx}", use_container_width=True):
+            _abrir_detalhes_revisao(item)
+            st.rerun()
+
+
+def _render_detalhe_revisao(item, mapa_vinculos, templates_lub, cache_analises):
+    resumo = _resumo_item(item)
+    dot_cls  = {"VENCIDO": "vencido", "PROXIMO": "proximo"}.get(resumo["status"], "emdia")
+    card_cls = {"VENCIDO": "status-vencido", "PROXIMO": "status-proximo"}.get(resumo["status"], "status-emdia")
     vencimento = float(item.get("vencimento_ciclo") or item.get("proximo_vencimento") or 0)
 
-    expander_label = f"{item['codigo']} — {item['equipamento_nome']}  ·  {item['etapa']}"
+    st.markdown('<div class="rev-modal-shell">', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="rev-card {card_cls}" style="margin-bottom:0">'
+        f'<div class="rev-card-header">'
+        f'<div class="rev-dot {dot_cls}"></div>'
+        f'<div style="flex:1;min-width:0">'
+        f'<div class="rev-card-title">{html.escape(str(item.get("codigo") or "-"))} — {html.escape(str(item.get("equipamento_nome") or "-"))} · {html.escape(str(item.get("etapa") or "-"))}</div>'
+        f'<div class="rev-card-sub">{html.escape(str(item.get("setor_nome") or "—"))} · {html.escape(resumo["situacao"])} </div>'
+        f'</div>'
+        f'<span class="rev-b {resumo["badge_cls"]}">{html.escape(resumo["badge_txt"])}</span>'
+        f'</div>'
+        f'<div class="rev-progress-track"><div class="rev-progress-fill {dot_cls}" style="width:{resumo["progresso"]:.0f}%"></div></div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
-    with st.expander(expander_label, expanded=(status == "VENCIDO")):
-        # cabeçalho do card
-        st.markdown(
-            f'<div class="rev-card {card_cls}" style="margin-bottom:0">'
-            f'<div class="rev-card-header">'
-            f'<div class="rev-dot {dot_cls}"></div>'
-            f'<div style="flex:1;min-width:0">'
-            f'<div class="rev-card-title">{html.escape(item["codigo"])} — {html.escape(item["equipamento_nome"])} · {html.escape(item["etapa"])}</div>'
-            f'<div class="rev-card-sub">{html.escape(item.get("setor_nome","—"))} · {situacao}</div>'
-            f'</div>'
-            f'<span class="rev-b {badge_cls}">{html.escape(badge_txt)}</span>'
-            f'</div>'
-            f'<div class="rev-progress-track"><div class="rev-progress-fill {dot_cls}" style="width:{progresso:.0f}%"></div></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        f'<div class="rev-detail-grid">'
+        f'<div class="rev-detail-cell"><div class="rev-detail-label">Leitura atual</div><div class="rev-detail-val">{_fmt_valor(item.get("leitura_atual"))} {resumo["unidade"]}</div></div>'
+        f'<div class="rev-detail-cell"><div class="rev-detail-label">Vencimento</div><div class="rev-detail-val{"" if resumo["falta"] > 0 else " danger"}">{_fmt_valor(vencimento)} {resumo["unidade"]}</div></div>'
+        f'<div class="rev-detail-cell"><div class="rev-detail-label">Progresso do ciclo</div><div class="rev-detail-val">{resumo["progresso"]:.0f}%</div></div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
-        # grade de detalhe
-        st.markdown(
-            f'<div class="rev-detail-grid">'
-            f'<div class="rev-detail-cell"><div class="rev-detail-label">Hodômetro atual</div><div class="rev-detail-val">{item["leitura_atual"]:.0f} {unidade}</div></div>'
-            f'<div class="rev-detail-cell"><div class="rev-detail-label">Vencimento</div><div class="rev-detail-val{"" if falta > 0 else " danger"}">{vencimento:.0f} {unidade}</div></div>'
-            f'<div class="rev-detail-cell"><div class="rev-detail-label">Progresso do ciclo</div><div class="rev-detail-val">{progresso:.0f}%</div></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+    ult = float(item.get("ultima_execucao", 0) or 0)
+    if ult > 0:
+        st.caption(f"Última execução registrada: {_fmt_valor(ult)} {resumo['unidade']}")
+    else:
+        st.caption("Sem execução registrada neste ciclo.")
 
-        ult = float(item.get("ultima_execucao", 0))
-        if ult > 0:
-            st.caption(f"Última execução registrada: {ult:.0f} {unidade}")
-        else:
-            st.caption("Sem execução registrada neste ciclo.")
+    integracao = _obter_integracao_item(item, mapa_vinculos or {}, templates_lub or {}, cache_analises or {})
+    if integracao:
+        _render_bloco_integracao_lubrificacao(item, integracao)
 
-        integracao = _obter_integracao_item(item, mapa_vinculos or {}, templates_lub or {}, cache_analises or {})
-        if integracao:
-            _render_bloco_integracao_lubrificacao(item, integracao)
+    st.markdown('<div class="rev-exec-shell"><div class="rev-exec-label">Registrar execução</div></div>', unsafe_allow_html=True)
+    _form_registrar(item, key_suffix=f"{item['equipamento_id']}_{item.get('etapa_id', 0)}", integracao=integracao)
 
-        # formulário de execução
-        st.markdown('<div class="rev-exec-shell"><div class="rev-exec-label">Registrar execução</div></div>', unsafe_allow_html=True)
-        _form_registrar(item, key_suffix=f"{item['equipamento_id']}_{item.get('etapa_id', idx)}", integracao=integracao)
+    st.divider()
+    _render_historico_execucoes(item['equipamento_id'], item.get('tipo_controle'))
+    st.markdown('</div>', unsafe_allow_html=True)
 
-        st.divider()
-        _render_historico_execucoes(item['equipamento_id'], item.get('tipo_controle'))
 
+@st.dialog("Detalhes da revisão", width="large")
+def _dialog_revisao(mapa_vinculos, templates_lub, cache_analises):
+    item = st.session_state.get("rev_modal_item")
+    if not item:
+        st.info("Selecione um item para ver os detalhes.")
+        return
+    _render_detalhe_revisao(item, mapa_vinculos, templates_lub, cache_analises)
+
+
+def _render_lista_cards(itens):
+    page_size = 20
+    total = len(itens)
+    if total <= page_size:
+        limite = total
+    else:
+        limite = st.session_state.get("rev_limit_cards", page_size)
+        limite = min(max(page_size, limite), total)
+
+    for i, item in enumerate(itens[:limite]):
+        _render_card_resumido(item, i)
+
+    if total > limite:
+        c1, c2 = st.columns([1, 5])
+        with c1:
+            if st.button(f"Carregar mais ({min(page_size, total - limite)})", key=f"rev_more_{total}", use_container_width=True):
+                st.session_state["rev_limit_cards"] = min(total, limite + page_size)
+                st.rerun()
+        with c2:
+            st.caption(f"Exibindo {limite} de {total} itens.")
 
 # ── página principal ─────────────────────────────────────────────────────────
 
@@ -574,15 +676,15 @@ def render():
         if not vencidos:
             st.success("Nenhum item vencido para os filtros selecionados.")
         else:
-            for i, item in enumerate(vencidos):
-                _card_pendencia(item, i, mapa_vinculos, templates_lub, cache_analises)
+            st.caption("Lista compacta para carregamento mais leve. Abra os detalhes só quando precisar.")
+            _render_lista_cards(vencidos)
 
     with tab_prox:
         if not proximos:
             st.success("Nenhum item próximo do vencimento.")
         else:
-            for i, item in enumerate(proximos):
-                _card_pendencia(item, i, mapa_vinculos, templates_lub, cache_analises)
+            st.caption("Lista compacta para carregamento mais leve. Abra os detalhes só quando precisar.")
+            _render_lista_cards(proximos)
 
     with tab_dia:
         _render_tabela(em_dia, f"Em dia ({len(em_dia)})", "Nenhum item em dia.")
@@ -592,3 +694,6 @@ def render():
 
     with tab_tabela:
         _render_tabela(filtrados, f"Todos os itens ({len(filtrados)})", "Nenhum item para exibir.")
+
+    if st.session_state.get("rev_modal_item"):
+        _dialog_revisao(mapa_vinculos, templates_lub, cache_analises)
