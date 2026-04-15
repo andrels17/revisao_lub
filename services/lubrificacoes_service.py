@@ -55,6 +55,26 @@ def _colunas_equipamentos(cur):
     return {str(r[0]) for r in cur.fetchall()}
 
 
+def _colunas_tabela(cur, table_name):
+    cur.execute(
+        """
+        select column_name
+          from information_schema.columns
+         where table_schema = 'public'
+           and table_name = %s
+        """,
+        (table_name,),
+    )
+    return {str(r[0]) for r in cur.fetchall()}
+
+
+def _pick_column(columns, *candidates):
+    for candidate in candidates:
+        if candidate in columns:
+            return candidate
+    return None
+
+
 def _carregar_ultimas_execucoes_batch(cur, equipamento_ids):
     """
     Retorna dict: {equipamento_id: {item_id: ultima_leitura}}
@@ -101,8 +121,22 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
     try:
         placeholders = ",".join(["%s"] * len(equipamento_ids))
         colunas = _colunas_equipamentos(cur)
+        cols_itl = _colunas_tabela(cur, "itens_template_lubrificacao")
+        nome_col = _pick_column(cols_itl, "nome_item", "nome", "item", "descricao")
+        produto_col = _pick_column(cols_itl, "tipo_produto", "produto", "tipo", "nome_produto")
+        intervalo_col = _pick_column(cols_itl, "intervalo_valor", "intervalo", "valor_intervalo")
+        ativo_col = _pick_column(cols_itl, "ativo")
+
+        if not nome_col or not intervalo_col:
+            return {}
+
         km_base_expr = "coalesce(e.km_inicial_plano, e.km_base_plano, e.km_atual, 0)" if "km_inicial_plano" in colunas and "km_base_plano" in colunas else ("coalesce(e.km_inicial_plano, e.km_atual, 0)" if "km_inicial_plano" in colunas else ("coalesce(e.km_base_plano, e.km_atual, 0)" if "km_base_plano" in colunas else "coalesce(e.km_atual, 0)"))
         horas_base_expr = "coalesce(e.horas_inicial_plano, e.horas_base_plano, e.horas_atual, 0)" if "horas_inicial_plano" in colunas and "horas_base_plano" in colunas else ("coalesce(e.horas_inicial_plano, e.horas_atual, 0)" if "horas_inicial_plano" in colunas else ("coalesce(e.horas_base_plano, e.horas_atual, 0)" if "horas_base_plano" in colunas else "coalesce(e.horas_atual, 0)"))
+        nome_expr = f"itl.{nome_col}"
+        produto_expr = f"itl.{produto_col}" if produto_col else "null::text"
+        intervalo_expr = f"coalesce(itl.{intervalo_col}, 0)"
+        ativo_pred = f" and coalesce(itl.{ativo_col}, true) = true" if ativo_col else ""
+
         cur.execute(
             f"""
             select
@@ -113,14 +147,14 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
                 {horas_base_expr} as horas_inicial_plano,
                 tl.tipo_controle,
                 itl.id as item_id,
-                itl.nome_item,
-                itl.tipo_produto,
-                itl.intervalo_valor
+                {nome_expr} as nome_item,
+                {produto_expr} as tipo_produto,
+                {intervalo_expr} as intervalo_valor
             from equipamentos e
             join templates_lubrificacao tl  on tl.id  = e.template_lubrificacao_id
-            join itens_template_lubrificacao itl on itl.template_id = tl.id and itl.ativo = true
+            join itens_template_lubrificacao itl on itl.template_id = tl.id{ativo_pred}
             where e.id in ({placeholders})
-            order by e.id, itl.intervalo_valor
+            order by e.id, {intervalo_expr}, {nome_expr}
             """,
             list(equipamento_ids),
         )
