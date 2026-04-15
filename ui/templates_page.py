@@ -384,32 +384,11 @@ def _render_integracao_revisao_lubrificacao():
 
 
 
-def _normalizar_hierarquia_setores(setores: list[dict]) -> dict:
-    mapa = {str(s["id"]): s for s in setores}
-    hier = {}
-    for s in setores:
-        atual = s
-        caminho = [s.get("nome") or "-"]
-        while atual.get("setor_pai_id"):
-            pai = mapa.get(str(atual["setor_pai_id"]))
-            if not pai:
-                break
-            caminho.append(pai.get("nome") or "-")
-            atual = pai
-        caminho = list(reversed(caminho))
-        depto = caminho[0] if caminho else (s.get("nome") or "-")
-        grupo = caminho[1] if len(caminho) > 1 else "—"
-        hier[str(s["id"])] = {"departamento": depto, "grupo": grupo, "setor": s.get("nome") or "-"}
-    return hier
-
-
-
 def _render_distribuicao_templates():
     st.markdown("### Distribuição de templates")
     st.caption("Popular rapidamente planos de revisão e lubrificação por departamento, grupo e equipamentos, sem precisar entrar item a item.")
 
     equipamentos = equipamentos_service.listar()
-    setores = setores_service.listar()
     templates_rev = templates_revisao_service.listar_com_etapas()
     templates_lub = templates_lubrificacao_service.listar_com_itens()
 
@@ -417,17 +396,16 @@ def _render_distribuicao_templates():
         st.info("Nenhum equipamento encontrado para distribuição.")
         return
 
-    hier = _normalizar_hierarquia_setores(setores)
     rows = []
     for eq in equipamentos:
-        h = hier.get(str(eq.get("setor_id")), {"departamento": eq.get("setor_nome") or "-", "grupo": "—", "setor": eq.get("setor_nome") or "-"})
         rows.append({
             **eq,
-            **h,
+            "departamento": eq.get("setor_nome") or "-",
+            "grupo": eq.get("grupo_nome") or "—",
             "label": f"{eq.get('codigo') or '-'} · {eq.get('nome') or '-'}",
         })
 
-    departamentos = sorted({r["departamento"] for r in rows if r.get("departamento")})
+    departamentos = sorted({r["departamento"] for r in rows if r.get("departamento") and r["departamento"] != "-"})
     dep_sel = st.multiselect("Departamentos", departamentos)
     filtrados = [r for r in rows if not dep_sel or r["departamento"] in dep_sel]
 
@@ -457,7 +435,7 @@ def _render_distribuicao_templates():
         """
         <div class="tmpl-distrib-card">
             <span class="tmpl-chip">Ação em lote</span>
-            <p>Você pode aplicar apenas revisão, apenas lubrificação ou os dois de uma vez. O filtro por departamento/grupo ajuda a popular rapidamente o sistema após o cadastro dos planos.</p>
+            <p>Agora a distribuição usa o departamento do equipamento e o grupo operacional real, sem depender da hierarquia de setores.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -491,7 +469,6 @@ def _render_distribuicao_templates():
     )
     if not preview.empty:
         st.dataframe(preview, use_container_width=True, hide_index=True)
-
 
 
 def render():
