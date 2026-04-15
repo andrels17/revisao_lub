@@ -6,6 +6,7 @@ from ui import (
     controle_revisoes_page,
     dashboard_page,
     equipamentos_page,
+    grupos_page,
     prioridades_page,
     importacao_page,
     leituras_page,
@@ -79,6 +80,7 @@ SECOES = {
     },
     "Cadastros": {
         "🏢 Setores": setores_page,
+        "🗂️ Grupos": grupos_page,
         "🚜 Equipamentos": equipamentos_page,
         "👷 Responsáveis": responsaveis_page,
         "🔗 Vínculos": vinculos_page,
