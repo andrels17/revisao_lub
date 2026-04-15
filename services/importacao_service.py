@@ -5,6 +5,7 @@ from typing import Any
 import math
 import re
 import unicodedata
+from uuid import uuid4
 
 import pandas as pd
 
@@ -266,12 +267,21 @@ def _equipamentos_existentes(cur=None) -> dict[str, dict[str, Any]]:
         own_conn = get_conn()
         cur = own_conn.cursor()
     try:
+        colunas = _colunas_tabela(cur, "equipamentos")
+        possui_grupo_texto = "grupo" in colunas
+        possui_grupo_id = "grupo_id" in colunas
+        possui_tabela_grupos = _tabela_existe(cur, "grupos")
+        grupo_select = "coalesce(e.grupo, e.tipo)" if possui_grupo_texto else "coalesce(g.nome, e.tipo)"
+        grupo_id_select = "e.grupo_id" if possui_grupo_id else "null::uuid"
+        join_grupos = "left join grupos g on g.id = e.grupo_id" if possui_tabela_grupos and possui_grupo_id else ""
         cur.execute(
-            """
-            select id, codigo, nome, tipo,
-                   coalesce(grupo, tipo) as grupo,
-                   setor_id, km_atual, horas_atual, ativo, placa, serie
-              from equipamentos
+            f"""
+            select e.id, e.codigo, e.nome, e.tipo,
+                   {grupo_select} as grupo,
+                   e.setor_id, {grupo_id_select} as grupo_id,
+                   e.km_atual, e.horas_atual, e.ativo, e.placa, e.serie
+              from equipamentos e
+              {join_grupos}
             """
         )
         rows = cur.fetchall()
@@ -283,11 +293,12 @@ def _equipamentos_existentes(cur=None) -> dict[str, dict[str, Any]]:
                 "tipo": r[3],
                 "grupo": _to_str(r[4]),
                 "setor_id": r[5],
-                "km_atual": float(r[6] or 0),
-                "horas_atual": float(r[7] or 0),
-                "ativo": bool(r[8]) if r[8] is not None else True,
-                "placa": _to_str(r[9]),
-                "serie": _to_str(r[10]),
+                "grupo_id": r[6],
+                "km_atual": float(r[7] or 0),
+                "horas_atual": float(r[8] or 0),
+                "ativo": bool(r[9]) if r[9] is not None else True,
+                "placa": _to_str(r[10]),
+                "serie": _to_str(r[11]),
             }
             for r in rows if r and r[1] is not None
         }
@@ -295,6 +306,121 @@ def _equipamentos_existentes(cur=None) -> dict[str, dict[str, Any]]:
         if own_conn is not None:
             release_conn(own_conn)
 
+
+
+def _tabela_existe(cur, table_name: str) -> bool:
+    cur.execute(
+        """
+        select exists(
+            select 1
+              from information_schema.tables
+             where table_schema = 'public'
+               and table_name = %s
+        )
+        """,
+        (table_name,),
+    )
+    return bool(cur.fetchone()[0])
+
+
+def _ensure_grupos_schema(cur) -> None:
+    if not _tabela_existe(cur, "grupos"):
+        cur.execute(
+            """
+            create table if not exists grupos (
+                id uuid primary key,
+                nome text not null,
+                setor_id uuid null,
+                ativo boolean not null default true,
+                created_at timestamptz not null default now(),
+                updated_at timestamptz not null default now()
+            )
+            """
+        )
+        cur.execute("create index if not exists idx_grupos_setor on grupos(setor_id)")
+        cur.execute("create index if not exists idx_grupos_ativo on grupos(ativo)")
+    colunas = _colunas_tabela(cur, "equipamentos")
+    if "grupo_id" not in colunas:
+        cur.execute("alter table equipamentos add column if not exists grupo_id uuid")
+        cur.execute("create index if not exists idx_equipamentos_grupo_id on equipamentos(grupo_id)")
+
+
+def _grupos_index(cur=None) -> dict[tuple[str, str | None], dict[str, Any]]:
+    own_conn = None
+    if cur is None:
+        own_conn = get_conn()
+        cur = own_conn.cursor()
+    try:
+        _ensure_grupos_schema(cur)
+        cur.execute("select id, nome, setor_id, ativo from grupos where coalesce(ativo, true) = true")
+        rows = cur.fetchall()
+        idx = {}
+        for gid, nome, setor_id, ativo in rows:
+            idx[(_normalizar_nome(nome), str(setor_id) if setor_id else None)] = {
+                "id": gid,
+                "nome": _to_str(nome),
+                "setor_id": str(setor_id) if setor_id else None,
+                "ativo": bool(ativo) if ativo is not None else True,
+            }
+        return idx
+    finally:
+        if own_conn is not None:
+            release_conn(own_conn)
+
+
+def _resolver_grupo_existente(grupos_idx: dict[tuple[str, str | None], dict[str, Any]], grupo_nome: str, setor_id=None):
+    nome_norm = _normalizar_nome(grupo_nome)
+    setor_key = str(setor_id) if setor_id else None
+    if not nome_norm:
+        return None
+    exato = grupos_idx.get((nome_norm, setor_key))
+    if exato:
+        return exato
+    if setor_key is not None:
+        exato_sem_setor = grupos_idx.get((nome_norm, None))
+        if exato_sem_setor:
+            return exato_sem_setor
+    for (nome_idx, setor_idx), item in grupos_idx.items():
+        if setor_key is not None and setor_idx not in {setor_key, None}:
+            continue
+        if nome_idx == nome_norm or nome_idx in nome_norm or nome_norm in nome_idx:
+            return item
+    return None
+
+
+def _criar_grupo_no_conn(cur, conn, nome: str, setor_id=None):
+    _ensure_grupos_schema(cur)
+    novo_id = str(uuid4())
+    cur.execute(
+        """
+        insert into grupos (id, nome, setor_id, ativo)
+        values (%s::uuid, %s, %s, %s)
+        returning id::text
+        """,
+        (novo_id, nome, str(setor_id) if setor_id else None, True),
+    )
+    novo_id = cur.fetchone()[0]
+    auditoria_service.registrar_no_conn(
+        conn,
+        acao="importacao_criar_grupo",
+        entidade="grupos",
+        entidade_id=novo_id,
+        valor_antigo=None,
+        valor_novo={"nome": nome, "setor_id": str(setor_id) if setor_id else None, "origem": "importacao_equipamentos"},
+    )
+    return novo_id
+
+
+def _obter_ou_criar_grupo(cur, conn, grupos_idx: dict[tuple[str, str | None], dict[str, Any]], grupo_nome: str, setor_id=None):
+    nome = _to_str(grupo_nome)
+    if not nome:
+        return None, False, ""
+    existente = _resolver_grupo_existente(grupos_idx, nome, setor_id=setor_id)
+    if existente:
+        return existente["id"], False, existente["nome"]
+    gid = _criar_grupo_no_conn(cur, conn, nome, setor_id=setor_id)
+    grupos_idx[(_normalizar_nome(nome), str(setor_id) if setor_id else None)] = {"id": gid, "nome": nome, "setor_id": str(setor_id) if setor_id else None, "ativo": True}
+    return gid, True, nome
 
 def _resolver_setor_existente(setores_idx: dict[str, dict[str, Any]], setor_nome: str):
     chave = _normalizar_nome(setor_nome)
@@ -410,6 +536,7 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
         df = df.reset_index(drop=True)
 
         setores_idx, _ = _setores_index()
+        grupos_idx = _grupos_index()
         existentes = _equipamentos_existentes()
 
         erros = []
@@ -419,6 +546,8 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
         novas = duplicadas_sistema = com_aviso = com_erro = 0
         setores_a_criar = []
         setores_a_criar_set = set()
+        grupos_a_criar = []
+        grupos_a_criar_set = set()
 
         if duplicados_arquivo:
             avisos.append(
@@ -441,6 +570,9 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
             setor_id = None
             setor_resolvido = ""
             acao_setor = "sem setor"
+            grupo_id = None
+            grupo_resolvido = ""
+            acao_grupo = "sem grupo"
 
             try:
                 km_atual = _sanitize_meter(row.get("km_atual"), "km_atual")
@@ -475,6 +607,21 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
                         setores_a_criar.append({"nome": partes[-1] if partes else setor_nome, "caminho_original": setor_resolvido})
                     linha_avisos.append(f"setor '{setor_nome}' será criado automaticamente")
 
+            if grupo:
+                existente_grupo = _resolver_grupo_existente(grupos_idx, grupo, setor_id=setor_id)
+                if existente_grupo:
+                    grupo_id = existente_grupo["id"]
+                    grupo_resolvido = existente_grupo["nome"]
+                    acao_grupo = "usar existente"
+                else:
+                    grupo_resolvido = grupo
+                    acao_grupo = "criar automaticamente"
+                    chave_grupo = (_normalizar_nome(grupo), str(setor_id) if setor_id else _normalizar_nome(setor_resolvido) or None)
+                    if chave_grupo not in grupos_a_criar_set:
+                        grupos_a_criar_set.add(chave_grupo)
+                        grupos_a_criar.append({"nome": grupo, "setor": setor_resolvido or setor_nome})
+                    linha_avisos.append(f"grupo '{grupo}' será criado automaticamente")
+
             existente = existentes.get(codigo)
             acao_prevista = "atualizar" if existente else "novo"
             if existente:
@@ -491,6 +638,9 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
                         "codigo": codigo,
                         "nome": nome,
                         "grupo": grupo,
+                        "grupo_id": grupo_id,
+                        "grupo_resolvido": grupo_resolvido,
+                        "acao_grupo": acao_grupo,
                         "tipo": tipo,
                         "setor": setor_nome,
                         "setor_id": setor_id,
@@ -514,6 +664,8 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
                     "codigo": codigo,
                     "nome": nome,
                     "grupo": grupo,
+                    "grupo_resolvido": grupo_resolvido,
+                    "ação_grupo": acao_grupo,
                     "tipo": tipo,
                     "setor": setor_nome,
                     "setor_resolvido": setor_resolvido,
@@ -540,6 +692,7 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
             "linhas_erro": com_erro,
             "colunas_reconhecidas": reconhecidas,
             "setores_a_criar": setores_a_criar,
+            "grupos_a_criar": grupos_a_criar,
             "resumo": {
                 "total_linhas": len(df),
                 "novas": novas,
@@ -547,6 +700,7 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
                 "com_aviso": com_aviso,
                 "com_erro": com_erro,
                 "setores_novos": len(setores_a_criar),
+                "grupos_novos": len(grupos_a_criar),
             },
             "detalhe": ", ".join(sorted({a for vals in ALIASES.values() for a in vals})),
         }
@@ -585,6 +739,8 @@ def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dic
             add("nome", row.get("nome"))
         if "grupo" in colunas and row.get("grupo") and row.get("grupo") != _to_str(existente.get("grupo")):
             add("grupo", row.get("grupo"))
+        if "grupo_id" in colunas and row.get("grupo_id") and row.get("grupo_id") != existente.get("grupo_id"):
+            add("grupo_id", row.get("grupo_id"))
         if "tipo" in colunas and row.get("tipo") and row.get("tipo") != _to_str(existente.get("tipo")):
             add("tipo", row.get("tipo"))
         if setor_id is not None and "setor_id" in colunas and setor_id != existente.get("setor_id"):
@@ -604,6 +760,8 @@ def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dic
             add("nome", row.get("nome"))
         if "grupo" in colunas and not _to_str(existente.get("grupo")) and row.get("grupo"):
             add("grupo", row.get("grupo"))
+        if "grupo_id" in colunas and not existente.get("grupo_id") and row.get("grupo_id"):
+            add("grupo_id", row.get("grupo_id"))
         if "tipo" in colunas and not _to_str(existente.get("tipo")) and row.get("tipo"):
             add("tipo", row.get("tipo"))
         if setor_id is not None and "setor_id" in colunas and not existente.get("setor_id"):
@@ -646,13 +804,18 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
     conn = get_conn()
     cur = conn.cursor()
     try:
+        _ensure_grupos_schema(cur)
         colunas = _colunas_tabela(cur, "equipamentos")
         existentes = _equipamentos_existentes(cur)
         setores_idx, _ = _setores_index(cur)
+        grupos_idx = _grupos_index(cur)
 
         import_cols = ["codigo", "nome", "tipo", "setor_id", "km_atual", "horas_atual", "ativo"]
         if "grupo" in colunas:
             import_cols.insert(3, "grupo")
+        if "grupo_id" in colunas:
+            insert_pos = import_cols.index("setor_id")
+            import_cols.insert(insert_pos + 1, "grupo_id")
         if "placa" in colunas:
             import_cols.append("placa")
         if "serie" in colunas:
@@ -669,7 +832,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
         placeholders = ", ".join(["%s"] * len(import_cols))
         insert_sql = f"insert into equipamentos ({', '.join(import_cols)}) values ({placeholders}) returning id"
 
-        importados = atualizados = preenchidos_vazios = duplicados = setores_criados = 0
+        importados = atualizados = preenchidos_vazios = duplicados = setores_criados = grupos_criados = 0
         erros = []
         total = len(df)
         rows = df.to_dict(orient="records")
@@ -693,6 +856,16 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                     row["setor_id"] = None
                     row["setor_resolvido"] = ""
 
+                grupo_nome = _to_str(row.get("grupo") or row.get("tipo"))
+                if grupo_nome:
+                    grupo_id, grupo_criado, grupo_resolvido = _obter_ou_criar_grupo(cur, conn, grupos_idx, grupo_nome, setor_id=row.get("setor_id"))
+                    row["grupo_id"] = grupo_id
+                    row["grupo_resolvido"] = grupo_resolvido
+                    grupos_criados += 1 if grupo_criado else 0
+                else:
+                    row["grupo_id"] = None
+                    row["grupo_resolvido"] = ""
+
                 if existente:
                     if modo_duplicados == MODO_IGNORAR:
                         duplicados += 1
@@ -704,6 +877,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                                     "nome": row.get("nome") or existente.get("nome"),
                                     "tipo": row.get("tipo") or existente.get("tipo"),
                                     "grupo": row.get("grupo") or existente.get("grupo"),
+                                    "grupo_id": row.get("grupo_id") or existente.get("grupo_id"),
                                     "setor_id": row.get("setor_id") if row.get("setor_id") is not None else existente.get("setor_id"),
                                     "ativo": bool(row.get("ativo", True)),
                                     "km_atual": float(row.get("km_atual") if row.get("km_atual") is not None else existente.get("km_atual") or 0),
@@ -727,6 +901,8 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                                 existente["serie"] = row.get("serie")
                             if not existente.get("setor_id") and row.get("setor_id") is not None:
                                 existente["setor_id"] = row.get("setor_id")
+                            if not existente.get("grupo_id") and row.get("grupo_id") is not None:
+                                existente["grupo_id"] = row.get("grupo_id")
                         else:
                             duplicados += 1
                     else:
@@ -738,6 +914,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         "tipo": row.get("tipo") or "Veículos Leves",
                         "grupo": row.get("grupo") or row.get("tipo") or "Veículos Leves",
                         "setor_id": row.get("setor_id"),
+                        "grupo_id": row.get("grupo_id"),
                         "km_atual": row.get("km_atual") or 0,
                         "horas_atual": row.get("horas_atual") or 0,
                         "ativo": bool(row.get("ativo", True)),
@@ -766,6 +943,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         "tipo": insert_data["tipo"],
                         "grupo": _to_str(insert_data.get("grupo")),
                         "setor_id": insert_data["setor_id"],
+                        "grupo_id": insert_data.get("grupo_id"),
                         "ativo": bool(insert_data.get("ativo", True)),
                         "km_atual": float(insert_data["km_atual"] or 0),
                         "horas_atual": float(insert_data["horas_atual"] or 0),
@@ -801,6 +979,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
             "preenchidos_vazios": preenchidos_vazios,
             "duplicados": duplicados,
             "setores_criados": setores_criados,
+            "grupos_criados": grupos_criados,
             "erros": erros,
         }
     except Exception:
