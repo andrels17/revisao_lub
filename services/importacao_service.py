@@ -1069,10 +1069,10 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         "ativo": bool(row.get("ativo", True)),
                         "placa": row.get("placa") or None,
                         "serie": row.get("serie") or None,
-                        "km_inicial_plano": row.get("km_atual") or 0,
-                        "km_base_plano": row.get("km_atual") or 0,
-                        "horas_inicial_plano": row.get("horas_atual") or 0,
-                        "horas_base_plano": row.get("horas_atual") or 0,
+                        "km_inicial_plano": row.get("km_inicial_plano") or 0,
+                        "km_base_plano": row.get("km_base_plano") or row.get("km_inicial_plano") or 0,
+                        "horas_inicial_plano": row.get("horas_inicial_plano") or 0,
+                        "horas_base_plano": row.get("horas_base_plano") or row.get("horas_inicial_plano") or 0,
                     }
                     cur.execute(insert_sql, tuple(insert_data[c] for c in import_cols))
                     equipamento_id = cur.fetchone()[0]

@@ -310,14 +310,22 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
             tipo_controle = _normalizar_tipo_controle(tipo_controle)
             leitura_atual = float(horas_atual if tipo_controle == "horas" else km_atual)
             leitura_base = float(horas_inicial_plano if tipo_controle == "horas" else km_inicial_plano)
-            if leitura_base > leitura_atual:
-                leitura_base = leitura_atual
 
             nome_ref = str(nome_item or "").strip().lower()
             ultima = ultimas_por_item.get(eqp_id, {}).get(item_id)
             if ultima is None and nome_ref:
                 ultima = ultimas_por_nome.get(eqp_id, {}).get(nome_ref)
             ultima = float(ultima or 0)
+
+            # Compatibilidade com bases importadas: quando o plano nasce com o
+            # medidor atual gravado como base e ainda não houve nenhuma troca, a
+            # lubrificação fica permanentemente sem itens pendentes. Nessas
+            # situações assumimos backlog a partir de 0.
+            if abs(leitura_base - leitura_atual) < 1e-9 and leitura_atual > 0 and ultima <= 0:
+                leitura_base = 0.0
+
+            if leitura_base > leitura_atual:
+                leitura_base = leitura_atual
 
             status, ref_ciclo, prox_venc, diff = _status_item_ciclo(
                 leitura_atual,

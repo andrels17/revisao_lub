@@ -156,6 +156,14 @@ def _montar_item_controle(base, execucoes_por_etapa, tolerancia, modo="dashboard
     tipo_controle = (base["tipo_controle"] or "km").lower()
     leitura_atual = _normalizar_numero(base["horas_atual"] if tipo_controle == "horas" else base["km_atual"])
     leitura_base = _normalizar_numero(base["horas_inicial_plano"] if tipo_controle == "horas" else base["km_inicial_plano"])
+
+    # Compatibilidade com bases importadas: quando o plano foi criado usando o
+    # medidor atual como base inicial e ainda não existe nenhuma execução, a
+    # tela inteira fica artificialmente "zerada". Nessa situação tratamos a
+    # base como 0 para reconstruir o backlog inicial.
+    if abs(leitura_base - leitura_atual) < 1e-9 and leitura_atual > 0 and not execucoes_por_etapa:
+        leitura_base = 0.0
+
     if leitura_base > leitura_atual:
         leitura_base = leitura_atual
     gatilho = _normalizar_numero(base["gatilho_valor"])
