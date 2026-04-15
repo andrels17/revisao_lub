@@ -163,23 +163,13 @@ def validar_colunas(df: pd.DataFrame):
         raise ValueError(f"Colunas obrigatórias ausentes: {', '.join(faltantes)}")
 
 
-DEFAULT_TIPO_REGRAS = [
-    {"campo_origem": "grupo", "origem_valor": "CAMINH", "regra": "contains", "tipo_destino": "Caminhões", "prioridade": 1},
-    {"campo_origem": "grupo", "origem_valor": "CACAMBA", "regra": "contains", "tipo_destino": "Caminhões", "prioridade": 2},
-    {"campo_origem": "grupo", "origem_valor": "TRATOR", "regra": "contains", "tipo_destino": "Tratores", "prioridade": 10},
-    {"campo_origem": "grupo", "origem_valor": "CARREGADEIRA", "regra": "contains", "tipo_destino": "Carregadeiras", "prioridade": 20},
-    {"campo_origem": "grupo", "origem_valor": "COLHEITADEIRA", "regra": "contains", "tipo_destino": "Colheitadeiras", "prioridade": 30},
-    {"campo_origem": "grupo", "origem_valor": "EMPILHADEIRA", "regra": "contains", "tipo_destino": "Empilhadeiras", "prioridade": 40},
-    {"campo_origem": "grupo", "origem_valor": "AUTOMOVEIS", "regra": "contains", "tipo_destino": "Veículos Leves", "prioridade": 50},
-    {"campo_origem": "grupo", "origem_valor": "MOTOCICLETA", "regra": "contains", "tipo_destino": "Veículos Leves", "prioridade": 51},
-    {"campo_origem": "grupo", "origem_valor": "GERADOR", "regra": "contains", "tipo_destino": "Equipamentos de Apoio", "prioridade": 60},
-    {"campo_origem": "grupo", "origem_valor": "MOTOR ESTACIONARIO", "regra": "contains", "tipo_destino": "Equipamentos de Apoio", "prioridade": 61},
-    {"campo_origem": "grupo", "origem_valor": "ELETRO BOMBA", "regra": "contains", "tipo_destino": "Equipamentos de Apoio", "prioridade": 62},
-    {"campo_origem": "grupo", "origem_valor": "MAQUINA PESADA", "regra": "contains", "tipo_destino": "Máquinas Pesadas", "prioridade": 70},
-]
+def normalizar_tipo(tipo_original: Any) -> str:
+    return _classificacao_tipo_padrao(tipo_original)
 
 
-def _normalizar_regra_texto(valor: Any) -> str:
+
+
+def _normalizar_texto_regra(valor: Any) -> str:
     s = _to_str(valor).upper()
     if not s:
         return ""
@@ -192,7 +182,7 @@ def _normalizar_regra_texto(valor: Any) -> str:
 def _regra_confere(texto: str, padrao: str, regra: str) -> bool:
     if not texto or not padrao:
         return False
-    regra_norm = _to_str(regra).lower() or "contains"
+    regra_norm = _normalizar_nome(regra) or "contains"
     if regra_norm == "exact":
         return texto == padrao
     if regra_norm == "startswith":
@@ -200,39 +190,139 @@ def _regra_confere(texto: str, padrao: str, regra: str) -> bool:
     return padrao in texto
 
 
-def _classificar_tipo_por_regras(grupo: Any = None, nome: Any = None, tipo_original: Any = None, regras: list[dict[str, Any]] | None = None) -> str:
-    regras_ordenadas = sorted(regras or DEFAULT_TIPO_REGRAS, key=lambda item: int(item.get("prioridade") or 9999))
-    textos = {
-        "grupo": _normalizar_regra_texto(grupo),
-        "nome": _normalizar_regra_texto(nome),
-        "tipo": _normalizar_regra_texto(tipo_original),
-    }
-    textos["ambos"] = " ".join([t for t in [textos["grupo"], textos["nome"], textos["tipo"]] if t]).strip()
+def _ensure_tipos_equipamento_map(cur) -> None:
+    if not _tabela_existe(cur, "tipos_equipamento_map"):
+        cur.execute(
+            """
+            create table if not exists tipos_equipamento_map (
+                id bigserial primary key,
+                ativo boolean not null default true,
+                prioridade integer not null default 100,
+                campo_origem text not null default 'grupo',
+                origem_valor text not null,
+                regra text not null default 'contains',
+                tipo_destino text not null,
+                observacao text,
+                created_at timestamptz not null default now()
+            )
+            """
+        )
+    else:
+        cur.execute("alter table tipos_equipamento_map add column if not exists ativo boolean not null default true")
+        cur.execute("alter table tipos_equipamento_map add column if not exists prioridade integer not null default 100")
+        cur.execute("alter table tipos_equipamento_map add column if not exists campo_origem text not null default 'grupo'")
+        cur.execute("alter table tipos_equipamento_map add column if not exists origem_valor text")
+        cur.execute("alter table tipos_equipamento_map add column if not exists regra text not null default 'contains'")
+        cur.execute("alter table tipos_equipamento_map add column if not exists tipo_destino text")
+        cur.execute("alter table tipos_equipamento_map add column if not exists observacao text")
+        cur.execute("alter table tipos_equipamento_map add column if not exists created_at timestamptz not null default now()")
 
-    for regra in regras_ordenadas:
-        if not bool(regra.get("ativo", True)):
+    cur.execute("create index if not exists idx_tipos_equipamento_map_prio on tipos_equipamento_map(ativo, prioridade)")
+
+    cur.execute("select count(1) from tipos_equipamento_map")
+    total = int(cur.fetchone()[0] or 0)
+    if total == 0:
+        cur.execute(
+            """
+            insert into tipos_equipamento_map
+                (ativo, prioridade, campo_origem, origem_valor, regra, tipo_destino, observacao)
+            values
+                (true, 1,  'grupo', 'CAMINH',             'contains', 'Caminhões',             'Classificação macro por grupo'),
+                (true, 2,  'grupo', 'CACAMBA',            'contains', 'Caminhões',             'Classificação macro por grupo'),
+                (true, 10, 'grupo', 'TRATOR',             'contains', 'Tratores',              'Classificação macro por grupo'),
+                (true, 20, 'grupo', 'CARREGADEIRA',       'contains', 'Carregadeiras',         'Classificação macro por grupo'),
+                (true, 30, 'grupo', 'COLHEITADEIRA',      'contains', 'Colheitadeiras',        'Classificação macro por grupo'),
+                (true, 40, 'grupo', 'EMPILHADEIRA',       'contains', 'Empilhadeiras',         'Classificação macro por grupo'),
+                (true, 50, 'grupo', 'AUTOMOVEIS',         'contains', 'Veículos Leves',        'Classificação macro por grupo'),
+                (true, 51, 'grupo', 'MOTOCICLETA',        'contains', 'Veículos Leves',        'Classificação macro por grupo'),
+                (true, 60, 'grupo', 'GERADOR',            'contains', 'Equipamentos de Apoio', 'Classificação macro por grupo'),
+                (true, 61, 'grupo', 'MOTOR ESTACIONARIO', 'contains', 'Equipamentos de Apoio', 'Classificação macro por grupo'),
+                (true, 62, 'grupo', 'ELETRO BOMBA',       'contains', 'Equipamentos de Apoio', 'Classificação macro por grupo'),
+                (true, 70, 'grupo', 'MAQUINA PESADA',     'contains', 'Máquinas Pesadas',      'Classificação macro por grupo')
+            """
+        )
+
+
+def _carregar_regras_tipo(cur) -> list[dict[str, Any]]:
+    try:
+        _ensure_tipos_equipamento_map(cur)
+        cur.execute(
+            """
+            select ativo, prioridade, campo_origem, origem_valor, regra, tipo_destino
+              from tipos_equipamento_map
+             where coalesce(ativo, true) = true
+             order by prioridade asc, id asc
+            """
+        )
+        rows = cur.fetchall()
+    except Exception:
+        return []
+
+    regras = []
+    for ativo, prioridade, campo_origem, origem_valor, regra, tipo_destino in rows:
+        regras.append({
+            "ativo": bool(ativo) if ativo is not None else True,
+            "prioridade": int(prioridade or 100),
+            "campo_origem": _to_str(campo_origem) or "grupo",
+            "origem_valor": _to_str(origem_valor),
+            "regra": _to_str(regra) or "contains",
+            "tipo_destino": _to_str(tipo_destino),
+        })
+    return regras
+
+
+def _classificar_tipo_por_regras(row: dict[str, Any], regras: list[dict[str, Any]] | None = None) -> str:
+    grupo = _normalizar_texto_regra(row.get("grupo"))
+    nome = _normalizar_texto_regra(row.get("nome"))
+    tipo = _normalizar_texto_regra(row.get("tipo"))
+    ambos = " ".join([x for x in [grupo, nome, tipo] if x]).strip()
+
+    for regra_item in (regras or []):
+        if not regra_item.get("ativo", True):
             continue
-        campo = _to_str(regra.get("campo_origem") or "grupo").lower()
-        padrao = _normalizar_regra_texto(regra.get("origem_valor"))
-        tipo_destino = _to_str(regra.get("tipo_destino"))
-        modo = _to_str(regra.get("regra") or "contains").lower()
+        padrao = _normalizar_texto_regra(regra_item.get("origem_valor"))
+        campo = _normalizar_nome(regra_item.get("campo_origem")) or "grupo"
+        tipo_destino = _to_str(regra_item.get("tipo_destino"))
         if not padrao or not tipo_destino:
             continue
-        candidatos = []
-        if campo == "ambos":
-            candidatos = [textos["ambos"], textos["grupo"], textos["nome"], textos["tipo"]]
-        elif campo in textos:
-            candidatos = [textos[campo]]
+
+        textos = []
+        if campo == "grupo":
+            textos = [grupo]
+        elif campo == "nome":
+            textos = [nome]
+        elif campo == "tipo":
+            textos = [tipo]
         else:
-            candidatos = [textos["grupo"], textos["nome"], textos["tipo"], textos["ambos"]]
-        if any(_regra_confere(candidato, padrao, modo) for candidato in candidatos):
+            textos = [ambos, grupo, nome, tipo]
+
+        if any(_regra_confere(texto, padrao, regra_item.get("regra", "contains")) for texto in textos if texto):
             return tipo_destino
 
+    return _classificacao_tipo_padrao(row.get("grupo") or row.get("tipo") or row.get("nome"))
+
+
+def _classificacao_tipo_padrao(tipo_original: Any) -> str:
+    t = _normalizar_texto_regra(tipo_original)
+    if not t:
+        return "Outros"
+    if "CAMINH" in t or "CACAMBA" in t:
+        return "Caminhões"
+    if "TRATOR" in t:
+        return "Tratores"
+    if "CARREGADEIRA" in t:
+        return "Carregadeiras"
+    if "COLHEITADEIRA" in t or "COLHEDOR" in t:
+        return "Colheitadeiras"
+    if "EMPILHADEIRA" in t:
+        return "Empilhadeiras"
+    if any(k in t for k in ["AUTOMOVEIS", "AUTOMOVEL", "MOTOCICLETA", "MOTO", "CARRO", "PASSEIO", "UTILITARIO", "CAMIONETE"]):
+        return "Veículos Leves"
+    if any(k in t for k in ["GERADOR", "MOTOR ESTACIONARIO", "ELETRO BOMBA", "ELETROBOMBA"]):
+        return "Equipamentos de Apoio"
+    if "MAQUINA PESADA" in t:
+        return "Máquinas Pesadas"
     return "Outros"
-
-
-def normalizar_tipo(tipo_original: Any, grupo: Any = None, nome: Any = None, regras: list[dict[str, Any]] | None = None) -> str:
-    return _classificar_tipo_por_regras(grupo=grupo, nome=nome, tipo_original=tipo_original, regras=regras)
 
 
 def separar_medidor(df: pd.DataFrame):
@@ -306,78 +396,6 @@ def _setores_index(cur=None) -> tuple[dict[str, dict[str, Any]], list[str]]:
                 "tipo_nivel": _to_str(tipo_nivel) or "setor",
             }
         return idx, nomes
-    finally:
-        if own_conn is not None:
-            release_conn(own_conn)
-
-
-def _ensure_tipos_equipamento_map_schema(cur) -> None:
-    cur.execute(
-        """
-        create table if not exists tipos_equipamento_map (
-            id bigserial primary key,
-            ativo boolean not null default true,
-            prioridade integer not null default 100,
-            campo_origem text not null default 'grupo',
-            origem_valor text not null,
-            regra text not null default 'contains',
-            tipo_destino text not null,
-            observacao text null,
-            created_at timestamptz not null default now(),
-            updated_at timestamptz not null default now()
-        )
-        """
-    )
-    cur.execute("create index if not exists idx_tipos_equipamento_map_ativo_prioridade on tipos_equipamento_map(ativo, prioridade)")
-
-
-def _seed_tipos_equipamento_map(cur) -> None:
-    _ensure_tipos_equipamento_map_schema(cur)
-    cur.execute("select count(*) from tipos_equipamento_map")
-    total = int(cur.fetchone()[0] or 0)
-    if total > 0:
-        return
-    cur.executemany(
-        """
-        insert into tipos_equipamento_map
-            (ativo, prioridade, campo_origem, origem_valor, regra, tipo_destino, observacao)
-        values (%s, %s, %s, %s, %s, %s, %s)
-        """,
-        [
-            (True, item["prioridade"], item["campo_origem"], item["origem_valor"], item["regra"], item["tipo_destino"], "Carga inicial automática da importação")
-            for item in DEFAULT_TIPO_REGRAS
-        ],
-    )
-
-
-def _carregar_regras_tipo(cur=None) -> list[dict[str, Any]]:
-    own_conn = None
-    if cur is None:
-        own_conn = get_conn()
-        cur = own_conn.cursor()
-    try:
-        _seed_tipos_equipamento_map(cur)
-        cur.execute(
-            """
-            select id, ativo, prioridade, campo_origem, origem_valor, regra, tipo_destino
-              from tipos_equipamento_map
-             order by prioridade asc, id asc
-            """
-        )
-        rows = cur.fetchall()
-        regras = [
-            {
-                "id": row[0],
-                "ativo": bool(row[1]) if row[1] is not None else True,
-                "prioridade": int(row[2] or 100),
-                "campo_origem": _to_str(row[3]) or "grupo",
-                "origem_valor": _to_str(row[4]),
-                "regra": _to_str(row[5]) or "contains",
-                "tipo_destino": _to_str(row[6]),
-            }
-            for row in rows
-        ]
-        return regras or list(DEFAULT_TIPO_REGRAS)
     finally:
         if own_conn is not None:
             release_conn(own_conn)
@@ -643,7 +661,7 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
         if "grupo" not in df.columns:
             df["grupo"] = df.get("tipo")
         df["grupo"] = df["grupo"].apply(_to_str)
-        df["tipo"] = df.apply(lambda row: normalizar_tipo(row.get("tipo"), grupo=row.get("grupo"), nome=row.get("nome"), regras=regras_tipo), axis=1)
+        df["tipo"] = df["tipo"].apply(normalizar_tipo)
         df = separar_medidor(df)
         df["km_atual"] = df["km_atual"].apply(lambda v: _sanitize_meter(v, "km_atual") if _parse_num(v) is not None else None)
         df["horas_atual"] = df["horas_atual"].apply(lambda v: _sanitize_meter(v, "horas_atual") if _parse_num(v) is not None else None)
@@ -657,10 +675,16 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
         df, duplicados_arquivo = consolidar_duplicados(df)
         df = df.reset_index(drop=True)
 
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            regras_tipo = _carregar_regras_tipo(cur)
+        finally:
+            release_conn(conn)
+
         setores_idx, _ = _setores_index()
         grupos_idx = _grupos_index()
         existentes = _equipamentos_existentes()
-        regras_tipo = _carregar_regras_tipo()
 
         erros = []
         avisos = []
@@ -682,7 +706,7 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
             codigo = _normalizar_codigo(row.get("codigo"))
             nome = _to_str(row.get("nome"))
             grupo = _to_str(row.get("grupo") or row.get("tipo"))
-            tipo = normalizar_tipo(row.get("tipo"), grupo=grupo, nome=nome, regras=regras_tipo)
+            tipo = _classificar_tipo_por_regras({"grupo": grupo, "nome": nome, "tipo": row.get("tipo")}, regras_tipo)
             setor_nome = _to_str(row.get("setor"))
             ativo = _parse_bool_ativo(row.get("ativo"))
             placa = _to_str(row.get("placa"))
@@ -928,11 +952,11 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
     cur = conn.cursor()
     try:
         _ensure_grupos_schema(cur)
+        regras_tipo = _carregar_regras_tipo(cur)
         colunas = _colunas_tabela(cur, "equipamentos")
         existentes = _equipamentos_existentes(cur)
         setores_idx, _ = _setores_index(cur)
         grupos_idx = _grupos_index(cur)
-        regras_tipo = _carregar_regras_tipo(cur)
 
         import_cols = ["codigo", "nome", "tipo", "setor_id", "km_atual", "horas_atual", "ativo"]
         if "grupo" in colunas:
@@ -967,8 +991,6 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
             cur.execute("SAVEPOINT importacao_item")
             try:
                 row = dict(row)
-                row["grupo"] = _to_str(row.get("grupo") or row.get("tipo"))
-                row["tipo"] = normalizar_tipo(row.get("tipo"), grupo=row.get("grupo"), nome=row.get("nome"), regras=regras_tipo)
                 row["km_atual"] = _sanitize_meter(row.get("km_atual"), "km_atual")
                 row["horas_atual"] = _sanitize_meter(row.get("horas_atual"), "horas_atual")
 
@@ -982,6 +1004,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                     row["setor_id"] = None
                     row["setor_resolvido"] = ""
 
+                row["tipo"] = _classificar_tipo_por_regras(row, regras_tipo)
                 grupo_nome = _to_str(row.get("grupo") or row.get("tipo"))
                 if grupo_nome:
                     grupo_id, grupo_criado, grupo_resolvido = _obter_ou_criar_grupo(cur, conn, grupos_idx, grupo_nome, setor_id=row.get("setor_id"))
