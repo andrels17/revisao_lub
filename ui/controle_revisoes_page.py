@@ -1,5 +1,6 @@
 import datetime
 import html
+from collections import defaultdict
 
 import pandas as pd
 import streamlit as st
@@ -666,6 +667,165 @@ def _dialog_revisao(mapa_vinculos, templates_lub, cache_analises):
     _render_detalhe_revisao(item, mapa_vinculos, templates_lub, cache_analises)
 
 
+def _agrupar_por_frota(itens):
+    agrupado = defaultdict(list)
+    for item in itens:
+        agrupado[item["equipamento_id"]].append(item)
+    return dict(agrupado)
+
+
+def _resumo_frota_revisoes(itens):
+    itens_ordenados = sorted(
+        itens,
+        key=lambda x: (STATUS_ORDEM.get(x.get("status"), 99), x.get("falta", 0), x.get("gatilho_valor", 0)),
+    )
+    ref = itens_ordenados[0]
+    total = len(itens_ordenados)
+    realizadas = sum(1 for i in itens_ordenados if float(i.get("ultima_execucao") or 0) > 0)
+    pendentes = max(total - realizadas, 0)
+    progresso = int(round((realizadas / total) * 100)) if total else 0
+
+    proxima = None
+    for item in itens_ordenados:
+        if float(item.get("ultima_execucao") or 0) <= 0 or item.get("status") in {"VENCIDO", "PROXIMO"}:
+            proxima = item
+            break
+    if proxima is None and itens_ordenados:
+        proxima = min(itens_ordenados, key=lambda x: float(x.get("proximo_vencimento") or x.get("vencimento_ciclo") or 0))
+
+    return {
+        "ref": ref,
+        "itens": itens_ordenados,
+        "total": total,
+        "realizadas": realizadas,
+        "pendentes": pendentes,
+        "progresso": progresso,
+        "proxima": proxima,
+    }
+
+
+def _abrir_detalhes_frota_revisao(itens):
+    st.session_state["rev_modal_frota"] = itens
+
+
+def _render_card_frota_em_dia(resumo, idx):
+    ref = resumo["ref"]
+    unidade = _fmt_unidade(ref.get("tipo_controle"))
+    leitura_atual = f'{_fmt_valor(ref.get("leitura_atual"))} {unidade}'
+    proxima = resumo.get("proxima")
+    if proxima:
+        prox_txt = f'{proxima.get("etapa") or "-"} · alvo {_fmt_valor(proxima.get("proximo_vencimento") or proxima.get("vencimento_ciclo"))} {unidade}'
+    else:
+        prox_txt = "Próxima revisão não identificada"
+
+    grupo = html.escape(str(ref.get("grupo_nome") or ref.get("grupo") or "—"))
+    setor = html.escape(str(ref.get("setor_nome") or "—"))
+    codigo = html.escape(str(ref.get("codigo") or "-"))
+    nome = html.escape(str(ref.get("equipamento_nome") or "-"))
+
+    col_info, col_kpi, col_btn = st.columns([7.0, 2.2, 1.2], gap="small")
+    with col_info:
+        st.markdown(
+            f'<div class="rev-list-row">'
+            f'<div class="rev-list-code">{codigo}</div>'
+            f'<div class="rev-list-title">{nome}</div>'
+            f'<div class="rev-list-context">{grupo} • {setor}</div>'
+            f'<div class="rev-list-meta">Atual: {html.escape(leitura_atual)} • Etapas {resumo["realizadas"]}/{resumo["total"]} realizadas</div>'
+            f'<div class="rev-list-badges">'
+            f'<span class="rev-b rev-b-ok">Em dia</span>'
+            f'<span class="rev-chip rev-chip-neutral">{resumo["total"]} etapa(s)</span>'
+            f'<span class="rev-chip rev-chip-neutral">{resumo["pendentes"]} pendente(s)</span>'
+            f'<span class="rev-chip rev-chip-neutral">{html.escape(prox_txt)}</span>'
+            f'</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    with col_kpi:
+        st.markdown(
+            f'<div class="rev-sidebox">'
+            f'<div class="rev-sidebox-label">Concluído</div>'
+            f'<div class="rev-sidebox-value">{resumo["progresso"]}%</div>'
+            f'<div class="rev-sidebox-sub">{resumo["realizadas"]} de {resumo["total"]} etapas<br>Leitura {html.escape(leitura_atual)}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    with col_btn:
+        st.markdown('<div style="height:.15rem"></div>', unsafe_allow_html=True)
+        if st.button("Detalhes", key=f"rev_det_frota_{ref['equipamento_id']}_{idx}", use_container_width=True):
+            _abrir_detalhes_frota_revisao(resumo["itens"])
+            st.rerun()
+
+
+def _render_lista_frotas_em_dia(itens):
+    agrupado = _agrupar_por_frota(itens)
+    frotas = []
+    for eqp_id, itens_frota in agrupado.items():
+        frotas.append(_resumo_frota_revisoes(itens_frota))
+
+    frotas.sort(key=lambda r: (r["ref"].get("codigo") or "", r["ref"].get("equipamento_nome") or ""))
+
+    page_size = 15
+    total = len(frotas)
+    if total <= page_size:
+        limite = total
+    else:
+        limite = st.session_state.get("rev_limit_cards_emdia", page_size)
+        limite = min(max(page_size, limite), total)
+
+    for i, resumo in enumerate(frotas[:limite]):
+        _render_card_frota_em_dia(resumo, i)
+
+    if total > limite:
+        c1, c2 = st.columns([1, 5])
+        with c1:
+            if st.button(f"Carregar mais ({min(page_size, total - limite)})", key=f"rev_more_emdia_{total}", use_container_width=True):
+                st.session_state["rev_limit_cards_emdia"] = min(total, limite + page_size)
+                st.rerun()
+        with c2:
+            st.caption(f"Exibindo {limite} de {total} frotas.")
+
+
+@st.dialog("Detalhes da frota", width="large")
+def _dialog_frota_revisao():
+    itens = st.session_state.get("rev_modal_frota")
+    if not itens:
+        st.info("Selecione uma frota para ver os detalhes.")
+        return
+
+    resumo = _resumo_frota_revisoes(itens)
+    ref = resumo["ref"]
+    unidade = _fmt_unidade(ref.get("tipo_controle"))
+    leitura_atual = f'{_fmt_valor(ref.get("leitura_atual"))} {unidade}'
+    proxima = resumo.get("proxima")
+    proxima_txt = "—"
+    if proxima:
+        proxima_txt = f'{proxima.get("etapa") or "-"} em {_fmt_valor(proxima.get("proximo_vencimento") or proxima.get("vencimento_ciclo"))} {unidade}'
+
+    st.markdown(f"### {ref.get('codigo') or '-'} — {ref.get('equipamento_nome') or '-'}")
+    st.caption(f"{ref.get('grupo_nome') or ref.get('grupo') or '—'} • {ref.get('setor_nome') or '—'}")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Leitura atual", leitura_atual)
+    c2.metric("Etapas", resumo["total"])
+    c3.metric("Realizadas", f"{resumo['realizadas']}/{resumo['total']}")
+    c4.metric("Próxima revisão", proxima_txt)
+
+    linhas = []
+    for item in resumo["itens"]:
+        ultima = float(item.get("ultima_execucao") or 0)
+        linhas.append({
+            "Etapa": item.get("etapa") or "-",
+            "Controle": _fmt_unidade(item.get("tipo_controle")),
+            "Alvo": f'{_fmt_valor(item.get("vencimento_ciclo"))} {unidade}',
+            "Status": _badge(item.get("status")),
+            "Realizada": "Sim" if ultima > 0 else "Não",
+            "Realizada em": f'{_fmt_valor(ultima)} {unidade}' if ultima > 0 else "—",
+            "Atual": leitura_atual,
+            "Próx. ciclo": f'{_fmt_valor(item.get("proximo_vencimento"))} {unidade}',
+            "Falta": f'{_fmt_valor(item.get("falta"))} {unidade}' if float(item.get("falta") or 0) > 0 else f'Vencido {abs(float(item.get("falta") or 0)):.0f} {unidade}',
+        })
+
+    st.dataframe(pd.DataFrame(linhas), use_container_width=True, hide_index=True)
 def _render_lista_cards(itens):
     page_size = 20
     total = len(itens)
@@ -773,7 +933,11 @@ def render():
             _render_lista_cards(proximos)
 
     with tab_dia:
-        _render_tabela(em_dia, f"Em dia ({len(em_dia)})", "Nenhum item em dia.")
+        if not em_dia:
+            st.success("Nenhum item em dia.")
+        else:
+            st.caption("Visão consolidada por frota. Abra os detalhes para ver todas as etapas e o histórico de execução do ciclo.")
+            _render_lista_frotas_em_dia(em_dia)
 
     with tab_real:
         _render_tabela(realizados, f"Realizados neste ciclo ({len(realizados)})", "Nenhuma execução registrada neste ciclo.")
@@ -783,3 +947,6 @@ def render():
 
     if st.session_state.get("rev_modal_item"):
         _dialog_revisao(mapa_vinculos, templates_lub, cache_analises)
+
+    if st.session_state.get("rev_modal_frota"):
+        _dialog_frota_revisao()
