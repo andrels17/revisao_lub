@@ -169,8 +169,14 @@ def _carregar_setores():
     conn = get_conn()
     cur = conn.cursor()
     try:
-        cur.execute("select id, nome from setores where ativo = true order by nome")
-        return cur.fetchall()
+        try:
+            cur.execute("select id, nome from setores where coalesce(ativo, true) = true order by nome")
+            rows = cur.fetchall()
+        except Exception:
+            conn.rollback()
+            cur.execute("select id, nome from setores order by nome")
+            rows = cur.fetchall()
+        return rows
     finally:
         release_conn(conn)
 
@@ -180,13 +186,28 @@ def _carregar_equipamentos(setor_id=None):
     cur = conn.cursor()
     try:
         if setor_id:
-            cur.execute(
-                "select id, codigo, nome from equipamentos where ativo = true and setor_id = %s order by codigo",
-                (setor_id,),
-            )
+            try:
+                cur.execute(
+                    "select id, codigo, nome from equipamentos where coalesce(ativo, true) = true and setor_id = %s order by codigo, nome",
+                    (setor_id,),
+                )
+                rows = cur.fetchall()
+            except Exception:
+                conn.rollback()
+                cur.execute(
+                    "select id, codigo, nome from equipamentos where setor_id = %s order by codigo, nome",
+                    (setor_id,),
+                )
+                rows = cur.fetchall()
         else:
-            cur.execute("select id, codigo, nome from equipamentos where ativo = true order by codigo")
-        return cur.fetchall()
+            try:
+                cur.execute("select id, codigo, nome from equipamentos where coalesce(ativo, true) = true order by codigo, nome")
+                rows = cur.fetchall()
+            except Exception:
+                conn.rollback()
+                cur.execute("select id, codigo, nome from equipamentos order by codigo, nome")
+                rows = cur.fetchall()
+        return rows
     finally:
         release_conn(conn)
 
@@ -830,6 +851,13 @@ def render():
 
     df_rev = _filtrar_busca(df_rev, busca, ["Código", "Equipamento", "Setor", "Responsável", "Status", "Observações"])
     df_lub = _filtrar_busca(df_lub, busca, ["Código", "Equipamento", "Setor", "Responsável", "Item", "Produto", "Observações"])
+
+    if not equipamentos:
+        st.warning("Nenhum equipamento foi encontrado para os filtros atuais. Ajustei o carregamento para considerar registros com campo ativo nulo, mas se ainda aparecer vazio vale revisar a tabela de equipamentos.")
+
+    total_exec_periodo = len(df_rev) + len(df_lub)
+    if equipamentos and total_exec_periodo == 0:
+        st.info("Os equipamentos foram carregados, mas não há execuções no período selecionado. Tente ampliar a data inicial para localizar revisões e lubrificações mais antigas.")
 
     df_rev_macro = _enriquecer_macro_revisoes(df_rev)
     df_lub_macro = _enriquecer_macro_lubrificacoes(df_lub)
