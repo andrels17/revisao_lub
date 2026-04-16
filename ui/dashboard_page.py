@@ -271,7 +271,7 @@ def _hero(total_alertas: int):
     st.markdown(
         f"""
         <div class="dash-hero">
-            <div class="badge">Dashboard executivo</div>
+            <div class="badge">Painel operacional</div>
             <h2>Pendências de manutenção</h2>
             <p>Alertas consolidados de revisão e lubrificação · <strong>{total_alertas}</strong> item(ns) no total</p>
         </div>
@@ -672,7 +672,7 @@ def render():
     # ── Cabeçalho ──────────────────────────────────────────────────
     col_h, col_btn = st.columns([5, 1])
     with col_h:
-        st.title("Dashboard")
+        st.title("Painel Operacional")
     with col_btn:
         st.write("")
         if st.button("Atualizar", help="Recarrega dados do banco"):

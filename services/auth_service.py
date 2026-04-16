@@ -16,7 +16,7 @@ ROLE_LABELS = {
 
 ROLE_PAGINAS: dict[str, set[str]] = {
     "admin": {
-        "Dashboard",
+        "Painel Operacional",
         "Setores", "Equipamentos", "Responsaveis",
         "Vinculos", "Templates",
         "Leituras KM / Horas", "Controle de Revisoes",
@@ -26,7 +26,7 @@ ROLE_PAGINAS: dict[str, set[str]] = {
         "Configuracoes",
     },
     "gestor": {
-        "Dashboard",
+        "Painel Operacional",
         "Setores", "Equipamentos", "Responsaveis",
         "Vinculos", "Templates",
         "Leituras KM / Horas", "Controle de Revisoes",
@@ -35,19 +35,20 @@ ROLE_PAGINAS: dict[str, set[str]] = {
         "Relatorio de Manutencao",
     },
     "operador": {
-        "Dashboard",
+        "Painel Operacional",
         "Leituras KM / Horas",
         "Controle de Revisoes",
         "Controle de Lubrificacoes",
     },
     "visualizador": {
-        "Dashboard",
+        "Painel Operacional",
         "Relatorio de Manutencao",
     },
 }
 
 ROLE_PAGINAS["admin"] = {
-    "📊 Dashboard",
+    "🧭 Painel Operacional",
+    "🧠 Painel Executivo",
     "🏢 Setores", "🗂️ Grupos", "🚜 Equipamentos", "👷 Responsáveis",
     "🔗 Vínculos", "📋 Templates",
     "📏 Leituras KM / Horas", "🔧 Controle de Revisões",
@@ -58,7 +59,8 @@ ROLE_PAGINAS["admin"] = {
     "🔥 Prioridades do Dia",
 }
 ROLE_PAGINAS["gestor"] = {
-    "📊 Dashboard",
+    "🧭 Painel Operacional",
+    "🧠 Painel Executivo",
     "🏢 Setores", "🗂️ Grupos", "🚜 Equipamentos", "👷 Responsáveis",
     "🔗 Vínculos", "📋 Templates",
     "📏 Leituras KM / Horas", "🔧 Controle de Revisões",
@@ -68,14 +70,16 @@ ROLE_PAGINAS["gestor"] = {
     "🔥 Prioridades do Dia",
 }
 ROLE_PAGINAS["operador"] = {
-    "📊 Dashboard",
+    "🧭 Painel Operacional",
+    "🧠 Painel Executivo",
     "📏 Leituras KM / Horas",
     "🔧 Controle de Revisões",
     "🛢️ Controle de Lubrificações",
     "🔥 Prioridades do Dia",
 }
 ROLE_PAGINAS["visualizador"] = {
-    "📊 Dashboard",
+    "🧭 Painel Operacional",
+    "🧠 Painel Executivo",
     "📈 Relatório de Manutenção",
     "🔥 Prioridades do Dia",
 }

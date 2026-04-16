@@ -10,6 +10,7 @@ from ui import (
     auth_page,
     configuracoes_page,
     controle_revisoes_page,
+    dashboard_executivo_page,
     dashboard_page,
     equipamentos_page,
     grupos_page,
@@ -69,7 +70,8 @@ except Exception:
 
 SECOES = {
     "Painel": {
-        "📊 Dashboard": dashboard_page,
+        "🧭 Painel Operacional": dashboard_page,
+        "🧠 Painel Executivo": dashboard_executivo_page,
     },
     "Operação": {
         "🔥 Prioridades do Dia": prioridades_page,

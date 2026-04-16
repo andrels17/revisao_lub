@@ -118,7 +118,7 @@ def _destino_label(destino: str) -> str:
         "lubrificacoes": "🛢️ Controle de Lubrificações",
         "leituras": "📏 Leituras KM / Horas",
         "equipamentos": "🚜 Equipamentos",
-    }.get(destino, "📊 Dashboard")
+    }.get(destino, "🧭 Painel Operacional")
 
 
 def _ir_para_destino(item: dict) -> None:
