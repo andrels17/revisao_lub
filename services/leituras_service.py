@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import datetime as dt
+from typing import Any
+
 from psycopg2 import errors
 from psycopg2 import sql
 
@@ -57,9 +60,37 @@ def _schema_map(columns: set[str]) -> dict[str, str | None]:
     }
 
 
-def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
-               data_leitura=None, responsavel_id=None, observacoes=None,
-               permitir_regressao=False):
+def _coerce_date(value: Any):
+    if value in (None, ""):
+        return None
+    if isinstance(value, dt.datetime):
+        return value.date()
+    if isinstance(value, dt.date):
+        return value
+    try:
+        text = str(value).strip()
+        if not text:
+            return None
+        return dt.date.fromisoformat(text[:10])
+    except Exception:
+        return value
+
+
+def _registrar_no_conn(
+    conn,
+    cur,
+    *,
+    equipamento_id,
+    tipo_leitura,
+    km_valor=None,
+    horas_valor=None,
+    data_leitura=None,
+    responsavel_id=None,
+    observacoes=None,
+    permitir_regressao=False,
+    cols: set[str] | None = None,
+    schema: dict[str, str | None] | None = None,
+):
     contexto = validacoes_service.validar_leitura(
         equipamento_id=equipamento_id,
         tipo_leitura=tipo_leitura,
@@ -68,85 +99,163 @@ def registrar(equipamento_id, tipo_leitura, km_valor=None, horas_valor=None,
         permitir_regressao=permitir_regressao,
     )
 
+    cols = cols or _table_columns(cur)
+    if not cols:
+        raise RuntimeError("A tabela 'leituras' não existe no schema public.")
+    m = schema or _schema_map(cols)
+    if not m["equipamento_id"]:
+        raise RuntimeError("A tabela 'leituras' não possui a coluna equipamento_id.")
+
+    valor_antigo = {
+        "km_atual": contexto.get("km_atual"),
+        "horas_atual": contexto.get("horas_atual"),
+    }
+
+    payload = []
+    if m["equipamento_id"]:
+        payload.append((m["equipamento_id"], equipamento_id))
+    if m["tipo_leitura"]:
+        payload.append((m["tipo_leitura"], tipo_leitura))
+    if m["km"] and km_valor is not None:
+        payload.append((m["km"], km_valor))
+    if m["horas"] and horas_valor is not None:
+        payload.append((m["horas"], horas_valor))
+    if m["data"] and data_leitura is not None and m["data"] != "created_at":
+        payload.append((m["data"], _coerce_date(data_leitura)))
+    if m["responsavel_id"] and responsavel_id:
+        payload.append((m["responsavel_id"], responsavel_id))
+    if m["observacoes"] and observacoes:
+        payload.append((m["observacoes"], observacoes))
+
+    if not payload:
+        raise RuntimeError("Não foi possível montar o insert da tabela 'leituras'.")
+
+    col_idents = [sql.Identifier(c) for c, _ in payload]
+    values = [v for _, v in payload]
+    placeholders = sql.SQL(", ").join(sql.Placeholder() for _ in payload)
+
+    query = sql.SQL("insert into public.leituras ({cols}) values ({vals})").format(
+        cols=sql.SQL(", ").join(col_idents),
+        vals=placeholders,
+    )
+    if m["id"]:
+        query += sql.SQL(" returning {}").format(sql.Identifier(m["id"]))
+
+    cur.execute(query, values)
+    leitura_id = cur.fetchone()[0] if m["id"] else None
+
+    if tipo_leitura in ("km", "ambos") and km_valor is not None:
+        cur.execute(
+            "update equipamentos set km_atual = greatest(coalesce(km_atual, 0), %s) where id = %s",
+            (km_valor, equipamento_id),
+        )
+    if tipo_leitura in ("horas", "ambos") and horas_valor is not None:
+        cur.execute(
+            "update equipamentos set horas_atual = greatest(coalesce(horas_atual, 0), %s) where id = %s",
+            (horas_valor, equipamento_id),
+        )
+
+    auditoria_service.registrar_no_conn(
+        conn,
+        acao="registrar_leitura",
+        entidade="leituras",
+        entidade_id=leitura_id,
+        valor_antigo=valor_antigo,
+        valor_novo={
+            "equipamento_id": equipamento_id,
+            "tipo_leitura": tipo_leitura,
+            "km_valor": km_valor,
+            "horas_valor": horas_valor,
+            "data_leitura": str(data_leitura) if data_leitura else None,
+            "responsavel_id": responsavel_id,
+            "observacoes": observacoes,
+        },
+    )
+    return leitura_id
+
+
+def registrar(
+    equipamento_id,
+    tipo_leitura,
+    km_valor=None,
+    horas_valor=None,
+    data_leitura=None,
+    responsavel_id=None,
+    observacoes=None,
+    permitir_regressao=False,
+):
     conn = get_conn()
     cur = conn.cursor()
     try:
         cols = _table_columns(cur)
-        if not cols:
-            raise RuntimeError("A tabela 'leituras' não existe no schema public.")
-
-        m = _schema_map(cols)
-        if not m["equipamento_id"]:
-            raise RuntimeError("A tabela 'leituras' não possui a coluna equipamento_id.")
-
-        valor_antigo = {
-            "km_atual": contexto.get("km_atual"),
-            "horas_atual": contexto.get("horas_atual"),
-        }
-
-        payload = []
-        if m["equipamento_id"]:
-            payload.append((m["equipamento_id"], equipamento_id))
-        if m["tipo_leitura"]:
-            payload.append((m["tipo_leitura"], tipo_leitura))
-        if m["km"] and km_valor is not None:
-            payload.append((m["km"], km_valor))
-        if m["horas"] and horas_valor is not None:
-            payload.append((m["horas"], horas_valor))
-        if m["data"] and data_leitura is not None and m["data"] != "created_at":
-            payload.append((m["data"], data_leitura))
-        if m["responsavel_id"] and responsavel_id:
-            payload.append((m["responsavel_id"], responsavel_id))
-        if m["observacoes"] and observacoes:
-            payload.append((m["observacoes"], observacoes))
-
-        if not payload:
-            raise RuntimeError("Não foi possível montar o insert da tabela 'leituras'.")
-
-        col_idents = [sql.Identifier(c) for c, _ in payload]
-        values = [v for _, v in payload]
-        placeholders = sql.SQL(", ").join(sql.Placeholder() for _ in payload)
-
-        query = sql.SQL("insert into public.leituras ({cols}) values ({vals})").format(
-            cols=sql.SQL(", ").join(col_idents),
-            vals=placeholders,
-        )
-        if m["id"]:
-            query += sql.SQL(" returning {}") .format(sql.Identifier(m["id"]))
-
-        cur.execute(query, values)
-        leitura_id = cur.fetchone()[0] if m["id"] else None
-
-        if tipo_leitura in ("km", "ambos") and km_valor is not None:
-            cur.execute(
-                "update equipamentos set km_atual = greatest(coalesce(km_atual, 0), %s) where id = %s",
-                (km_valor, equipamento_id),
-            )
-        if tipo_leitura in ("horas", "ambos") and horas_valor is not None:
-            cur.execute(
-                "update equipamentos set horas_atual = greatest(coalesce(horas_atual, 0), %s) where id = %s",
-                (horas_valor, equipamento_id),
-            )
-
-        auditoria_service.registrar_no_conn(
+        schema = _schema_map(cols)
+        leitura_id = _registrar_no_conn(
             conn,
-            acao="registrar_leitura",
-            entidade="leituras",
-            entidade_id=leitura_id,
-            valor_antigo=valor_antigo,
-            valor_novo={
-                "equipamento_id": equipamento_id,
-                "tipo_leitura": tipo_leitura,
-                "km_valor": km_valor,
-                "horas_valor": horas_valor,
-                "data_leitura": str(data_leitura) if data_leitura else None,
-                "responsavel_id": responsavel_id,
-                "observacoes": observacoes,
-            },
+            cur,
+            equipamento_id=equipamento_id,
+            tipo_leitura=tipo_leitura,
+            km_valor=km_valor,
+            horas_valor=horas_valor,
+            data_leitura=data_leitura,
+            responsavel_id=responsavel_id,
+            observacoes=observacoes,
+            permitir_regressao=permitir_regressao,
+            cols=cols,
+            schema=schema,
         )
-
         conn.commit()
         return leitura_id
+    finally:
+        release_conn(conn)
+
+
+def registrar_lote(
+    itens: list[dict[str, Any]],
+    responsavel_id=None,
+    observacoes_padrao: str | None = None,
+    permitir_regressao: bool = False,
+) -> dict[str, Any]:
+    if not itens:
+        return {"importados": 0, "falhas": 0, "erros": []}
+
+    conn = get_conn()
+    cur = conn.cursor()
+    erros: list[dict[str, Any]] = []
+    importados = 0
+    try:
+        cols = _table_columns(cur)
+        schema = _schema_map(cols)
+        for item in itens:
+            try:
+                observacoes = item.get("observacoes") or observacoes_padrao
+                _registrar_no_conn(
+                    conn,
+                    cur,
+                    equipamento_id=item["equipamento_id"],
+                    tipo_leitura=item["tipo_leitura"],
+                    km_valor=item.get("km_valor"),
+                    horas_valor=item.get("horas_valor"),
+                    data_leitura=item.get("data_leitura"),
+                    responsavel_id=item.get("responsavel_id") or responsavel_id,
+                    observacoes=observacoes,
+                    permitir_regressao=permitir_regressao,
+                    cols=cols,
+                    schema=schema,
+                )
+                importados += 1
+            except Exception as exc:
+                erros.append(
+                    {
+                        "linha": item.get("linha"),
+                        "codigo": item.get("codigo"),
+                        "erro": str(exc),
+                    }
+                )
+        if erros:
+            conn.rollback()
+        else:
+            conn.commit()
+        return {"importados": importados, "falhas": len(erros), "erros": erros}
     finally:
         release_conn(conn)
 

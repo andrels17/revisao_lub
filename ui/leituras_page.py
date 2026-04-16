@@ -1,5 +1,6 @@
 import datetime
 import html
+import io
 
 import pandas as pd
 import streamlit as st
@@ -17,6 +18,15 @@ PLOTLY_COLORS = {
     "muted": "#9db0c7",
 }
 
+COLUNAS_MODELO = ["COD_EQUIPAMENTO", "LEITURA_ATUAL", "DATA_LEITURA", "OBSERVACAO", "TIPO_HORIMETRO"]
+ALIASES = {
+    "codigo": ["cod_equipamento", "codigo", "cod", "equipamento", "frota"],
+    "leitura": ["leitura_atual", "km_atual", "valor", "medidor_atual", "leitura"],
+    "data": ["data_leitura", "data", "dt_leitura"],
+    "obs": ["observacao", "observacoes", "obs"],
+    "tipo": ["tipo_horimetro", "tipo_controle", "tipo_medidor"],
+}
+
 
 @st.cache_data(ttl=90, show_spinner=False)
 def _carregar_base():
@@ -29,7 +39,7 @@ def _carregar_historico(equipamento_id: str, limite: int = 100):
 
 
 def _fmt_eqp(e):
-    controle = 'KM' if (e.get('tipo_controle') or 'km') == 'km' else 'Horas'
+    controle = "KM" if (e.get("tipo_controle") or "km") == "km" else "Horas"
     return f"{e['codigo']} — {e['nome']}  ({controle} | KM: {float(e.get('km_atual') or 0):.0f} | H: {float(e.get('horas_atual') or 0):.0f})"
 
 
@@ -39,7 +49,7 @@ def _render_page_header() -> None:
         <div class="page-header-card">
             <div class="eyebrow">🧾 Operação</div>
             <h2>Leituras de KM / horas</h2>
-            <p>Atualize hodômetros e horímetros com um fluxo mais direto, visual mais limpo e histórico pronto para consulta e auditoria.</p>
+            <p>Atualize hodômetros e horímetros manualmente ou por planilha, com histórico pronto para consulta e auditoria.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -48,8 +58,8 @@ def _render_page_header() -> None:
 
 def _render_kpi_cards(equipamentos: list[dict]) -> None:
     total = len(equipamentos)
-    com_km = sum(1 for e in equipamentos if float(e.get("km_atual") or 0) > 0)
-    com_horas = sum(1 for e in equipamentos if float(e.get("horas_atual") or 0) > 0)
+    km_controlados = sum(1 for e in equipamentos if (e.get("tipo_controle") or "km") == "km")
+    horas_controlados = sum(1 for e in equipamentos if (e.get("tipo_controle") or "km") == "horas")
     sem_leitura = sum(
         1
         for e in equipamentos
@@ -58,8 +68,8 @@ def _render_kpi_cards(equipamentos: list[dict]) -> None:
 
     cards = [
         ("status-info", "🧩 Base monitorada", total, "Equipamentos disponíveis"),
-        ("status-info", "🛣️ Com KM ativo", com_km, "Hodômetro preenchido"),
-        ("status-success", "⏱️ Com horas ativas", com_horas, "Horímetro preenchido"),
+        ("status-info", "🛣️ Controle por KM", km_controlados, "Cadastro oficial"),
+        ("status-success", "⏱️ Controle por horas", horas_controlados, "Cadastro oficial"),
         ("status-warning", "📝 Sem leitura inicial", sem_leitura, "Requer primeira coleta"),
     ]
     html_cards = []
@@ -188,6 +198,167 @@ def _resumo_historico(dados: list[dict]) -> None:
     col3.metric("Responsável mais recente", ultimo_resp)
 
 
+def _tipo_oficial(equipamento: dict) -> str:
+    return "horas" if (equipamento.get("tipo_controle") or "km") == "horas" else "km"
+
+
+def _coluna_por_alias(df: pd.DataFrame, chave: str) -> str | None:
+    mapa = {str(c).strip().lower(): c for c in df.columns}
+    for alias in ALIASES[chave]:
+        if alias in mapa:
+            return mapa[alias]
+    return None
+
+
+def _ler_arquivo(uploaded_file):
+    nome = uploaded_file.name.lower()
+    if nome.endswith(".csv"):
+        try:
+            return pd.read_csv(uploaded_file, sep=None, engine="python")
+        except Exception:
+            uploaded_file.seek(0)
+            return pd.read_csv(uploaded_file, sep=";")
+    return pd.read_excel(uploaded_file)
+
+
+def _modelo_bytes() -> bytes:
+    exemplo = pd.DataFrame(
+        [
+            {
+                "COD_EQUIPAMENTO": "1010",
+                "LEITURA_ATUAL": 159861,
+                "DATA_LEITURA": datetime.date.today().isoformat(),
+                "OBSERVACAO": "Leitura inicial",
+                "TIPO_HORIMETRO": "KM",
+            }
+        ],
+        columns=COLUNAS_MODELO,
+    )
+    return exemplo.to_csv(index=False, sep=";").encode("utf-8-sig")
+
+
+def _analisar_arquivo(df: pd.DataFrame, equipamentos: list[dict]) -> dict:
+    cod_col = _coluna_por_alias(df, "codigo")
+    leitura_col = _coluna_por_alias(df, "leitura")
+    data_col = _coluna_por_alias(df, "data")
+    obs_col = _coluna_por_alias(df, "obs")
+    tipo_col = _coluna_por_alias(df, "tipo")
+
+    if not cod_col or not leitura_col:
+        faltantes = []
+        if not cod_col:
+            faltantes.append("COD_EQUIPAMENTO")
+        if not leitura_col:
+            faltantes.append("LEITURA_ATUAL")
+        raise ValueError(f"Colunas obrigatórias ausentes: {', '.join(faltantes)}")
+
+    mapa_eq = {str(e.get("codigo", "")).strip(): e for e in equipamentos}
+    preview = []
+    validos = []
+    invalidos = 0
+    avisos = 0
+    duplicados = 0
+    vistos = {}
+
+    for idx, row in df.iterrows():
+        linha = idx + 2
+        codigo = str(row.get(cod_col, "") or "").strip()
+        if not codigo:
+            continue
+        leitura_bruta = row.get(leitura_col)
+        try:
+            leitura_atual = float(leitura_bruta)
+        except Exception:
+            leitura_atual = None
+
+        equipamento = mapa_eq.get(codigo)
+        tipo_planilha = str(row.get(tipo_col, "") or "").strip() if tipo_col else ""
+        data_leitura = row.get(data_col) if data_col else None
+        observacoes = str(row.get(obs_col, "") or "").strip() if obs_col else None
+
+        if codigo in vistos:
+            duplicados += 1
+        vistos[codigo] = linha
+
+        motivo = []
+        status = "Pronto"
+        if not equipamento:
+            status = "Erro"
+            motivo.append("Equipamento não encontrado")
+        if leitura_atual is None:
+            status = "Erro"
+            motivo.append("Leitura inválida")
+        elif leitura_atual < 0:
+            status = "Erro"
+            motivo.append("Leitura negativa")
+
+        tipo_cadastro = _tipo_oficial(equipamento or {}) if equipamento else "-"
+        medidor_atual = None
+        tipo_leitura = None
+        km_valor = None
+        horas_valor = None
+        if equipamento and leitura_atual is not None and leitura_atual >= 0:
+            tipo_leitura = tipo_cadastro
+            if tipo_cadastro == "horas":
+                medidor_atual = float(equipamento.get("horas_atual") or 0)
+                horas_valor = leitura_atual
+            else:
+                medidor_atual = float(equipamento.get("km_atual") or 0)
+                km_valor = leitura_atual
+            if leitura_atual < medidor_atual:
+                status = "Atenção"
+                motivo.append("Leitura menor que a atual")
+                avisos += 1
+            if tipo_planilha:
+                tipo_planilha_norm = "horas" if "hora" in tipo_planilha.lower() or "hr" in tipo_planilha.lower() else "km"
+                if tipo_planilha_norm != tipo_cadastro:
+                    status = "Atenção"
+                    motivo.append("Tipo da planilha diverge do cadastro")
+                    avisos += 1
+
+        if status == "Erro":
+            invalidos += 1
+        else:
+            validos.append(
+                {
+                    "linha": linha,
+                    "codigo": codigo,
+                    "equipamento_id": equipamento["id"],
+                    "tipo_leitura": tipo_leitura,
+                    "km_valor": km_valor,
+                    "horas_valor": horas_valor,
+                    "data_leitura": data_leitura,
+                    "observacoes": observacoes or None,
+                }
+            )
+
+        preview.append(
+            {
+                "Linha": linha,
+                "Código": codigo,
+                "Equipamento": equipamento.get("nome") if equipamento else "-",
+                "Controle cadastro": tipo_cadastro,
+                "Tipo planilha": tipo_planilha or "-",
+                "Leitura": leitura_atual if leitura_atual is not None else "-",
+                "Atual cadastrado": medidor_atual if medidor_atual is not None else "-",
+                "Status": status,
+                "Motivo": "; ".join(motivo) if motivo else "OK",
+            }
+        )
+
+    return {
+        "preview": preview,
+        "validos": validos,
+        "resumo": {
+            "linhas": len(preview),
+            "prontos": len(validos),
+            "erros": invalidos,
+            "avisos": avisos,
+            "duplicados": duplicados,
+        },
+    }
+
+
 def render():
     head_l, head_r = st.columns([6, 1], vertical_alignment="center")
     with head_l:
@@ -200,7 +371,7 @@ def render():
             st.rerun()
 
     st.markdown(
-        "<div class='section-caption'>Registre medições, acompanhe a evolução por equipamento e mantenha a operação com menos ruído visual.</div>",
+        "<div class='section-caption'>Registre medições, importe planilhas e acompanhe a evolução por equipamento sem ambiguidade entre KM e horas.</div>",
         unsafe_allow_html=True,
     )
 
@@ -213,7 +384,7 @@ def render():
 
     _render_kpi_cards(equipamentos)
 
-    tab1, tab2 = st.tabs(["Registrar leitura", "Histórico e evolução"])
+    tab1, tab2, tab3 = st.tabs(["Registrar leitura", "Importar planilha", "Histórico e evolução"])
 
     with tab1:
         st.markdown("<div class='filters-shell'><div class='filters-title'>Registro operacional</div>", unsafe_allow_html=True)
@@ -221,14 +392,13 @@ def render():
         with col1:
             eqp = st.selectbox("Equipamento", equipamentos, format_func=_fmt_eqp, key="leit_reg_eqp")
         with col2:
-            controle_eq = (eqp.get('tipo_controle') or 'km').lower()
-            opcoes_leitura = ['km'] if controle_eq == 'km' else ['horas']
-            tipo_leitura = st.selectbox(
-                "O que atualizar",
-                opcoes_leitura,
-                format_func=lambda x: {"ambos": "KM e Horas", "km": "Apenas KM", "horas": "Apenas Horas"}[x],
+            tipo_oficial = _tipo_oficial(eqp) if eqp else "km"
+            st.selectbox(
+                "Controle oficial",
+                [tipo_oficial],
+                format_func=lambda x: "KM" if x == "km" else "Horas",
+                disabled=True,
             )
-            st.caption(f"Controle oficial do equipamento: {'KM / hodômetro' if controle_eq == 'km' else 'Horas / horímetro'}")
         st.markdown("</div>", unsafe_allow_html=True)
 
         if not eqp:
@@ -246,6 +416,7 @@ def render():
         c_h.metric("Horas atuais registradas", f"{horas_atual:.0f} h")
         c_u.metric("Última coleta", ultima_data)
 
+        tipo_leitura = _tipo_oficial(eqp)
         with st.form("form_leitura", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
@@ -280,13 +451,13 @@ def render():
 
         if salvar:
             avisos = []
-            if tipo_leitura in ("km", "ambos") and km_valor < km_atual:
+            if tipo_leitura == "km" and km_valor < km_atual:
                 avisos.append(
-                    f"⚠️ O KM informado **{km_valor:.0f}** é menor que o atual **{km_atual:.0f}**. Isso pode indicar um erro de digitação."
+                    f"⚠️ O KM informado **{km_valor:.0f}** é menor que o atual **{km_atual:.0f}**."
                 )
-            if tipo_leitura in ("horas", "ambos") and horas_valor < horas_atual:
+            if tipo_leitura == "horas" and horas_valor < horas_atual:
                 avisos.append(
-                    f"⚠️ As horas informadas **{horas_valor:.0f}** são menores que as atuais **{horas_atual:.0f}**. Isso pode indicar um erro de digitação."
+                    f"⚠️ As horas informadas **{horas_valor:.0f}** são menores que as atuais **{horas_atual:.0f}**."
                 )
 
             if avisos:
@@ -307,21 +478,93 @@ def render():
                         st.info("Leitura cancelada.")
 
                 if st.session_state.get(confirmar_key):
-                    _salvar_leitura(
-                        eqp,
-                        tipo_leitura,
-                        km_valor,
-                        horas_valor,
-                        data_leitura,
-                        resp,
-                        obs,
-                        permitir_regressao=True,
-                    )
+                    _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs, permitir_regressao=True)
                     st.session_state.pop(confirmar_key, None)
             else:
                 _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs)
 
     with tab2:
+        st.markdown("<div class='filters-shell'><div class='filters-title'>Importação assistida</div>", unsafe_allow_html=True)
+        top_a, top_b = st.columns([2, 1])
+        with top_a:
+            st.caption("Use o cadastro oficial do equipamento para decidir automaticamente se a leitura vai para KM ou horas.")
+        with top_b:
+            st.download_button(
+                "⬇️ Baixar modelo",
+                data=_modelo_bytes(),
+                file_name="modelo_importacao_leituras.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        with st.container(border=True):
+            col_u, col_r = st.columns([3, 2])
+            with col_u:
+                arquivo = st.file_uploader(
+                    "Planilha de leituras",
+                    type=["csv", "xlsx", "xls"],
+                    help="Colunas mínimas: COD_EQUIPAMENTO e LEITURA_ATUAL.",
+                )
+            with col_r:
+                resp_import = (
+                    st.selectbox(
+                        "Responsável para o lote",
+                        [None] + responsaveis,
+                        format_func=lambda r: r["nome"] if r else "— nenhum —",
+                        key="leit_imp_resp",
+                    )
+                    if responsaveis
+                    else None
+                )
+                permitir_regressao = st.checkbox("Permitir leituras menores que a atual", value=False)
+            obs_padrao = st.text_input("Observação padrão do lote (opcional)", key="leit_imp_obs")
+
+        if arquivo is not None:
+            try:
+                df_upload = _ler_arquivo(arquivo)
+                analise = _analisar_arquivo(df_upload, equipamentos)
+            except Exception as exc:
+                st.error(f"Erro ao ler a planilha: {exc}")
+                analise = None
+
+            if analise:
+                resumo = analise["resumo"]
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Linhas lidas", resumo["linhas"])
+                c2.metric("Prontas para importar", resumo["prontos"])
+                c3.metric("Com erro", resumo["erros"])
+                c4.metric("Com atenção", resumo["avisos"])
+                if resumo["duplicados"]:
+                    st.warning(f"A planilha possui {resumo['duplicados']} código(s) repetido(s). Revise antes de importar.")
+
+                preview_df = pd.DataFrame(analise["preview"])
+                st.dataframe(preview_df, use_container_width=True, hide_index=True)
+
+                validos = analise["validos"]
+                if validos:
+                    if st.button("✅ Importar leituras válidas", type="primary", use_container_width=True):
+                        resultado = leituras_service.registrar_lote(
+                            validos,
+                            responsavel_id=resp_import["id"] if resp_import else None,
+                            observacoes_padrao=obs_padrao.strip() or None,
+                            permitir_regressao=permitir_regressao,
+                        )
+                        if resultado["falhas"]:
+                            st.error(
+                                f"Importação não concluída. {resultado['falhas']} linha(s) falharam e nenhuma leitura foi gravada."
+                            )
+                            erros_df = pd.DataFrame(resultado["erros"])
+                            st.dataframe(erros_df, use_container_width=True, hide_index=True)
+                        else:
+                            _carregar_base.clear()
+                            _carregar_historico.clear()
+                            st.success(f"✅ {resultado['importados']} leitura(s) importada(s) com sucesso.")
+                            st.rerun()
+                else:
+                    st.info("Nenhuma linha válida encontrada para importação.")
+
+    with tab3:
         st.markdown("<div class='filters-shell'><div class='filters-title'>Análise e histórico</div>", unsafe_allow_html=True)
         col1, col2 = st.columns([3, 1])
         with col1:
