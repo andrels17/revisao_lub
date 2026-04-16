@@ -1,5 +1,8 @@
-TOLERANCIA_PROXIMO_KM = 500
-TOLERANCIA_PROXIMO_HORAS = 50
+"""
+Constantes compartilhadas entre as páginas da UI.
+Centraliza STATUS_LABEL, STATUS_ORDEM, STATUS_COR e TOLERANCIA_PADRAO.
+"""
+
 # ── Tolerância de vencimento ───────────────────────────────────────────────────
 # Itens com diferença <= este valor são marcados como "PRÓXIMO" (revisão e lubrificação).
 # Altere aqui para afetar todo o sistema simultaneamente.
@@ -36,3 +39,8 @@ TIPOS_EQUIPAMENTO = [
     "Caminhão", "Trator", "Colheitadeira", "Pulverizador",
     "Implemento", "Máquina", "Outro",
 ]
+
+
+# Tolerâncias específicas por tipo de controle
+TOLERANCIA_PROXIMO_KM = 500
+TOLERANCIA_PROXIMO_HORAS = 50
