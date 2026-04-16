@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
-from utils import numero_input_br
 
 from services import (
     equipamentos_service,
@@ -120,24 +119,21 @@ def _render_templates_revisao():
                             with c1:
                                 nome_etapa = st.text_input("Nome da etapa", value=etapa["nome_etapa"], key=f"nome_etapa_{etapa['id']}")
                             with c2:
-                                gatilho = numero_input_br(
+                                gatilho = st.number_input(
                                     f"Intervalo ({unidade})",
+                                    min_value=1.0,
+                                    step=50.0,
                                     value=float(etapa["gatilho_valor"]),
                                     key=f"gatilho_{etapa['id']}",
-                                    placeholder="Ex.: 1.234,56",
-                                    casas_preview=0 if unidade == "km" else 1,
                                 )
                             with c3:
                                 st.write("")
                                 st.write("")
                                 salvar = st.form_submit_button("Salvar etapa")
                             if salvar:
-                                if gatilho is None:
-                                    st.error("Informe um intervalo válido.")
-                                else:
-                                    templates_revisao_service.atualizar_etapa(etapa["id"], nome_etapa.strip(), gatilho)
-                                    st.success("Etapa atualizada.")
-                                    st.rerun()
+                                templates_revisao_service.atualizar_etapa(etapa["id"], nome_etapa.strip(), gatilho)
+                                st.success("Etapa atualizada.")
+                                st.rerun()
                 else:
                     st.info("Este template ainda não possui etapas.")
 
@@ -146,19 +142,17 @@ def _render_templates_revisao():
                 with c1:
                     ne = st.text_input("Nome", key=f"ne_{t['id']}")
                 with c2:
-                    ve = numero_input_br(f"({unidade})", value=0, key=f"ve_{t['id']}", placeholder="Ex.: 1.234,56", casas_preview=0 if unidade == "km" else 1)
+                    ve = st.number_input(f"({unidade})", min_value=1.0, step=50.0, key=f"ve_{t['id']}")
                 with c3:
                     st.write("")
                     st.write("")
                     if st.button("Adicionar", key=f"add_e_{t['id']}"):
-                        if not ne.strip():
-                            st.error("Informe o nome.")
-                        elif ve is None:
-                            st.error("Informe um intervalo válido.")
-                        else:
+                        if ne.strip():
                             templates_revisao_service.adicionar_etapa(t["id"], ne.strip(), ve)
                             st.success("Etapa adicionada.")
                             st.rerun()
+                        else:
+                            st.error("Informe o nome.")
 
 
 
@@ -217,24 +211,21 @@ def _render_templates_lubrificacao():
                                     key=f"item_prod_{item['id']}",
                                 )
                             with c3:
-                                intervalo = numero_input_br(
+                                intervalo = st.number_input(
                                     f"Intervalo ({unidade})",
+                                    min_value=1.0,
+                                    step=25.0,
                                     value=float(item["intervalo_valor"]),
                                     key=f"item_int_{item['id']}",
-                                    placeholder="Ex.: 1.234,56",
-                                    casas_preview=0 if unidade == "km" else 1,
                                 )
                             with c4:
                                 st.write("")
                                 st.write("")
                                 salvar = st.form_submit_button("Salvar item")
                             if salvar:
-                                if intervalo is None:
-                                    st.error("Informe um intervalo válido.")
-                                else:
-                                    templates_lubrificacao_service.atualizar_item(item["id"], nome_item.strip(), produto or None, intervalo)
-                                    st.success("Item atualizado.")
-                                    st.rerun()
+                                templates_lubrificacao_service.atualizar_item(item["id"], nome_item.strip(), produto or None, intervalo)
+                                st.success("Item atualizado.")
+                                st.rerun()
                 else:
                     st.info("Este template ainda não possui itens.")
 
@@ -245,19 +236,17 @@ def _render_templates_lubrificacao():
                 with c2:
                     tp = st.selectbox("Produto", [""] + TIPOS_PRODUTO, key=f"tp_{t['id']}")
                 with c3:
-                    iv = numero_input_br(f"({unidade})", value=0, key=f"iv_{t['id']}", placeholder="Ex.: 1.234,56", casas_preview=0 if unidade == "km" else 1)
+                    iv = st.number_input(f"({unidade})", min_value=1.0, step=25.0, key=f"iv_{t['id']}")
                 with c4:
                     st.write("")
                     st.write("")
                     if st.button("Adicionar", key=f"add_i_{t['id']}"):
-                        if not ni.strip():
-                            st.error("Informe o nome.")
-                        elif iv is None:
-                            st.error("Informe um intervalo válido.")
-                        else:
+                        if ni.strip():
                             templates_lubrificacao_service.adicionar_item(t["id"], ni.strip(), tp or None, iv)
                             st.success("Item adicionado.")
                             st.rerun()
+                        else:
+                            st.error("Informe o nome.")
 
 
 

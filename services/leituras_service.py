@@ -8,7 +8,6 @@ from psycopg2 import sql
 
 from database.connection import get_conn, release_conn
 from services import auditoria_service, validacoes_service
-from utils.parsers import parse_numero_br
 
 
 def _inferir_tipo_leitura(km_valor=None, horas_valor=None):
@@ -61,11 +60,6 @@ def _schema_map(columns: set[str]) -> dict[str, str | None]:
     }
 
 
-
-def _coerce_number(value: Any):
-    numero = parse_numero_br(value)
-    return numero if numero is not None else value
-
 def _coerce_date(value: Any):
     if value in (None, ""):
         return None
@@ -97,9 +91,6 @@ def _registrar_no_conn(
     cols: set[str] | None = None,
     schema: dict[str, str | None] | None = None,
 ):
-    km_valor = _coerce_number(km_valor)
-    horas_valor = _coerce_number(horas_valor)
-
     contexto = validacoes_service.validar_leitura(
         equipamento_id=equipamento_id,
         tipo_leitura=tipo_leitura,

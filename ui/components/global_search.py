@@ -1,5 +1,6 @@
 from ui.constants import STATUS_LABELS
 import streamlit as st
+from utils import format_numero_br
 from services import equipamentos_service
 
 
@@ -40,8 +41,8 @@ def render():
     selecionado = opcoes[escolha]
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric('KM atual', f"{float(selecionado.get('km_atual', 0) or 0):,.0f}".replace(',', '.'))
-    c2.metric('Horas atuais', f"{float(selecionado.get('horas_atual', 0) or 0):,.0f}".replace(',', '.'))
+    c1.metric('KM atual', format_numero_br(float(selecionado.get('km_atual', 0) or 0), 0))
+    c2.metric('Horas atuais', format_numero_br(float(selecionado.get('horas_atual', 0) or 0), 0))
     c3.metric('Setor', selecionado.get('setor_nome') or '-')
     c4.metric('Status', STATUS_LABELS.get(selecionado.get('status_resumo'), '—'))
 

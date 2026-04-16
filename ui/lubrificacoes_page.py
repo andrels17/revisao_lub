@@ -4,7 +4,6 @@ import html
 
 import pandas as pd
 import streamlit as st
-from utils import format_int_br, numero_input_br
 
 from ui.constants import STATUS_LABEL, STATUS_ORDEM
 from ui.exportacao import botao_exportar_excel
@@ -349,21 +348,21 @@ def _form_rapido(eqp, item, key_suffix):
         c1, c2 = st.columns(2)
         with c1:
             if tipo == "horas":
-                horas_exec = numero_input_br(
+                horas_exec = st.number_input(
                     f"Horímetro na execução ({unidade})",
+                    min_value=0.0,
                     value=leitura_sug,
+                    step=1.0,
                     key=f"h_{key_suffix}",
-                    placeholder="Ex.: 1.234,56",
-                    casas_preview=1,
                 )
                 km_exec = None
             else:
-                km_exec = numero_input_br(
+                km_exec = st.number_input(
                     f"Hodômetro na execução ({unidade})",
+                    min_value=0.0,
                     value=leitura_sug,
+                    step=1.0,
                     key=f"k_{key_suffix}",
-                    placeholder="Ex.: 1.234,56",
-                    casas_preview=0,
                 )
                 horas_exec = None
             data_exec = st.date_input("Data da execução", value=datetime.date.today(), key=f"d_{key_suffix}")
@@ -378,10 +377,7 @@ def _form_rapido(eqp, item, key_suffix):
             obs = st.text_area("Observações", height=80, key=f"o_{key_suffix}")
 
         if st.form_submit_button("✅ Registrar lubrificação", use_container_width=True, type="primary"):
-            if (tipo == "km" and km_exec is None) or (tipo == "horas" and horas_exec is None):
-                st.error("Informe uma leitura válida para registrar a lubrificação.")
-            else:
-                lubrificacoes_service.registrar_execucao(
+            lubrificacoes_service.registrar_execucao(
                 {
                     "equipamento_id": eqp["id"],
                     "item_id": item.get("item_id"),
@@ -393,11 +389,11 @@ def _form_rapido(eqp, item, key_suffix):
                     "horas_execucao": horas_exec,
                     "observacoes": obs.strip() or None,
                 }
-                )
-                _carregar_pendencias_batch.clear()
-                st.success("Lubrificação registrada!")
-                st.session_state.pop("lub_detalhe", None)
-                st.rerun()
+            )
+            _carregar_pendencias_batch.clear()
+            st.success("Lubrificação registrada!")
+            st.session_state.pop("lub_detalhe", None)
+            st.rerun()
 
 
 def _render_cards_listagem(itens: list[dict], vazio_msg: str, prefixo: str):
@@ -489,21 +485,21 @@ def _registrar_lubrificacao_primeira_troca(eqp: dict, item: dict, key_suffix: st
         c1, c2 = st.columns(2)
         with c1:
             if tipo == "horas":
-                horas_exec = numero_input_br(
+                horas_exec = st.number_input(
                     f"Horímetro na execução ({unidade})",
+                    min_value=0.0,
                     value=leitura_atual,
+                    step=1.0,
                     key=f"pt_h_{key_suffix}",
-                    placeholder="Ex.: 1.234,56",
-                    casas_preview=1,
                 )
                 km_exec = None
             else:
-                km_exec = numero_input_br(
+                km_exec = st.number_input(
                     f"Hodômetro na execução ({unidade})",
+                    min_value=0.0,
                     value=leitura_atual,
+                    step=1.0,
                     key=f"pt_k_{key_suffix}",
-                    placeholder="Ex.: 1.234,56",
-                    casas_preview=0,
                 )
                 horas_exec = None
             data_exec = st.date_input(
@@ -522,10 +518,7 @@ def _registrar_lubrificacao_primeira_troca(eqp: dict, item: dict, key_suffix: st
 
         salvar = st.form_submit_button("✅ Confirmar baixa", use_container_width=True, type="primary")
         if salvar:
-            if (tipo == "km" and km_exec is None) or (tipo == "horas" and horas_exec is None):
-                st.error("Informe uma leitura válida para confirmar a baixa.")
-            else:
-                lubrificacoes_service.registrar_execucao(
+            lubrificacoes_service.registrar_execucao(
                 {
                     "equipamento_id": eqp["id"],
                     "item_id": item.get("item_id"),
@@ -814,20 +807,17 @@ def _render_execucao():
         with c2:
             nome_manual = st.text_input("Nome do item (se manual)")
             prod_manual = st.text_input("Produto (se manual)")
-            km_exec = numero_input_br(
-                "KM atual", value=float(eqp.get("km_atual") or 0), placeholder="Ex.: 1.234,56", casas_preview=0
+            km_exec = st.number_input(
+                "KM atual", min_value=0.0, value=float(eqp.get("km_atual") or 0), step=1.0
             )
-            horas_exec = numero_input_br(
-                "Horas atuais", value=float(eqp.get("horas_atual") or 0), placeholder="Ex.: 1.234,56", casas_preview=1
+            horas_exec = st.number_input(
+                "Horas atuais", min_value=0.0, value=float(eqp.get("horas_atual") or 0), step=1.0
             )
 
         obs = st.text_area("Observações")
         salvar = st.form_submit_button("Registrar lubrificação", use_container_width=True)
 
         if salvar:
-            if km_exec is None or horas_exec is None:
-                st.error("Informe KM e horas em formato válido para registrar a lubrificação.")
-                return
             item_id = None
             nome_item = nome_manual.strip() or None
             tipo_produto = prod_manual.strip() or None

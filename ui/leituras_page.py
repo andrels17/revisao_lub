@@ -7,7 +7,6 @@ import streamlit as st
 
 from services import equipamentos_service, leituras_service, responsaveis_service
 from ui.exportacao import botao_exportar_excel
-from utils import format_int_br, format_unidade_br, numero_input_br, parse_numero_br
 
 
 PLOTLY_COLORS = {
@@ -41,7 +40,7 @@ def _carregar_historico(equipamento_id: str, limite: int = 100):
 
 def _fmt_eqp(e):
     controle = "KM" if (e.get("tipo_controle") or "km") == "km" else "Horas"
-    return f"{e['codigo']} — {e['nome']}  ({controle} | KM: {format_int_br(e.get('km_atual') or 0)} | H: {format_int_br(e.get('horas_atual') or 0)})"
+    return f"{e['codigo']} — {e['nome']}  ({controle} | KM: {float(e.get('km_atual') or 0):.0f} | H: {float(e.get('horas_atual') or 0):.0f})"
 
 
 def _render_page_header() -> None:
@@ -76,7 +75,7 @@ def _render_kpi_cards(equipamentos: list[dict]) -> None:
     html_cards = []
     for css, label, value, sub in cards:
         html_cards.append(
-            f"<div class='status-kpi {css}'><div class='label'>{html.escape(str(label))}</div><div class='value'>{format_int_br(value)}</div><div class='sub'>{html.escape(str(sub))}</div></div>"
+            f"<div class='status-kpi {css}'><div class='label'>{html.escape(str(label))}</div><div class='value'>{int(value)}</div><div class='sub'>{html.escape(str(sub))}</div></div>"
         )
     st.markdown(f"<div class='status-kpi-grid'>{''.join(html_cards)}</div>", unsafe_allow_html=True)
 
@@ -269,7 +268,7 @@ def _analisar_arquivo(df: pd.DataFrame, equipamentos: list[dict]) -> dict:
             continue
         leitura_bruta = row.get(leitura_col)
         try:
-            leitura_atual = parse_numero_br(leitura_bruta)
+            leitura_atual = float(leitura_bruta)
         except Exception:
             leitura_atual = None
 
@@ -419,31 +418,29 @@ def render():
         )
 
         c_km, c_h, c_u = st.columns(3)
-        c_km.metric("KM atual registrado", format_unidade_br(km_atual, "km"))
-        c_h.metric("Horas atuais registradas", format_unidade_br(horas_atual, "h"))
+        c_km.metric("KM atual registrado", format_medida_br(km_atual, "km", 0))
+        c_h.metric("Horas atuais registradas", format_medida_br(horas_atual, "h", 0))
         c_u.metric("Última coleta", ultima_data)
 
         tipo_leitura = _tipo_oficial(eqp)
         with st.form("form_leitura", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
-                km_valor = numero_input_br(
+                km_valor = st.number_input(
                     "Novo KM",
+                    min_value=0.0,
                     value=km_atual,
-                    key="leit_km_valor",
-                    placeholder="Ex.: 1.234,56",
+                    step=1.0,
                     disabled=(tipo_leitura == "horas"),
-                    casas_preview=0,
                 )
                 data_leitura = st.date_input("Data da leitura", value=datetime.date.today())
             with c2:
-                horas_valor = numero_input_br(
+                horas_valor = st.number_input(
                     "Novas Horas",
+                    min_value=0.0,
                     value=horas_atual,
-                    key="leit_horas_valor",
-                    placeholder="Ex.: 1.234,56",
+                    step=1.0,
                     disabled=(tipo_leitura == "km"),
-                    casas_preview=1,
                 )
                 resp = (
                     st.selectbox(
@@ -460,25 +457,16 @@ def render():
 
         if salvar:
             avisos = []
-            invalido = False
-            if tipo_leitura == "km" and km_valor is None:
-                st.error("Informe um KM válido para continuar.")
-                invalido = True
-            elif tipo_leitura == "km" and km_valor < km_atual:
+            if tipo_leitura == "km" and km_valor < km_atual:
                 avisos.append(
-                    f"⚠️ O KM informado **{format_int_br(km_valor)}** é menor que o atual **{format_int_br(km_atual)}**."
+                    f"⚠️ O KM informado **{format_numero_br(km_valor, 0)}** é menor que o atual **{format_numero_br(km_atual, 0)}**."
                 )
-            if tipo_leitura == "horas" and horas_valor is None:
-                st.error("Informe uma leitura de horas válida para continuar.")
-                invalido = True
-            elif tipo_leitura == "horas" and horas_valor < horas_atual:
+            if tipo_leitura == "horas" and horas_valor < horas_atual:
                 avisos.append(
-                    f"⚠️ As horas informadas **{format_int_br(horas_valor)}** são menores que as atuais **{format_int_br(horas_atual)}**."
+                    f"⚠️ As horas informadas **{format_numero_br(horas_valor, 0)}** são menores que as atuais **{format_numero_br(horas_atual, 0)}**."
                 )
 
-            if invalido:
-                pass
-            elif avisos:
+            if avisos:
                 for aviso in avisos:
                     st.warning(aviso)
 

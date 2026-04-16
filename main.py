@@ -1,4 +1,5 @@
 import streamlit as st
+from utils import install_streamlit_br_patch
 from ui import (
     alertas_page,
     auth_page,
@@ -39,6 +40,8 @@ except ModuleNotFoundError:
         def render_topbar(usuario: dict, pagina_atual: str):
             st.title(pagina_atual)
 
+
+install_streamlit_br_patch(st)
 
 st.set_page_config(
     page_title="Revisão e Lubrificação",
