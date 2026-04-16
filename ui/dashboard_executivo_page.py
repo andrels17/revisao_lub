@@ -329,12 +329,62 @@ def _css() -> None:
             color: #9fb2ca;
             background: rgba(255,255,255,.02);
         }
-        div[data-baseweb="tab-list"] {
-            gap: .35rem;
+        .exec-subsection-head {
+            margin: .1rem 0 .8rem;
+            padding-bottom: .45rem;
+            border-bottom: 1px solid rgba(148,163,184,.12);
         }
-        button[data-baseweb="tab"] {
-            border-radius: 999px !important;
-            padding: .35rem .82rem !important;
+        .exec-subsection-head h4 {
+            margin: 0;
+            color: #eff6ff;
+            font-size: .95rem;
+        }
+        .exec-subsection-head p {
+            margin: .22rem 0 0;
+            color: #8fa4c0;
+            font-size: .78rem;
+            line-height: 1.45;
+        }
+        .exec-subsection-full {
+            margin-top: 1rem;
+        }
+
+        /* Remove cápsulas/fundos automáticos do Streamlit entre colunas e blocos */
+        .stApp [data-testid="stHorizontalBlock"] {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+        }
+        .stApp [data-testid="column"] > div,
+        .stApp [data-testid="stVerticalBlock"] > div:has(> .exec-section),
+        .stApp [data-testid="stVerticalBlock"] > div:has(> .exec-hero),
+        .stApp [data-testid="stVerticalBlock"] > div:has(> .exec-subsection-head) {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+        }
+        .stApp hr {
+            display: none !important;
+        }
+        .stApp [data-testid="stDataFrame"] {
+            border: 1px solid rgba(148,163,184,.12);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        .stApp [data-testid="stButton"] > button {
+            border-radius: 12px;
+            border: 1px solid rgba(148,163,184,.18);
+            background: linear-gradient(180deg, rgba(16,26,44,.96) 0%, rgba(12,22,37,.98) 100%);
+            color: #eff6ff;
+            font-weight: 700;
+        }
+        .stApp [data-testid="stButton"] > button:hover {
+            border-color: rgba(79,140,255,.38);
+            box-shadow: 0 0 0 1px rgba(79,140,255,.14);
         }
         @media (max-width: 1100px) {
             .exec-kpi-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
@@ -582,7 +632,7 @@ def render():
     with c4:
         _metric_card("Cobertura operacional", f"{cobertura:.1f}%", "Base sob controle", "Percentual estimado de equipamentos sem alerta ativo relevante no cenário atual.", "ok", cobertura)
 
-    left, right = st.columns([1.45, 1], gap="large")
+    left, right = st.columns([1.45, 1], gap="medium")
     with left:
         st.markdown('<div class="exec-section">', unsafe_allow_html=True)
         st.markdown('<div class="exec-section-head"><div><h3>Ações prioritárias</h3><p>O que a diretoria precisa enxergar primeiro para direcionar a rotina.</p></div><div class="exec-badge crit">Top 5</div></div>', unsafe_allow_html=True)
@@ -615,7 +665,7 @@ def render():
     st.markdown('<div class="exec-section">', unsafe_allow_html=True)
     st.markdown('<div class="exec-section-head"><div><h3>Desdobramento executivo</h3><p>Visões complementares para aprofundar a decisão sem poluir a leitura principal.</p></div></div>', unsafe_allow_html=True)
 
-    col_mov, col_par = st.columns(2, gap="large")
+    col_mov, col_par = st.columns(2, gap="medium")
 
     with col_mov:
         st.markdown('<div class="exec-subsection-head"><h4>Ranking de movimentação</h4><p>Equipamentos com maior uso recente, úteis para antecipar pressão sobre revisão e lubrificação.</p></div>', unsafe_allow_html=True)
