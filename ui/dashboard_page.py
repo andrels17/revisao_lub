@@ -6,7 +6,6 @@ import streamlit as st
 from services import dashboard_service, prioridades_service
 from ui.constants import STATUS_LABEL
 from ui.exportacao import botao_exportar_excel
-from utils.formatters import format_dataframe_br, format_int_br, format_percent_br, format_unidade_br
 
 
 PLOTLY_COLORS = {
@@ -313,23 +312,23 @@ def _render_cards(kpis):
     st.markdown('<div class="dash-kpi-grid">', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4, gap="small")
     with c1:
-        _kpi("Equipamentos", format_int_br(kpis["total_equipamentos"]), "Base monitorada no dashboard", "n", "Visão geral")
+        _kpi("Equipamentos", kpis["total_equipamentos"], "Base monitorada no dashboard", "n", "Visão geral")
     with c2:
-        _kpi("Alertas vencidos", format_int_br(kpis["vencidos"]), "Itens que já passaram do ponto de execução", "d", f"{format_percent_br(pct_vencidos, casas=0)} dos alertas")
+        _kpi("Alertas vencidos", kpis["vencidos"], "Itens que já passaram do ponto de execução", "d", f"{pct_vencidos}% dos alertas")
     with c3:
-        _kpi("Alertas próximos", format_int_br(kpis["proximos"]), "Itens entrando na janela de atenção", "w", f"{format_percent_br(pct_proximos, casas=0)} dos alertas")
+        _kpi("Alertas próximos", kpis["proximos"], "Itens entrando na janela de atenção", "w", f"{pct_proximos}% dos alertas")
     with c4:
-        _kpi("Itens em dia", format_int_br(kpis["em_dia"]), "Pendências saudáveis no ciclo atual", "s", f"{format_percent_br(pct_em_dia, casas=0)} do total")
+        _kpi("Itens em dia", kpis["em_dia"], "Pendências saudáveis no ciclo atual", "s", f"{pct_em_dia}% do total")
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown('<div class="dash-kpi-grid three">', unsafe_allow_html=True)
     c5, c6, c7 = st.columns(3, gap="small")
     with c5:
-        _kpi("Equip. com alerta", format_int_br(kpis["equipamentos_com_alerta"]), "Ao menos um item vencido ou próximo", "d", f"{format_percent_br(pct_alerta, casas=0)} da frota")
+        _kpi("Equip. com alerta", kpis["equipamentos_com_alerta"], "Ao menos um item vencido ou próximo", "d", f"{pct_alerta}% da frota")
     with c6:
-        _kpi("Equip. vencidos", format_int_br(kpis["equipamentos_vencidos"]), "Equipamentos com criticidade imediata", "d", "Ação prioritária")
+        _kpi("Equip. vencidos", kpis["equipamentos_vencidos"], "Equipamentos com criticidade imediata", "d", "Ação prioritária")
     with c7:
-        _kpi("Equip. próximos", format_int_br(kpis["equipamentos_proximos"]), "Equipamentos que merecem acompanhamento", "w", "Prevenção operacional")
+        _kpi("Equip. próximos", kpis["equipamentos_proximos"], "Equipamentos que merecem acompanhamento", "w", "Prevenção operacional")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -489,23 +488,21 @@ def _grafico_setores(ranking):
 def _formatar_alertas_df(alertas):
     if not alertas:
         return pd.DataFrame()
-    return format_dataframe_br(
-        pd.DataFrame(alertas)[[
-            "origem", "equipamento_label", "setor", "etapa",
-            "tipo", "atual", "ultima_execucao", "vencimento", "falta", "status",
-        ]].rename(columns={
-            "origem": "Origem",
-            "equipamento_label": "Equipamento",
-            "setor": "Setor",
-            "etapa": "Etapa / Item",
-            "tipo": "Controle",
-            "atual": "Atual",
-            "ultima_execucao": "Última execução",
-            "vencimento": "Vencimento",
-            "falta": "Falta",
-            "status": "Status",
-        }).assign(Status=lambda df: df["Status"].map(lambda x: STATUS_LABEL.get(x, x)))
-    )
+    return pd.DataFrame(alertas)[[
+        "origem", "equipamento_label", "setor", "etapa",
+        "tipo", "atual", "ultima_execucao", "vencimento", "falta", "status",
+    ]].rename(columns={
+        "origem": "Origem",
+        "equipamento_label": "Equipamento",
+        "setor": "Setor",
+        "etapa": "Etapa / Item",
+        "tipo": "Controle",
+        "atual": "Atual",
+        "ultima_execucao": "Última execução",
+        "vencimento": "Vencimento",
+        "falta": "Falta",
+        "status": "Status",
+    }).assign(Status=lambda df: df["Status"].map(lambda x: STATUS_LABEL.get(x, x)))
 
 
 def _slice_page(df: pd.DataFrame, page: int, page_size: int) -> pd.DataFrame:
@@ -576,7 +573,7 @@ def _render_bloco_prioridades_dashboard() -> None:
                 atraso = float(item.get("atraso", 0) or 0)
                 falta = float(item.get("falta", 0) or 0)
                 unidade = item.get("unidade") or ""
-                extra = f"Atraso {format_unidade_br(atraso, unidade)}" if css == "danger" else (f"Falta {format_unidade_br(max(falta,0), unidade)}" if css == "warn" else f"{format_int_br(item.get('dias_sem_leitura', 0) or 0)} dia(s)")
+                extra = f"Atraso {atraso:.0f} {unidade}" if css == "danger" else (f"Falta {max(falta,0):.0f} {unidade}" if css == "warn" else f"{int(float(item.get('dias_sem_leitura', 0) or 0))} dia(s)")
                 st.markdown(
                     f"<div class='dash-prio-item'><div class='dash-prio-item-top'><div><div class='dash-prio-item-title'>{item.get('titulo') or '-'}</div><div class='dash-prio-item-desc'>{item.get('descricao') or '-'}</div></div><span class='dash-prio-pill {css}'>{_prio_label(str(item.get('status') or ''))}</span></div><div class='dash-prio-meta'><span class='dash-prio-chip'>{item.get('origem') or '-'}</span><span class='dash-prio-chip'>{item.get('setor_nome') or '-'}</span><span class='dash-prio-chip'>{extra}</span></div></div>",
                     unsafe_allow_html=True,
@@ -622,7 +619,7 @@ def _render_bloco_movimentacao() -> None:
         else:
             ranking = ranking.copy()
             ranking["Última leitura"] = ranking["Última leitura"].apply(_fmt_data_curta)
-            st.dataframe(format_dataframe_br(ranking), use_container_width=True, hide_index=True)
+            st.dataframe(ranking, use_container_width=True, hide_index=True)
     with a2:
         st.markdown("**Top equipamentos parados**")
         if parados.empty:
@@ -630,7 +627,7 @@ def _render_bloco_movimentacao() -> None:
         else:
             parados = parados.copy()
             parados["Última leitura"] = parados["Última leitura"].apply(_fmt_data_curta)
-            st.dataframe(format_dataframe_br(parados), use_container_width=True, hide_index=True)
+            st.dataframe(parados, use_container_width=True, hide_index=True)
     with a3:
         st.markdown("**Inteligência automática**")
         resumo = pd.DataFrame([
@@ -638,7 +635,7 @@ def _render_bloco_movimentacao() -> None:
             {"Detecção": "Salto anormal", "Qtd": len(anom.get("saltos", []))},
             {"Detecção": "Inconsistência KM/H", "Qtd": len(anom.get("inconsistencias", []))},
         ])
-        st.dataframe(format_dataframe_br(resumo), use_container_width=True, hide_index=True)
+        st.dataframe(resumo, use_container_width=True, hide_index=True)
         with st.expander("Ver detalhes da inteligência", expanded=False):
             tabs = st.tabs(["Travadas", "Saltos", "KM x Horas"])
             with tabs[0]:
@@ -648,7 +645,7 @@ def _render_bloco_movimentacao() -> None:
                 else:
                     if "Última leitura" in df.columns:
                         df["Última leitura"] = df["Última leitura"].apply(_fmt_data_curta)
-                    st.dataframe(format_dataframe_br(df), use_container_width=True, hide_index=True)
+                    st.dataframe(df, use_container_width=True, hide_index=True)
             with tabs[1]:
                 df = pd.DataFrame(anom.get("saltos") or [])
                 if df.empty:
@@ -656,7 +653,7 @@ def _render_bloco_movimentacao() -> None:
                 else:
                     if "Última leitura" in df.columns:
                         df["Última leitura"] = df["Última leitura"].apply(_fmt_data_curta)
-                    st.dataframe(format_dataframe_br(df), use_container_width=True, hide_index=True)
+                    st.dataframe(df, use_container_width=True, hide_index=True)
             with tabs[2]:
                 df = pd.DataFrame(anom.get("inconsistencias") or [])
                 if df.empty:
@@ -664,7 +661,7 @@ def _render_bloco_movimentacao() -> None:
                 else:
                     if "Última leitura" in df.columns:
                         df["Última leitura"] = df["Última leitura"].apply(_fmt_data_curta)
-                    st.dataframe(format_dataframe_br(df), use_container_width=True, hide_index=True)
+                    st.dataframe(df, use_container_width=True, hide_index=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -773,7 +770,7 @@ def render():
     with col_a:
         st.markdown('<div class="dash-section"><div class="dash-section-title">Setores com mais alertas</div>', unsafe_allow_html=True)
         if ranking_setores:
-            st.dataframe(format_dataframe_br(pd.DataFrame(ranking_setores[:15])), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(ranking_setores[:15]), use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum alerta de vencimento para exibir.")
         st.markdown("</div>", unsafe_allow_html=True)
@@ -781,7 +778,7 @@ def render():
     with col_b:
         st.markdown('<div class="dash-section"><div class="dash-section-title">Top equipamentos críticos</div>', unsafe_allow_html=True)
         if ranking_eq:
-            st.dataframe(format_dataframe_br(pd.DataFrame(ranking_eq)), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(ranking_eq), use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum equipamento crítico para exibir.")
         st.markdown("</div>", unsafe_allow_html=True)

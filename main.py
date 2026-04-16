@@ -19,7 +19,6 @@ from ui import (
     vinculos_page,
 )
 from services import auth_service, configuracoes_service
-from utils.formatters import patch_streamlit_br
 
 # Import seguro do tema
 try:
@@ -49,7 +48,6 @@ st.set_page_config(
 )
 
 apply_global_theme()
-patch_streamlit_br()
 
 # Guard de autenticação
 if not auth_service.usuario_logado():

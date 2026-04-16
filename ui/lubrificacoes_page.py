@@ -4,10 +4,10 @@ import html
 
 import pandas as pd
 import streamlit as st
+from utils import format_int_br, numero_input_br
 
 from ui.constants import STATUS_LABEL, STATUS_ORDEM
 from ui.exportacao import botao_exportar_excel
-from utils.formatters import format_dataframe_br, format_int_br, format_unidade_br
 
 from services import (
     equipamentos_service,
@@ -195,12 +195,12 @@ def _status_resumo(item: dict) -> str:
     if item.get("status") == "SEM_BASE":
         atual = float(item.get("atual", 0) or 0)
         intervalo = float(item.get("intervalo", item.get("intervalo_valor", 0)) or 0)
-        return f"Registrar 1ª troca na leitura atual ({format_unidade_br(atual, unidade)}) • ciclo {format_unidade_br(intervalo, unidade)}"
+        return f"Registrar 1ª troca na leitura atual ({atual:.0f} {unidade}) • ciclo {intervalo:.0f} {unidade}"
 
     falta = float(item.get("diferenca", item.get("falta", 0)) or 0)
     if falta <= 0:
-        return f"Vencido há {format_unidade_br(abs(falta), unidade)}"
-    return f"Faltam {format_unidade_br(falta, unidade)}"
+        return f"Vencido há {abs(falta):.0f} {unidade}"
+    return f"Faltam {falta:.0f} {unidade}"
 
 
 def _render_card_lub(eqp: dict, item: dict, idx: int) -> None:
@@ -236,7 +236,7 @@ def _render_card_lub(eqp: dict, item: dict, idx: int) -> None:
         with meta4:
             st.caption(f"**Departamento:** {setor}")
         with meta5:
-            st.caption(f"**Próxima troca:** {format_unidade_br(vencimento, unidade)}")
+            st.caption(f"**Próxima troca:** {vencimento:.0f} {unidade}")
 
         badge_cols = st.columns([1.5, 2.5, 2, 1.5])
         with badge_cols[0]:
@@ -244,13 +244,13 @@ def _render_card_lub(eqp: dict, item: dict, idx: int) -> None:
         with badge_cols[1]:
             st.caption(resumo_status)
         with badge_cols[2]:
-            st.caption(f"Leitura atual {format_unidade_br(atual, unidade)}")
+            st.caption(f"Leitura atual {atual:.0f} {unidade}")
         with badge_cols[3]:
             st.caption("Ativo")
 
     with right:
         if status == "SEM_BASE":
-            st.metric("Ciclo", f"{format_unidade_br(item.get('intervalo', 0) or 0, unidade)}")
+            st.metric("Ciclo", f"{float(item.get('intervalo', 0) or 0):.0f} {unidade}")
         else:
             st.metric("Progresso", f"{progresso}%")
         if st.button("Detalhes", key=f"det_lub_{eqp['id']}_{idx}", use_container_width=True):
@@ -309,22 +309,22 @@ def _render_detalhe_lub(eqp: dict, item: dict, idx: int) -> None:
             st.rerun()
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric(f"Leitura atual ({unidade})", format_int_br(atual))
-    c2.metric(f"Próxima troca ({unidade})", format_int_br(vencimento))
+    c1.metric(f"Leitura atual ({unidade})", f"{atual:.0f}")
+    c2.metric(f"Próxima troca ({unidade})", f"{vencimento:.0f}")
     c3.metric("Progresso do ciclo", f"{progresso}%")
     if falta <= 0:
-        c4.metric("Situação", f"Vencido há {format_unidade_br(abs(falta), unidade)}")
+        c4.metric("Situação", f"Vencido há {abs(falta):.0f} {unidade}")
     else:
-        c4.metric("Situação", f"Faltam {format_unidade_br(falta, unidade)}")
+        c4.metric("Situação", f"Faltam {falta:.0f} {unidade}")
 
     st.caption(f"Produto: **{item.get('tipo_produto') or '—'}**")
     st.progress(progresso)
 
     intervalo = float(item.get("intervalo", item.get("intervalo_valor", 0)) or 0)
-    st.caption(f"Intervalo configurado do item: **{format_unidade_br(intervalo, unidade)}**")
+    st.caption(f"Intervalo configurado do item: **{intervalo:.0f} {unidade}**")
 
     if ult > 0:
-        st.caption(f"Última execução registrada: {format_unidade_br(ult, unidade)}")
+        st.caption(f"Última execução registrada: {ult:.0f} {unidade}")
     else:
         st.caption("Sem referência inicial registrada. Faça a primeira baixa informando a leitura real da troca para iniciar o ciclo.")
 
@@ -349,21 +349,21 @@ def _form_rapido(eqp, item, key_suffix):
         c1, c2 = st.columns(2)
         with c1:
             if tipo == "horas":
-                horas_exec = st.number_input(
+                horas_exec = numero_input_br(
                     f"Horímetro na execução ({unidade})",
-                    min_value=0.0,
                     value=leitura_sug,
-                    step=1.0,
                     key=f"h_{key_suffix}",
+                    placeholder="Ex.: 1.234,56",
+                    casas_preview=1,
                 )
                 km_exec = None
             else:
-                km_exec = st.number_input(
+                km_exec = numero_input_br(
                     f"Hodômetro na execução ({unidade})",
-                    min_value=0.0,
                     value=leitura_sug,
-                    step=1.0,
                     key=f"k_{key_suffix}",
+                    placeholder="Ex.: 1.234,56",
+                    casas_preview=0,
                 )
                 horas_exec = None
             data_exec = st.date_input("Data da execução", value=datetime.date.today(), key=f"d_{key_suffix}")
@@ -378,7 +378,10 @@ def _form_rapido(eqp, item, key_suffix):
             obs = st.text_area("Observações", height=80, key=f"o_{key_suffix}")
 
         if st.form_submit_button("✅ Registrar lubrificação", use_container_width=True, type="primary"):
-            lubrificacoes_service.registrar_execucao(
+            if (tipo == "km" and km_exec is None) or (tipo == "horas" and horas_exec is None):
+                st.error("Informe uma leitura válida para registrar a lubrificação.")
+            else:
+                lubrificacoes_service.registrar_execucao(
                 {
                     "equipamento_id": eqp["id"],
                     "item_id": item.get("item_id"),
@@ -390,11 +393,11 @@ def _form_rapido(eqp, item, key_suffix):
                     "horas_execucao": horas_exec,
                     "observacoes": obs.strip() or None,
                 }
-            )
-            _carregar_pendencias_batch.clear()
-            st.success("Lubrificação registrada!")
-            st.session_state.pop("lub_detalhe", None)
-            st.rerun()
+                )
+                _carregar_pendencias_batch.clear()
+                st.success("Lubrificação registrada!")
+                st.session_state.pop("lub_detalhe", None)
+                st.rerun()
 
 
 def _render_cards_listagem(itens: list[dict], vazio_msg: str, prefixo: str):
@@ -446,9 +449,9 @@ def _render_tabela(itens, titulo):
                 "Item": item.get("item"),
                 "Produto": item.get("tipo_produto") or "—",
                 "Status": STATUS_LABEL.get(item.get("status"), item.get("status")),
-                "Leitura atual": f"{format_unidade_br(atual, unidade)}",
-                "Próxima troca": f"{format_unidade_br(vencimento, unidade)}",
-                "Diferença": f"{format_unidade_br(diferenca, unidade)}",
+                "Leitura atual": f"{atual:.0f} {unidade}",
+                "Próxima troca": f"{vencimento:.0f} {unidade}",
+                "Diferença": f"{diferenca:.0f} {unidade}",
             }
         )
 
@@ -486,21 +489,21 @@ def _registrar_lubrificacao_primeira_troca(eqp: dict, item: dict, key_suffix: st
         c1, c2 = st.columns(2)
         with c1:
             if tipo == "horas":
-                horas_exec = st.number_input(
+                horas_exec = numero_input_br(
                     f"Horímetro na execução ({unidade})",
-                    min_value=0.0,
                     value=leitura_atual,
-                    step=1.0,
                     key=f"pt_h_{key_suffix}",
+                    placeholder="Ex.: 1.234,56",
+                    casas_preview=1,
                 )
                 km_exec = None
             else:
-                km_exec = st.number_input(
+                km_exec = numero_input_br(
                     f"Hodômetro na execução ({unidade})",
-                    min_value=0.0,
                     value=leitura_atual,
-                    step=1.0,
                     key=f"pt_k_{key_suffix}",
+                    placeholder="Ex.: 1.234,56",
+                    casas_preview=0,
                 )
                 horas_exec = None
             data_exec = st.date_input(
@@ -519,7 +522,10 @@ def _registrar_lubrificacao_primeira_troca(eqp: dict, item: dict, key_suffix: st
 
         salvar = st.form_submit_button("✅ Confirmar baixa", use_container_width=True, type="primary")
         if salvar:
-            lubrificacoes_service.registrar_execucao(
+            if (tipo == "km" and km_exec is None) or (tipo == "horas" and horas_exec is None):
+                st.error("Informe uma leitura válida para confirmar a baixa.")
+            else:
+                lubrificacoes_service.registrar_execucao(
                 {
                     "equipamento_id": eqp["id"],
                     "item_id": item.get("item_id"),
@@ -556,7 +562,7 @@ def _render_primeira_troca_dialog(eqp: dict, itens_eqp: list[dict]) -> None:
                 <div class="pt-chip">Grupo: <strong>{html.escape(str(grupo))}</strong></div>
                 <div class="pt-chip">Departamento: <strong>{html.escape(str(setor))}</strong></div>
                 <div class="pt-chip">Compartimentos pendentes: <strong>{len(itens_eqp)}</strong></div>
-                <div class="pt-chip">Leitura atual: <strong>{format_unidade_br(leitura, unidade_eqp)}</strong></div>
+                <div class="pt-chip">Leitura atual: <strong>{leitura:.0f} {unidade_eqp}</strong></div>
             </div>
         </div>
         """,
@@ -579,9 +585,9 @@ def _render_primeira_troca_dialog(eqp: dict, itens_eqp: list[dict]) -> None:
                 <div class="pt-item-title">{html.escape(str(item_nome))}</div>
                 <div class="pt-item-sub">Produto: {html.escape(str(produto))} • Compartimento em primeira troca</div>
                 <div class="pt-mini-grid">
-                    <div class="pt-mini-card"><div class="pt-mini-label">Leitura atual</div><div class="pt-mini-value">{format_unidade_br(atual, unidade)}</div></div>
-                    <div class="pt-mini-card"><div class="pt-mini-label">Ciclo</div><div class="pt-mini-value">{format_unidade_br(intervalo, unidade)}</div></div>
-                    <div class="pt-mini-card"><div class="pt-mini-label">Próxima troca</div><div class="pt-mini-value">{format_unidade_br(vencimento, unidade)}</div></div>
+                    <div class="pt-mini-card"><div class="pt-mini-label">Leitura atual</div><div class="pt-mini-value">{atual:.0f} {unidade}</div></div>
+                    <div class="pt-mini-card"><div class="pt-mini-label">Ciclo</div><div class="pt-mini-value">{intervalo:.0f} {unidade}</div></div>
+                    <div class="pt-mini-card"><div class="pt-mini-label">Próxima troca</div><div class="pt-mini-value">{vencimento:.0f} {unidade}</div></div>
                     <div class="pt-mini-card"><div class="pt-mini-label">Status</div><div class="pt-mini-value">Primeira troca</div></div>
                 </div>
             </div>
@@ -681,7 +687,7 @@ def _render_primeira_troca_listagem(itens: list[dict]) -> None:
         setor = eqp.get("setor_nome") or "—"
         leitura_valor = eqp.get("km_atual") if eqp.get("km_atual") not in (None, "") else eqp.get("horas_atual")
         leitura_un = "km" if eqp.get("km_atual") not in (None, "") else "h"
-        leitura_txt = format_unidade_br(leitura_valor or 0, leitura_un)
+        leitura_txt = f"{float(leitura_valor or 0):.0f} {leitura_un}"
 
         st.markdown("<div class='pt-list-row'>", unsafe_allow_html=True)
         col_a, col_b, col_c, col_d = st.columns([3.2, 1.7, 1.5, 1.4], vertical_alignment="center")
@@ -808,17 +814,20 @@ def _render_execucao():
         with c2:
             nome_manual = st.text_input("Nome do item (se manual)")
             prod_manual = st.text_input("Produto (se manual)")
-            km_exec = st.number_input(
-                "KM atual", min_value=0.0, value=float(eqp.get("km_atual") or 0), step=1.0
+            km_exec = numero_input_br(
+                "KM atual", value=float(eqp.get("km_atual") or 0), placeholder="Ex.: 1.234,56", casas_preview=0
             )
-            horas_exec = st.number_input(
-                "Horas atuais", min_value=0.0, value=float(eqp.get("horas_atual") or 0), step=1.0
+            horas_exec = numero_input_br(
+                "Horas atuais", value=float(eqp.get("horas_atual") or 0), placeholder="Ex.: 1.234,56", casas_preview=1
             )
 
         obs = st.text_area("Observações")
         salvar = st.form_submit_button("Registrar lubrificação", use_container_width=True)
 
         if salvar:
+            if km_exec is None or horas_exec is None:
+                st.error("Informe KM e horas em formato válido para registrar a lubrificação.")
+                return
             item_id = None
             nome_item = nome_manual.strip() or None
             tipo_produto = prod_manual.strip() or None

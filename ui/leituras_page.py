@@ -7,7 +7,7 @@ import streamlit as st
 
 from services import equipamentos_service, leituras_service, responsaveis_service
 from ui.exportacao import botao_exportar_excel
-from utils.formatters import format_dataframe_br, format_int_br
+from utils import format_int_br, format_unidade_br, numero_input_br, parse_numero_br
 
 
 PLOTLY_COLORS = {
@@ -76,7 +76,7 @@ def _render_kpi_cards(equipamentos: list[dict]) -> None:
     html_cards = []
     for css, label, value, sub in cards:
         html_cards.append(
-            f"<div class='status-kpi {css}'><div class='label'>{html.escape(str(label))}</div><div class='value'>{int(value)}</div><div class='sub'>{html.escape(str(sub))}</div></div>"
+            f"<div class='status-kpi {css}'><div class='label'>{html.escape(str(label))}</div><div class='value'>{format_int_br(value)}</div><div class='sub'>{html.escape(str(sub))}</div></div>"
         )
     st.markdown(f"<div class='status-kpi-grid'>{''.join(html_cards)}</div>", unsafe_allow_html=True)
 
@@ -269,7 +269,7 @@ def _analisar_arquivo(df: pd.DataFrame, equipamentos: list[dict]) -> dict:
             continue
         leitura_bruta = row.get(leitura_col)
         try:
-            leitura_atual = float(leitura_bruta)
+            leitura_atual = parse_numero_br(leitura_bruta)
         except Exception:
             leitura_atual = None
 
@@ -419,29 +419,31 @@ def render():
         )
 
         c_km, c_h, c_u = st.columns(3)
-        c_km.metric("KM atual registrado", f"{format_int_br(km_atual)} km")
-        c_h.metric("Horas atuais registradas", f"{format_int_br(horas_atual)} h")
+        c_km.metric("KM atual registrado", format_unidade_br(km_atual, "km"))
+        c_h.metric("Horas atuais registradas", format_unidade_br(horas_atual, "h"))
         c_u.metric("Última coleta", ultima_data)
 
         tipo_leitura = _tipo_oficial(eqp)
         with st.form("form_leitura", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
-                km_valor = st.number_input(
+                km_valor = numero_input_br(
                     "Novo KM",
-                    min_value=0.0,
                     value=km_atual,
-                    step=1.0,
+                    key="leit_km_valor",
+                    placeholder="Ex.: 1.234,56",
                     disabled=(tipo_leitura == "horas"),
+                    casas_preview=0,
                 )
                 data_leitura = st.date_input("Data da leitura", value=datetime.date.today())
             with c2:
-                horas_valor = st.number_input(
+                horas_valor = numero_input_br(
                     "Novas Horas",
-                    min_value=0.0,
                     value=horas_atual,
-                    step=1.0,
+                    key="leit_horas_valor",
+                    placeholder="Ex.: 1.234,56",
                     disabled=(tipo_leitura == "km"),
+                    casas_preview=1,
                 )
                 resp = (
                     st.selectbox(
@@ -458,16 +460,25 @@ def render():
 
         if salvar:
             avisos = []
-            if tipo_leitura == "km" and km_valor < km_atual:
+            invalido = False
+            if tipo_leitura == "km" and km_valor is None:
+                st.error("Informe um KM válido para continuar.")
+                invalido = True
+            elif tipo_leitura == "km" and km_valor < km_atual:
                 avisos.append(
                     f"⚠️ O KM informado **{format_int_br(km_valor)}** é menor que o atual **{format_int_br(km_atual)}**."
                 )
-            if tipo_leitura == "horas" and horas_valor < horas_atual:
+            if tipo_leitura == "horas" and horas_valor is None:
+                st.error("Informe uma leitura de horas válida para continuar.")
+                invalido = True
+            elif tipo_leitura == "horas" and horas_valor < horas_atual:
                 avisos.append(
                     f"⚠️ As horas informadas **{format_int_br(horas_valor)}** são menores que as atuais **{format_int_br(horas_atual)}**."
                 )
 
-            if avisos:
+            if invalido:
+                pass
+            elif avisos:
                 for aviso in avisos:
                     st.warning(aviso)
 
@@ -555,7 +566,7 @@ def render():
                     )
 
                 preview_df = pd.DataFrame(analise["preview"])
-                st.dataframe(format_dataframe_br(preview_df), use_container_width=True, hide_index=True)
+                st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
                 validos = analise["validos"]
                 if validos:
@@ -581,13 +592,13 @@ def render():
                                 f"Importação parcial concluída. {resultado['importados']} leitura(s) gravada(s) e {resultado['falhas']} falha(s)."
                             )
                             erros_df = pd.DataFrame(resultado["erros"])
-                            st.dataframe(format_dataframe_br(erros_df), use_container_width=True, hide_index=True)
+                            st.dataframe(erros_df, use_container_width=True, hide_index=True)
                         elif resultado["falhas"]:
                             st.error(
                                 f"Importação não concluída. {resultado['falhas']} linha(s) falharam e nenhuma leitura foi gravada."
                             )
                             erros_df = pd.DataFrame(resultado["erros"])
-                            st.dataframe(format_dataframe_br(erros_df), use_container_width=True, hide_index=True)
+                            st.dataframe(erros_df, use_container_width=True, hide_index=True)
                         else:
                             _carregar_base.clear()
                             _carregar_historico.clear()
@@ -649,7 +660,7 @@ def render():
         col_exp = st.columns([5, 1])[1]
         with col_exp:
             botao_exportar_excel(df, f"leituras_{eqp_hist['codigo']}", label="⬇️ Excel", key="exp_leit")
-        st.dataframe(format_dataframe_br(df), use_container_width=True, hide_index=True)
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 def _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs, permitir_regressao=False):

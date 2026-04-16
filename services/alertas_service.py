@@ -23,14 +23,14 @@ def gerar_link_whatsapp(telefone: str, mensagem: str) -> str:
 def _data_estimada(falta: float, unidade: str) -> str:
     if falta <= 0:
         return "execução imediata (item já vencido)"
-    return f"em aproximadamente {format_unidade_br(falta, unidade)}"
+    return f"em aproximadamente {falta:.0f} {unidade}"
 
 
 def _linha_situacao(status: str, falta: float, unidade: str) -> str:
     if status == "VENCIDO":
-        return f"Situação: *Vencido* há {format_unidade_br(abs(falta), unidade)}"
+        return f"Situação: *Vencido* há {abs(falta):.0f} {unidade}"
     if status == "PROXIMO":
-        return f"Situação: *Próximo do vencimento* — faltam {format_unidade_br(falta, unidade)}"
+        return f"Situação: *Próximo do vencimento* — faltam {falta:.0f} {unidade}"
     return f"Situação: {status or '-'}"
 
 
@@ -50,8 +50,8 @@ def montar_mensagem_revisao(equipamento: dict, etapa: dict, responsavel_nome: st
         f"Equipamento: *{equipamento.get('codigo', '')} - {equipamento.get('nome', '')}*\n"
         f"Setor: {equipamento.get('setor_nome', '-')}\n"
         f"Etapa: {etapa_nome}\n"
-        f"Leitura atual: {format_unidade_br(leitura_atual, unidade)}\n"
-        f"Vencimento: {format_unidade_br(vencimento, unidade)}\n"
+        f"Leitura atual: {leitura_atual:.0f} {unidade}\n"
+        f"Vencimento: {vencimento:.0f} {unidade}\n"
         f"{_linha_situacao(status, falta, unidade)}\n"
         f"Janela estimada: {_data_estimada(falta, unidade)}\n\n"
         f"Ação recomendada: programar a execução da revisão e registrar o apontamento no sistema."
@@ -76,8 +76,8 @@ def montar_mensagem_lubrificacao(equipamento: dict, item: dict, responsavel_nome
         f"Setor: {equipamento.get('setor_nome', '-')}\n"
         f"Item: {item_nome}\n"
         f"Produto: {produto}\n"
-        f"Leitura atual: {format_unidade_br(leitura_atual, unidade)}\n"
-        f"Próxima troca: {format_unidade_br(vencimento, unidade)}\n"
+        f"Leitura atual: {leitura_atual:.0f} {unidade}\n"
+        f"Próxima troca: {vencimento:.0f} {unidade}\n"
         f"{_linha_situacao(status, falta, unidade)}\n"
         f"Janela estimada: {_data_estimada(falta, unidade)}\n\n"
         f"Ação recomendada: programar a lubrificação e registrar o apontamento no sistema."

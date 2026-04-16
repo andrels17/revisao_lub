@@ -3,6 +3,7 @@ import html
 
 import pandas as pd
 import streamlit as st
+from utils import format_int_br, numero_input_br
 
 from ui.constants  import STATUS_LABEL, STATUS_ORDEM
 from ui.exportacao import botao_exportar_excel
@@ -460,17 +461,15 @@ def _form_registrar(item, key_suffix, integracao=None):
         c1, c2 = st.columns(2)
         with c1:
             if tipo == "horas":
-                horas_exec = st.number_input(
+                horas_exec = numero_input_br(
                     f"Horímetro na execução ({unidade})",
-                    min_value=0.0, value=leitura_sugerida, step=1.0,
-                    key=f"horas_{key_suffix}",
+                    value=leitura_sugerida, key=f"horas_{key_suffix}", placeholder="Ex.: 1.234,56", casas_preview=1,
                 )
                 km_exec = None
             else:
-                km_exec = st.number_input(
+                km_exec = numero_input_br(
                     f"Hodômetro na execução ({unidade})",
-                    min_value=0.0, value=leitura_sugerida, step=1.0,
-                    key=f"km_{key_suffix}",
+                    value=leitura_sugerida, key=f"km_{key_suffix}", placeholder="Ex.: 1.234,56", casas_preview=0,
                 )
                 horas_exec = None
 
@@ -509,7 +508,10 @@ def _form_registrar(item, key_suffix, integracao=None):
         salvar = st.form_submit_button("Registrar execução", use_container_width=True, type="primary")
 
         if salvar:
-            execucoes_service.criar_execucao({
+            if (tipo == "km" and km_exec is None) or (tipo == "horas" and horas_exec is None):
+                st.error("Informe uma leitura válida para registrar a execução.")
+            else:
+                execucoes_service.criar_execucao({
                 "equipamento_id":   eqp["id"],
                 "responsavel_id":   resp["id"] if resp else None,
                 "tipo":             "revisao",

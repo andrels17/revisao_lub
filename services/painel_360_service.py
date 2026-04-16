@@ -60,8 +60,8 @@ def montar_timeline_equipamento(equipamento_id, limite=50):
             "tipo": "Leitura",
             "titulo": f"Leitura {leitura.get('tipo_leitura', '-')}",
             "detalhe": (
-                f"KM {format_int_br(_to_float(leitura.get('km_valor')))} · "
-                f"Horas {format_int_br(_to_float(leitura.get('horas_valor')))}"
+                f"KM { _to_float(leitura.get('km_valor')):.0f} · "
+                f"Horas { _to_float(leitura.get('horas_valor')):.0f}"
             ),
             "responsavel": leitura.get("responsavel") or "-",
             "observacoes": leitura.get("observacoes") or "",
@@ -86,7 +86,7 @@ def montar_timeline_equipamento(equipamento_id, limite=50):
             "titulo": lub.get("item") or "Execução de lubrificação",
             "detalhe": (
                 f"Produto {lub.get('produto') or '-'} · "
-                f"KM {format_int_br(_to_float(lub.get('km')))} · Horas {format_int_br(_to_float(lub.get('horas')))}"
+                f"KM { _to_float(lub.get('km')):.0f} · Horas { _to_float(lub.get('horas')):.0f}"
             ),
             "responsavel": lub.get("responsavel") or "-",
             "observacoes": lub.get("observacoes") or "",
@@ -197,7 +197,7 @@ def gerar_insights(equipamento: dict, revisoes: list[dict], lubrificacoes: list[
     if leituras:
         ultima = leituras[0]
         insights.append(
-            f"Última leitura registrada em {ultima.get('data_leitura')} com KM {format_int_br(_to_float(ultima.get('km_valor')))} e horas {format_int_br(_to_float(ultima.get('horas_valor')))}."
+            f"Última leitura registrada em {ultima.get('data_leitura')} com KM {_to_float(ultima.get('km_valor')):.0f} e horas {_to_float(ultima.get('horas_valor')):.0f}."
         )
     else:
         insights.append("Nenhuma leitura recente encontrada para este equipamento.")

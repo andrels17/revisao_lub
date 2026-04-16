@@ -18,6 +18,7 @@ from services import (
 )
 from ui.constants import STATUS_LABEL
 from ui.theme import render_page_intro
+from utils import format_int_br, format_unidade_br, numero_input_br
 
 
 def _inject_css():
@@ -317,7 +318,7 @@ def _health_descriptor(score: int) -> tuple[str, str, str]:
 
 def _format_num(v) -> str:
     try:
-        return format_int_br(v or 0)
+        return format_int_br(v)
     except Exception:
         return '0'
 
@@ -362,7 +363,7 @@ def _render_card(row: dict):
 
     km = float(row.get("km_atual") or 0)
     hrs = float(row.get("horas_atual") or 0)
-    medidor = f"{format_int_br(km)} km" if km else (f"{format_int_br(hrs)} h" if hrs else "—")
+    medidor = f"{km:,.0f} km" if km else (f"{hrs:,.0f} h" if hrs else "—")
     controle_txt = 'KM' if (row.get('tipo_controle') or 'km') == 'km' else 'Horas'
 
     badge_saude = _badge(row.get("saude", "-"))
@@ -446,9 +447,9 @@ def _render_resumo_section(eq_id: str, equipamento: dict, snap: dict, responsave
 
                 l1, l2 = st.columns(2, gap='small')
                 with l1:
-                    km_novo = st.number_input('Novo KM', min_value=0.0, value=km_novo_default, step=1.0, key=f'quick_km_{eq_id}')
+                    km_novo = numero_input_br('Novo KM', value=km_novo_default, key=f'quick_km_{eq_id}', placeholder='Ex.: 1.234,56', casas_preview=0)
                 with l2:
-                    horas_novo = st.number_input('Novas horas', min_value=0.0, value=horas_novo_default, step=1.0, key=f'quick_horas_{eq_id}')
+                    horas_novo = numero_input_br('Novas horas', value=horas_novo_default, key=f'quick_horas_{eq_id}', placeholder='Ex.: 1.234,56', casas_preview=1)
 
                 l3, l4 = st.columns([1.2, 1.4], gap='small')
                 with l3:
@@ -469,23 +470,26 @@ def _render_resumo_section(eq_id: str, equipamento: dict, snap: dict, responsave
                     placeholder='Ex.: leitura coletada na troca de turno, conferida no painel do equipamento...',
                 )
 
-                atualizou_km = km_novo > km_atual
-                atualizou_horas = horas_novo > horas_atual
-                delta_km = max(0.0, km_novo - km_atual)
-                delta_horas = max(0.0, horas_novo - horas_atual)
+                atualizou_km = km_novo is not None and km_novo > km_atual
+                atualizou_horas = horas_novo is not None and horas_novo > horas_atual
+                delta_km = max(0.0, (km_novo or 0) - km_atual)
+                delta_horas = max(0.0, (horas_novo or 0) - horas_atual)
                 st.caption(
-                    f'Atual: {format_int_br(km_atual)} km / {format_int_br(horas_atual)} h · ' +
+                    f'Atual: {format_unidade_br(km_atual, "km")} / {format_unidade_br(horas_atual, "h")} · ' +
                     f'Variação: +{format_int_br(delta_km)} km / +{format_int_br(delta_horas)} h'
                 )
 
                 if st.button('Salvar leitura', key=f'quick_save_leitura_{eq_id}', use_container_width=True, type='primary'):
                     erros = []
-                    if km_novo < km_atual:
-                        erros.append(f'Novo KM não pode ser menor que o atual ({format_int_br(km_atual)}).')
-                    if horas_novo < horas_atual:
-                        erros.append(f'Novas horas não podem ser menores que as atuais ({format_int_br(horas_atual)}).')
-                    if not atualizou_km and not atualizou_horas:
-                        erros.append('Informe pelo menos uma leitura maior que a atual.')
+                    if km_novo is None or horas_novo is None:
+                        erros.append('Preencha KM e horas em formato válido para continuar.')
+                    else:
+                        if km_novo < km_atual:
+                            erros.append(f'Novo KM não pode ser menor que o atual ({format_int_br(km_atual)}).')
+                        if horas_novo < horas_atual:
+                            erros.append(f'Novas horas não podem ser menores que as atuais ({format_int_br(horas_atual)}).')
+                        if not atualizou_km and not atualizou_horas:
+                            erros.append('Informe pelo menos uma leitura maior que a atual.')
 
                     if erros:
                         for erro in erros:
@@ -544,7 +548,7 @@ def _render_revisoes_section(eq_id: str):
             }
         )
         df["Status"] = df["Status"].map(lambda x: STATUS_LABEL.get(x, x))
-        st.dataframe(format_dataframe_br(df), use_container_width=True, hide_index=True)
+        st.dataframe(df, use_container_width=True, hide_index=True)
     else:
         st.info("Nenhuma revisão encontrada.")
 
@@ -564,7 +568,7 @@ def _render_lubrificacoes_section(eq_id: str):
             }
         )
         df["Status"] = df["Status"].map(lambda x: STATUS_LABEL.get(x, x))
-        st.dataframe(format_dataframe_br(df), use_container_width=True, hide_index=True)
+        st.dataframe(df, use_container_width=True, hide_index=True)
     else:
         st.info("Nenhuma lubrificação encontrada.")
 
@@ -683,12 +687,12 @@ def _render_config_section(eq_id: str, equipamento: dict, setor_map: dict, respo
 
     b1, b2 = st.columns(2)
     with b1:
-        km_inicial_edit = st.number_input(
-            "KM inicial do plano", min_value=0.0, value=km_inicial_atual, step=1.0, key=f"edit_km_inicial_{eq_id}"
+        km_inicial_edit = numero_input_br(
+            "KM inicial do plano", value=km_inicial_atual, key=f"edit_km_inicial_{eq_id}", placeholder="Ex.: 1.234,56", casas_preview=0
         )
     with b2:
-        horas_inicial_edit = st.number_input(
-            "Horas iniciais do plano", min_value=0.0, value=horas_inicial_atual, step=1.0, key=f"edit_horas_inicial_{eq_id}"
+        horas_inicial_edit = numero_input_br(
+            "Horas iniciais do plano", value=horas_inicial_atual, key=f"edit_horas_inicial_{eq_id}", placeholder="Ex.: 1.234,56", casas_preview=1
         )
 
     resp_ids = [""] + list(responsavel_map.keys())
@@ -706,15 +710,18 @@ def _render_config_section(eq_id: str, equipamento: dict, setor_map: dict, respo
             key=f"edit_resp_{eq_id}",
         )
     with r2:
-        st.caption(f"KM atual: {format_int_br(equipamento.get('km_atual', 0) or 0)}")
+        st.caption(f"KM atual: {format_int_br(float(equipamento.get('km_atual', 0) or 0))}")
     with r3:
-        st.caption(f"Horas atuais: {format_int_br(equipamento.get('horas_atual', 0) or 0)}")
+        st.caption(f"Horas atuais: {format_int_br(float(equipamento.get('horas_atual', 0) or 0))}")
 
     a1, a2 = st.columns([1.3, 1])
     with a1:
         if st.button("Salvar alterações", key=f"edit_salvar_{eq_id}", use_container_width=True, type="primary"):
             if not (tipo_edit or '').strip():
                 st.error("Informe um tipo válido para o equipamento.")
+                st.stop()
+            if km_inicial_edit is None or horas_inicial_edit is None:
+                st.error("Informe KM e horas iniciais em formato válido para salvar.")
                 st.stop()
             equipamentos_service.atualizar_inline(
                 eq_id,
@@ -865,9 +872,9 @@ def render():
                     key="novo_eq_setor",
                 )
             with c5:
-                novo_km = st.number_input("KM atual", min_value=0.0, step=1.0, key="novo_eq_km")
+                novo_km = numero_input_br("KM atual", value=0, key="novo_eq_km", placeholder="Ex.: 1.234,56", casas_preview=0)
             with c6:
-                novo_horas = st.number_input("Horas atuais", min_value=0.0, step=1.0, key="novo_eq_horas")
+                novo_horas = numero_input_br("Horas atuais", value=0, key="novo_eq_horas", placeholder="Ex.: 1.234,56", casas_preview=1)
             with c7:
                 novo_ativo = st.checkbox("Ativo", value=True, key="novo_eq_ativo")
 
@@ -877,6 +884,8 @@ def render():
                 tipo = (novo_tipo or '').strip()
                 if not codigo or not nome or not tipo:
                     st.error("Preencha código, nome e tipo para cadastrar o equipamento.")
+                elif novo_km is None or novo_horas is None:
+                    st.error("Informe KM e horas em formato válido para cadastrar o equipamento.")
                 else:
                     try:
                         equipamentos_service.criar_completo(

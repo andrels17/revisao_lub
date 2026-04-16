@@ -15,7 +15,6 @@ from services import (
 )
 from ui.constants import STATUS_LABEL
 from ui.exportacao import botao_exportar_excel
-from utils.formatters import format_dataframe_br, format_int_br, format_percent_br, format_unidade_br
 
 
 QUEUE_READY = "Prontos para envio"
@@ -200,7 +199,7 @@ def _batch_message(recipient_name: str, itens: list[dict]) -> str:
             f"*{idx}. {tipo}*",
             f"Equipamento: {eqp.get('codigo', '-')} - {eqp.get('nome', '-')}",
             f"Item: {_item_titulo(detalhe)}",
-            f"Status: {status} | Diferença: {format_unidade_br(diferenca, unidade)}",
+            f"Status: {status} | Diferença: {diferenca:.0f} {unidade}",
             f"Setor: {eqp.get('setor_nome', '-')}",
             "",
         ])
@@ -355,9 +354,9 @@ def _render_card_alerta(item_payload: dict, tipo: str, mapa_operacionais: dict, 
         f"""
         <div class="meta">
             Setor: <strong>{eqp.get('setor_nome', '-')}</strong> &nbsp;•&nbsp;
-            Atual: <strong>{format_unidade_br(item.get('atual', 0) or 0, unidade)}</strong> &nbsp;•&nbsp;
-            Vencimento: <strong>{format_unidade_br(item.get('vencimento', item.get('vencimento_ciclo', 0)) or 0, unidade)}</strong> &nbsp;•&nbsp;
-            Diferença: <strong>{format_unidade_br(falta, unidade)}</strong>
+            Atual: <strong>{float(item.get('atual', 0) or 0):.0f} {unidade}</strong> &nbsp;•&nbsp;
+            Vencimento: <strong>{float(item.get('vencimento', item.get('vencimento_ciclo', 0)) or 0):.0f} {unidade}</strong> &nbsp;•&nbsp;
+            Diferença: <strong>{falta:.0f} {unidade}</strong>
         </div>
         """,
         unsafe_allow_html=True,
@@ -523,7 +522,7 @@ def _render_queue_card(item: dict):
         <div class='compact-grid'>
             <div class='compact-item'><div class='k'>Setor</div><div class='v'>{item.get('setor')}</div></div>
             <div class='compact-item'><div class='k'>Prioridade</div><div class='v'>{int(item.get('prioridade', 0) or 0)}</div></div>
-            <div class='compact-item'><div class='k'>Diferença</div><div class='v'>{format_unidade_br(falta, unidade)}</div></div>
+            <div class='compact-item'><div class='k'>Diferença</div><div class='v'>{falta:.0f} {unidade}</div></div>
             <div class='compact-item'><div class='k'>Último envio</div><div class='v'>{ultimo_txt}</div></div>
         </div>
         <div class='resp'>Operacional: <strong>{item.get('responsaveis_operacionais') or '-'}</strong><br>Gestão: <strong>{item.get('gestao') or '-'}</strong></div>
@@ -622,7 +621,7 @@ def _render_envio_lote_assistido(fila: dict, pendencias_rev: list, pendencias_lu
         unidade = "h" if item.get("tipo_controle") == "horas" else "km"
         label = (
             f"{eqp.get('codigo', '-')} - {eqp.get('nome', '-')} • {_item_titulo(item)} • "
-            f"{status} • {format_unidade_br(falta, unidade)} • {dest.get('nome', '-') }"
+            f"{status} • {falta:.0f} {unidade} • {dest.get('nome', '-') }"
         )
         st.checkbox(label, value=False, key=f"batch_sel_{candidato['key']}")
 
@@ -701,8 +700,8 @@ def _render_fila_sugerida(fila: dict):
     st.markdown(
         f"""
         <div class='mini-grid'>
-            <div class='mini-card'><div class='k'>Cobertura operacional</div><div class='v'>{format_percent_br(cobertura.get('percentual_operacional', 0), casas=1)}</div></div>
-            <div class='mini-card'><div class='k'>Cobertura gestão</div><div class='v'>{format_percent_br(cobertura.get('percentual_gestao', 0), casas=1)}</div></div>
+            <div class='mini-card'><div class='k'>Cobertura operacional</div><div class='v'>{float(cobertura.get('percentual_operacional', 0)):.1f}%</div></div>
+            <div class='mini-card'><div class='k'>Cobertura gestão</div><div class='v'>{float(cobertura.get('percentual_gestao', 0)):.1f}%</div></div>
             <div class='mini-card'><div class='k'>Sem cobertura</div><div class='v'>{int(resumo.get('sem_cobertura', 0))}</div></div>
             <div class='mini-card'><div class='k'>Itens na fila</div><div class='v'>{int(resumo.get('total', 0))}</div></div>
         </div>
@@ -820,7 +819,7 @@ def render():
     with st.expander("Top 10 sem movimentação", expanded=False):
         top10_sem_mov = resumo_sem_mov.get("top10") or []
         if top10_sem_mov:
-            st.dataframe(format_dataframe_br(pd.DataFrame(top10_sem_mov)), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(top10_sem_mov), use_container_width=True, hide_index=True)
         else:
             st.success("Nenhum equipamento acima da janela configurada sem leitura no momento.")
 

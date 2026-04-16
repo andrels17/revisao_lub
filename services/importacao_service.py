@@ -11,6 +11,7 @@ import pandas as pd
 
 from database.connection import get_conn, release_conn
 from services import auditoria_service, equipamentos_service
+from utils.parsers import parse_numero_br
 
 MODO_IGNORAR = "ignorar"
 MODO_SOBRESCREVER = "sobrescrever"
@@ -80,16 +81,7 @@ def _normalizar_codigo(value: Any) -> str:
 def _parse_num(value: Any):
     if value is None or pd.isna(value):
         return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    s = str(value).strip()
-    if not s:
-        return None
-    s = s.replace(".", "").replace(",", ".") if "," in s else s
-    try:
-        return float(s)
-    except Exception:
-        return None
+    return parse_numero_br(value)
 
 
 def _sanitize_meter(value: Any, campo: str) -> int | None:

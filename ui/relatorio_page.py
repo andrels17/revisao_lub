@@ -7,7 +7,6 @@ import re
 
 import pandas as pd
 import streamlit as st
-from utils.formatters import format_int_br, format_unidade_br
 
 from database.connection import get_conn, release_conn
 from services import prioridades_service
@@ -346,15 +345,15 @@ def _fmt_intervalo(valor: float, controle: str) -> str:
     valor = float(valor or 0)
     controle = 'horas' if str(controle).lower().startswith('h') else 'km'
     if controle == 'horas':
-        return format_unidade_br(valor, "h")
-    return format_unidade_br(valor, "km")
+        return f"{valor:,.0f} h".replace(',', '.')
+    return f"{valor:,.0f} km".replace(',', '.')
 
 
 def _fmt_atraso(valor: float, controle: str) -> str:
     valor = max(float(valor or 0), 0.0)
     controle = 'horas' if str(controle).lower().startswith('h') else 'km'
     sufixo = 'h' if controle == 'horas' else 'km'
-    return format_unidade_br(valor, sufixo)
+    return f"{valor:,.0f} {sufixo}".replace(',', '.')
 
 
 def _calcular_previsto_revisao(leitura_execucao: float, etapa_valor: float, ciclo_maximo: float) -> float:

@@ -170,9 +170,9 @@ def _criar_item_prioridade_revisao(eqp: dict[str, Any], item: dict[str, Any]) ->
         "atual": _to_float(item.get("atual", item.get("leitura_atual", 0))),
         "titulo": f"{eqp.get('codigo')} — {item.get('etapa')}",
         "descricao": (
-            f"{eqp.get('nome')} · revisão {item.get('etapa')} atrasada em {format_unidade_br(atraso, unidade)}"
+            f"{eqp.get('nome')} · revisão {item.get('etapa')} atrasada em {atraso:.0f} {unidade}"
             if base["status"] == "VENCIDO"
-            else f"{eqp.get('nome')} · revisão {item.get('etapa')} vence em {format_unidade_br(max(falta, 0), unidade)}"
+            else f"{eqp.get('nome')} · revisão {item.get('etapa')} vence em {max(falta, 0):.0f} {unidade}"
         ),
         "prioridade_score": prioridade,
         "destino": "revisoes",
@@ -196,9 +196,9 @@ def _criar_item_prioridade_lubrificacao(eqp: dict[str, Any], item: dict[str, Any
         "atual": _to_float(item.get("atual", item.get("leitura_atual", 0))),
         "titulo": f"{eqp.get('codigo')} — {nome_item}",
         "descricao": (
-            f"{eqp.get('nome')} · {nome_item} atrasada em {format_unidade_br(atraso, unidade)}"
+            f"{eqp.get('nome')} · {nome_item} atrasada em {atraso:.0f} {unidade}"
             if base["status"] == "VENCIDO"
-            else f"{eqp.get('nome')} · {nome_item} vence em {format_unidade_br(max(falta, 0), unidade)}"
+            else f"{eqp.get('nome')} · {nome_item} vence em {max(falta, 0):.0f} {unidade}"
         ),
         "prioridade_score": prioridade,
         "destino": "lubrificacoes",
