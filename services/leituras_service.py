@@ -7,7 +7,7 @@ from psycopg2 import errors
 from psycopg2 import sql
 
 from database.connection import get_conn, release_conn
-from services import auditoria_service, validacoes_service
+from services import auditoria_service, cache_service, validacoes_service
 
 
 def _inferir_tipo_leitura(km_valor=None, horas_valor=None):
@@ -204,6 +204,10 @@ def registrar(
             schema=schema,
         )
         conn.commit()
+        try:
+            cache_service.invalidate_planejamento()
+        except Exception:
+            pass
         return leitura_id
     finally:
         release_conn(conn)
@@ -255,6 +259,10 @@ def registrar_lote(
             conn.rollback()
         else:
             conn.commit()
+            try:
+                cache_service.invalidate_planejamento()
+            except Exception:
+                pass
         return {"importados": importados, "falhas": len(erros), "erros": erros}
     finally:
         release_conn(conn)

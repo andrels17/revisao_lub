@@ -19,7 +19,7 @@ def _clear_attr(obj, attr: str) -> None:
 
 def invalidate_planejamento() -> None:
     """Caches de leitura pesada usados em dashboard, alertas e páginas operacionais."""
-    from services import dashboard_service, equipamentos_service, lubrificacoes_service, revisoes_service
+    from services import dashboard_service, equipamentos_service, lubrificacoes_service, prioridades_service, revisoes_service
 
     _clear_attr(equipamentos_service, "listar")
     _clear_attr(equipamentos_service, "obter")
@@ -35,6 +35,12 @@ def invalidate_planejamento() -> None:
     _clear_attr(lubrificacoes_service, "listar_todos")
 
     _clear_attr(dashboard_service, "carregar_alertas")
+    _clear_attr(dashboard_service, "carregar_movimentacao")
+
+    try:
+        prioridades_service.limpar_cache()
+    except Exception:
+        pass
 
 
 

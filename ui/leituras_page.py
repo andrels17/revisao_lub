@@ -5,7 +5,7 @@ import io
 import pandas as pd
 import streamlit as st
 
-from services import equipamentos_service, leituras_service, responsaveis_service
+from services import dashboard_service, equipamentos_service, leituras_service, responsaveis_service
 from ui.exportacao import botao_exportar_excel
 
 
@@ -559,7 +559,18 @@ def render():
                         else:
                             _carregar_base.clear()
                             _carregar_historico.clear()
-                            st.success(f"✅ {resultado['importados']} leitura(s) importada(s) com sucesso.")
+                            try:
+                                dashboard_service.carregar_movimentacao.clear()
+                            except Exception:
+                                pass
+                            mov = dashboard_service.carregar_movimentacao()
+                            anom = mov.get("anomalias", {})
+                            st.success(f"✅ {resultado['importados']} leitura(s) importada(s) com sucesso. Revisões, lubrificações e alertas foram recalculados automaticamente.")
+                            c1, c2, c3 = st.columns(3)
+                            c1.metric("Travadas detectadas", len(anom.get("travadas", [])))
+                            c2.metric("Saltos anormais", len(anom.get("saltos", [])))
+                            c3.metric("Inconsistências KM/H", len(anom.get("inconsistencias", [])))
+                            st.caption("A aba de Alertas/WhatsApp e o Dashboard já passam a refletir a nova base sem recarga manual do planejamento.")
                             st.rerun()
                 else:
                     st.info("Nenhuma linha válida encontrada para importação.")
@@ -634,7 +645,11 @@ def _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp
         )
         _carregar_base.clear()
         _carregar_historico.clear()
-        st.success(f"✅ Leitura registrada com sucesso para **{eqp['codigo']} — {eqp['nome']}**.")
+        try:
+            dashboard_service.carregar_movimentacao.clear()
+        except Exception:
+            pass
+        st.success(f"✅ Leitura registrada com sucesso para **{eqp['codigo']} — {eqp['nome']}**. Alertas e indicadores foram atualizados automaticamente.")
         st.rerun()
     except Exception as e:
         st.error(f"Erro ao salvar leitura: {e}")

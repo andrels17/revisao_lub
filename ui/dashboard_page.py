@@ -581,6 +581,91 @@ def _render_bloco_prioridades_dashboard() -> None:
         st.markdown('</div></div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+
+
+def _fmt_data_curta(valor):
+    if valor is None or valor == "":
+        return "Sem registro"
+    try:
+        return pd.to_datetime(valor).strftime("%d/%m/%Y")
+    except Exception:
+        return str(valor)
+
+
+def _render_bloco_movimentacao() -> None:
+    dados = dashboard_service.carregar_movimentacao()
+    kpis = dados.get("kpis") or {}
+    ranking = pd.DataFrame(dados.get("ranking_rodados") or [])
+    parados = pd.DataFrame(dados.get("alertas_parados") or [])
+    anom = dados.get("anomalias") or {}
+
+    st.markdown('<div class="dash-section">', unsafe_allow_html=True)
+    st.markdown('<div class="dash-section-title">Movimentação e inteligência de leituras</div>', unsafe_allow_html=True)
+    st.caption(
+        f"Janela móvel de {int(kpis.get('janela_dias', 30) or 30)} dias · alerta de parado a partir de {int(kpis.get('threshold_parado', 0) or 0)} dia(s) sem leitura."
+    )
+
+    g1, g2, g3, g4 = st.columns(4, gap="small")
+    g1.metric("Com leitura", int(kpis.get("equipamentos_com_leitura", 0) or 0))
+    g2.metric("Sem leitura", int(kpis.get("equipamentos_sem_leitura", 0) or 0))
+    g3.metric("Parados", int(kpis.get("equipamentos_parados", 0) or 0))
+    g4.metric("Leituras na janela", int(kpis.get("leituras_na_janela", 0) or 0))
+
+    a1, a2, a3 = st.columns(3, gap="medium")
+    with a1:
+        st.markdown("**Top mais rodados**")
+        if ranking.empty:
+            st.info("Ainda não há leituras suficientes para montar o ranking.")
+        else:
+            ranking = ranking.copy()
+            ranking["Última leitura"] = ranking["Última leitura"].apply(_fmt_data_curta)
+            st.dataframe(ranking, use_container_width=True, hide_index=True)
+    with a2:
+        st.markdown("**Top equipamentos parados**")
+        if parados.empty:
+            st.success("Nenhum equipamento parado acima da janela configurada.")
+        else:
+            parados = parados.copy()
+            parados["Última leitura"] = parados["Última leitura"].apply(_fmt_data_curta)
+            st.dataframe(parados, use_container_width=True, hide_index=True)
+    with a3:
+        st.markdown("**Inteligência automática**")
+        resumo = pd.DataFrame([
+            {"Detecção": "Leitura travada", "Qtd": len(anom.get("travadas", []))},
+            {"Detecção": "Salto anormal", "Qtd": len(anom.get("saltos", []))},
+            {"Detecção": "Inconsistência KM/H", "Qtd": len(anom.get("inconsistencias", []))},
+        ])
+        st.dataframe(resumo, use_container_width=True, hide_index=True)
+        with st.expander("Ver detalhes da inteligência", expanded=False):
+            tabs = st.tabs(["Travadas", "Saltos", "KM x Horas"])
+            with tabs[0]:
+                df = pd.DataFrame(anom.get("travadas") or [])
+                if df.empty:
+                    st.success("Nenhum travamento detectado.")
+                else:
+                    if "Última leitura" in df.columns:
+                        df["Última leitura"] = df["Última leitura"].apply(_fmt_data_curta)
+                    st.dataframe(df, use_container_width=True, hide_index=True)
+            with tabs[1]:
+                df = pd.DataFrame(anom.get("saltos") or [])
+                if df.empty:
+                    st.success("Nenhum salto anormal detectado.")
+                else:
+                    if "Última leitura" in df.columns:
+                        df["Última leitura"] = df["Última leitura"].apply(_fmt_data_curta)
+                    st.dataframe(df, use_container_width=True, hide_index=True)
+            with tabs[2]:
+                df = pd.DataFrame(anom.get("inconsistencias") or [])
+                if df.empty:
+                    st.success("Nenhuma inconsistência entre KM e horas detectada.")
+                else:
+                    if "Última leitura" in df.columns:
+                        df["Última leitura"] = df["Última leitura"].apply(_fmt_data_curta)
+                    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 def render():
     _inject_styles()
 
@@ -594,6 +679,10 @@ def render():
 
             dashboard_service.carregar_alertas.clear()
             try:
+                dashboard_service.carregar_movimentacao.clear()
+            except Exception:
+                pass
+            try:
                 prioridades_service.limpar_cache()
             except Exception:
                 pass
@@ -606,6 +695,7 @@ def render():
 
     _render_cards(kpis)
     _render_bloco_prioridades_dashboard()
+    _render_bloco_movimentacao()
 
     if not alertas:
         st.info("Nenhum alerta encontrado. Verifique se os equipamentos possuem template configurado.")
