@@ -13,6 +13,25 @@ def _css() -> None:
     st.markdown(
         """
         <style>
+        .exec-root {
+            padding-bottom: .4rem;
+        }
+
+        /* neutraliza wrappers automáticos do Streamlit que estavam aparecendo como divisórias */
+        [data-testid="stHorizontalBlock"] {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+        [data-testid="column"] > div {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+        hr {
+            display: none !important;
+        }
+
         .exec-hero {
             position: relative;
             overflow: hidden;
@@ -50,6 +69,7 @@ def _css() -> None:
         .exec-badge.crit { background: rgba(239,68,68,.14); color: #fecaca; }
         .exec-badge.alt { background: rgba(245,158,11,.14); color: #fde68a; }
         .exec-badge.ok { background: rgba(34,197,94,.14); color: #bbf7d0; }
+
         .exec-hero-grid {
             display: grid;
             grid-template-columns: minmax(0, 1.35fr) minmax(320px, .95fr);
@@ -97,6 +117,7 @@ def _css() -> None:
             font-size: .8rem;
             line-height: 1.4;
         }
+
         .exec-kpi-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0,1fr));
@@ -162,13 +183,19 @@ def _css() -> None:
             border-radius: inherit;
             background: linear-gradient(90deg, rgba(255,255,255,.1), var(--accent, #4f8cff));
         }
-        .exec-section {
-            border: 1px solid rgba(148,163,184,.14);
-            border-radius: 18px;
-            background: linear-gradient(180deg, rgba(15,24,39,.96) 0%, rgba(11,20,33,.98) 100%);
+
+        .exec-panel {
+            border: 1px solid rgba(148,163,184,.12);
+            border-radius: 20px;
+            background: linear-gradient(180deg, rgba(15,24,39,.55) 0%, rgba(11,20,33,.42) 100%);
             padding: 1rem;
-            margin-bottom: .95rem;
+            backdrop-filter: blur(6px);
+            margin-bottom: 1rem;
         }
+        .exec-panel.soft {
+            background: linear-gradient(180deg, rgba(15,24,39,.36) 0%, rgba(11,20,33,.24) 100%);
+        }
+
         .exec-section-head {
             display: flex;
             justify-content: space-between;
@@ -186,6 +213,22 @@ def _css() -> None:
             font-size: .8rem;
             color: #8fa4c0;
         }
+
+        .exec-subsection-head {
+            margin: .15rem 0 .65rem;
+        }
+        .exec-subsection-head h4 {
+            margin: 0 0 .16rem 0;
+            color: #eff6ff;
+            font-size: .92rem;
+        }
+        .exec-subsection-head p {
+            margin: 0;
+            color: #8fa4c0;
+            font-size: .76rem;
+            line-height: 1.45;
+        }
+
         .exec-priority {
             border: 1px solid rgba(255,255,255,.07);
             border-radius: 16px;
@@ -261,6 +304,7 @@ def _css() -> None:
         .exec-severity.alt { background: rgba(245,158,11,.14); color: #fde68a; }
         .exec-severity.med { background: rgba(79,140,255,.14); color: #bfdbfe; }
         .exec-severity.low { background: rgba(34,197,94,.14); color: #bbf7d0; }
+
         .exec-risk-list { display: grid; gap: .55rem; }
         .exec-risk-row {
             padding: .72rem .78rem;
@@ -291,6 +335,7 @@ def _css() -> None:
         }
         .exec-progress.danger > span { background: linear-gradient(90deg, rgba(239,68,68,.55), rgba(239,68,68,1)); }
         .exec-progress.warn > span { background: linear-gradient(90deg, rgba(245,158,11,.55), rgba(245,158,11,1)); }
+
         .exec-insight {
             display: grid;
             grid-template-columns: repeat(2, minmax(0,1fr));
@@ -322,6 +367,7 @@ def _css() -> None:
             font-size: .78rem;
             line-height: 1.4;
         }
+
         .exec-empty {
             border: 1px dashed rgba(148,163,184,.18);
             border-radius: 16px;
@@ -329,63 +375,17 @@ def _css() -> None:
             color: #9fb2ca;
             background: rgba(255,255,255,.02);
         }
-        .exec-subsection-head {
-            margin: .1rem 0 .8rem;
-            padding-bottom: .45rem;
-            border-bottom: 1px solid rgba(148,163,184,.12);
-        }
-        .exec-subsection-head h4 {
-            margin: 0;
-            color: #eff6ff;
-            font-size: .95rem;
-        }
-        .exec-subsection-head p {
-            margin: .22rem 0 0;
-            color: #8fa4c0;
-            font-size: .78rem;
-            line-height: 1.45;
-        }
-        .exec-subsection-full {
-            margin-top: 1rem;
-        }
 
-        /* Remove cápsulas/fundos automáticos do Streamlit entre colunas e blocos */
-        .stApp [data-testid="stHorizontalBlock"] {
-            background: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-            outline: none !important;
-            border-radius: 0 !important;
-            padding: 0 !important;
-        }
-        .stApp [data-testid="column"] > div,
-        .stApp [data-testid="stVerticalBlock"] > div:has(> .exec-section),
-        .stApp [data-testid="stVerticalBlock"] > div:has(> .exec-hero),
-        .stApp [data-testid="stVerticalBlock"] > div:has(> .exec-subsection-head) {
-            background: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-            outline: none !important;
-        }
-        .stApp hr {
-            display: none !important;
-        }
-        .stApp [data-testid="stDataFrame"] {
-            border: 1px solid rgba(148,163,184,.12);
+        div[data-testid="stDataFrame"] {
             border-radius: 16px;
             overflow: hidden;
+            border: 1px solid rgba(148,163,184,.12);
         }
-        .stApp [data-testid="stButton"] > button {
-            border-radius: 12px;
-            border: 1px solid rgba(148,163,184,.18);
-            background: linear-gradient(180deg, rgba(16,26,44,.96) 0%, rgba(12,22,37,.98) 100%);
-            color: #eff6ff;
-            font-weight: 700;
+
+        .exec-spacer {
+            height: .2rem;
         }
-        .stApp [data-testid="stButton"] > button:hover {
-            border-color: rgba(79,140,255,.38);
-            box-shadow: 0 0 0 1px rgba(79,140,255,.14);
-        }
+
         @media (max-width: 1100px) {
             .exec-kpi-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
             .exec-hero-grid { grid-template-columns: 1fr; }
@@ -424,12 +424,12 @@ def _resumo_status(kpis: dict) -> tuple[str, str, str, str]:
     parados = _safe_int(kpis.get("parados"))
     cobertura = _safe_float(kpis.get("cobertura"))
     if crit >= 8 or parados >= 50:
-        return "Operação exige intervenção", "Criticidade elevada", "crit", f"{crit} críticos e {parados} equipamentos sem leitura recente." 
+        return "Operação exige intervenção", "Criticidade elevada", "crit", f"{crit} críticos e {parados} equipamentos sem leitura recente."
     if crit > 0 or altos >= 8 or parados >= 15:
-        return "Atenção executiva", "Monitoramento reforçado", "alt", f"{crit} críticos, {altos} alertas altos e {parados} equipamentos em observação." 
+        return "Atenção executiva", "Monitoramento reforçado", "alt", f"{crit} críticos, {altos} alertas altos e {parados} equipamentos em observação."
     if cobertura >= 95:
-        return "Operação estável", "Cenário controlado", "ok", "Sem sinais relevantes de exposição operacional no momento." 
-    return "Rotina sob controle", "Monitoramento diário", "ok", f"Cobertura operacional em {cobertura:.1f}% com baixo volume de criticidades." 
+        return "Operação estável", "Cenário controlado", "ok", "Sem sinais relevantes de exposição operacional no momento."
+    return "Rotina sob controle", "Monitoramento diário", "ok", f"Cobertura operacional em {cobertura:.1f}% com baixo volume de criticidades."
 
 
 def _hero(dados: dict) -> None:
@@ -555,7 +555,8 @@ def _insights(dados: dict) -> None:
     ranking = dados.get("ranking_movimentacao") or []
     topo = ranking[0] if ranking else {}
     parados = dados.get("parados") or []
-    top_setor = (dados.get("exposicao_setores") or [{}])[0] if (dados.get("exposicao_setores") or []) else {}
+    exposicao = dados.get("exposicao_setores") or []
+    top_setor = exposicao[0] if exposicao else {}
     st.markdown(
         f"""
         <div class="exec-insight">
@@ -585,10 +586,26 @@ def _insights(dados: dict) -> None:
     )
 
 
+def _section_head(title: str, desc: str, badge_html: str = "") -> None:
+    st.markdown(
+        f"""
+        <div class="exec-section-head">
+            <div>
+                <h3>{html.escape(title)}</h3>
+                <p>{html.escape(desc)}</p>
+            </div>
+            {badge_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render():
     _css()
+    st.markdown('<div class="exec-root">', unsafe_allow_html=True)
 
-    top1, top2 = st.columns([5, 1])
+    top1, top2 = st.columns([5, 1], gap="medium")
     with top1:
         render_page_intro(
             "Painel Executivo",
@@ -622,7 +639,7 @@ def render():
     parados = _safe_int(k.get("parados"))
     cobertura = _safe_float(k.get("cobertura"))
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4, gap="medium")
     with c1:
         _metric_card("Críticos", str(criticos), "Exigem ação imediata", "Combine parada operacional, vencimento e ausência de leitura para priorização diária.", "crit", (criticos / total) * 100)
     with c2:
@@ -632,61 +649,69 @@ def render():
     with c4:
         _metric_card("Cobertura operacional", f"{cobertura:.1f}%", "Base sob controle", "Percentual estimado de equipamentos sem alerta ativo relevante no cenário atual.", "ok", cobertura)
 
-    left, right = st.columns([1.45, 1], gap="medium")
+    left, right = st.columns([1.45, 1], gap="large")
     with left:
-        st.markdown('<div class="exec-section">', unsafe_allow_html=True)
-        st.markdown('<div class="exec-section-head"><div><h3>Ações prioritárias</h3><p>O que a diretoria precisa enxergar primeiro para direcionar a rotina.</p></div><div class="exec-badge crit">Top 5</div></div>', unsafe_allow_html=True)
-        top_alertas = dados.get("top_alertas") or []
-        if top_alertas:
-            for idx, item in enumerate(top_alertas[:5], start=1):
-                _render_priority_card(item, idx)
-        else:
-            st.markdown('<div class="exec-empty">Nenhuma ação prioritária aberta no momento.</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container():
+            st.markdown('<div class="exec-panel">', unsafe_allow_html=True)
+            _section_head("Ações prioritárias", "O que a diretoria precisa enxergar primeiro para direcionar a rotina.", '<div class="exec-badge crit">Top 5</div>')
+            top_alertas = dados.get("top_alertas") or []
+            if top_alertas:
+                for idx, item in enumerate(top_alertas[:5], start=1):
+                    _render_priority_card(item, idx)
+            else:
+                st.markdown('<div class="exec-empty">Nenhuma ação prioritária aberta no momento.</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="exec-section">', unsafe_allow_html=True)
-        st.markdown('<div class="exec-section-head"><div><h3>Resumo de risco</h3><p>Leitura sintética por categoria para facilitar a discussão executiva.</p></div></div>', unsafe_allow_html=True)
-        _render_category_cards(dados.get("categorias") or [])
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container():
+            st.markdown('<div class="exec-panel soft">', unsafe_allow_html=True)
+            _section_head("Resumo de risco", "Leitura sintética por categoria para facilitar a discussão executiva.")
+            _render_category_cards(dados.get("categorias") or [])
+            st.markdown('</div>', unsafe_allow_html=True)
 
     with right:
-        st.markdown('<div class="exec-section">', unsafe_allow_html=True)
-        st.markdown('<div class="exec-section-head"><div><h3>Exposição por setor</h3><p>Onde o risco está mais concentrado neste momento.</p></div></div>', unsafe_allow_html=True)
-        expos = dados.get("exposicao_setores") or []
-        maior_score = max([_safe_int(x.get("Score")) for x in expos] + [1])
-        _render_risk_rows(expos, maior_score)
+        with st.container():
+            st.markdown('<div class="exec-panel">', unsafe_allow_html=True)
+            _section_head("Exposição por setor", "Onde o risco está mais concentrado neste momento.")
+            expos = dados.get("exposicao_setores") or []
+            maior_score = max([_safe_int(x.get("Score")) for x in expos] + [1])
+            _render_risk_rows(expos, maior_score)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with st.container():
+            st.markdown('<div class="exec-panel soft">', unsafe_allow_html=True)
+            _section_head("Leitura rápida", "Insights resumidos para orientar decisão sem abrir detalhes.")
+            _insights(dados)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    with st.container():
+        st.markdown('<div class="exec-panel">', unsafe_allow_html=True)
+        _section_head("Desdobramento executivo", "Visões complementares para aprofundar a decisão sem poluir a leitura principal.")
+
+        col_mov, col_par = st.columns(2, gap="large")
+
+        with col_mov:
+            st.markdown('<div class="exec-subsection-head"><h4>Ranking de movimentação</h4><p>Equipamentos com maior uso recente, úteis para antecipar pressão sobre revisão e lubrificação.</p></div>', unsafe_allow_html=True)
+            df_mov = pd.DataFrame(dados.get("ranking_movimentacao") or [])
+            if df_mov.empty:
+                st.markdown('<div class="exec-empty">Sem movimentação suficiente para consolidar ranking.</div>', unsafe_allow_html=True)
+            else:
+                st.dataframe(df_mov, use_container_width=True, hide_index=True)
+
+        with col_par:
+            st.markdown('<div class="exec-subsection-head"><h4>Equipamentos parados</h4><p>Itens que merecem validação operacional por baixa movimentação ou ausência de leitura recente.</p></div>', unsafe_allow_html=True)
+            df_par = pd.DataFrame(dados.get("parados") or [])
+            if df_par.empty:
+                st.markdown('<div class="exec-empty">Nenhum equipamento parado acima da janela configurada.</div>', unsafe_allow_html=True)
+            else:
+                st.dataframe(df_par, use_container_width=True, hide_index=True)
+
+        st.markdown('<div class="exec-spacer"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="exec-subsection-head"><h4>Plano de ação sugerido</h4><p>Desdobramento prático das prioridades para orientar reunião rápida de gestão.</p></div>', unsafe_allow_html=True)
+        plano = pd.DataFrame(dados.get("plano_acao") or [])
+        if plano.empty:
+            st.markdown('<div class="exec-empty">Sem plano de ação sugerido no momento.</div>', unsafe_allow_html=True)
+        else:
+            st.dataframe(plano, use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="exec-section">', unsafe_allow_html=True)
-        st.markdown('<div class="exec-section-head"><div><h3>Leitura rápida</h3><p>Insights resumidos para orientar decisão sem abrir detalhes.</p></div></div>', unsafe_allow_html=True)
-        _insights(dados)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="exec-section">', unsafe_allow_html=True)
-    st.markdown('<div class="exec-section-head"><div><h3>Desdobramento executivo</h3><p>Visões complementares para aprofundar a decisão sem poluir a leitura principal.</p></div></div>', unsafe_allow_html=True)
-
-    col_mov, col_par = st.columns(2, gap="medium")
-
-    with col_mov:
-        st.markdown('<div class="exec-subsection-head"><h4>Ranking de movimentação</h4><p>Equipamentos com maior uso recente, úteis para antecipar pressão sobre revisão e lubrificação.</p></div>', unsafe_allow_html=True)
-        df_mov = pd.DataFrame(dados.get("ranking_movimentacao") or [])
-        if df_mov.empty:
-            st.markdown('<div class="exec-empty">Sem movimentação suficiente para consolidar ranking.</div>', unsafe_allow_html=True)
-        else:
-            st.dataframe(df_mov, use_container_width=True, hide_index=True)
-
-    with col_par:
-        st.markdown('<div class="exec-subsection-head"><h4>Equipamentos parados</h4><p>Itens que merecem validação operacional por baixa movimentação ou ausência de leitura recente.</p></div>', unsafe_allow_html=True)
-        df_par = pd.DataFrame(dados.get("parados") or [])
-        if df_par.empty:
-            st.markdown('<div class="exec-empty">Nenhum equipamento parado acima da janela configurada.</div>', unsafe_allow_html=True)
-        else:
-            st.dataframe(df_par, use_container_width=True, hide_index=True)
-
-    st.markdown('<div class="exec-subsection-head exec-subsection-full"><h4>Plano de ação sugerido</h4><p>Desdobramento prático das prioridades para orientar reunião rápida de gestão.</p></div>', unsafe_allow_html=True)
-    plano = pd.DataFrame(dados.get("plano_acao") or [])
-    if plano.empty:
-        st.markdown('<div class="exec-empty">Sem plano de ação sugerido no momento.</div>', unsafe_allow_html=True)
-    else:
-        st.dataframe(plano, use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
