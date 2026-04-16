@@ -418,8 +418,8 @@ def render():
         )
 
         c_km, c_h, c_u = st.columns(3)
-        c_km.metric("KM atual registrado", format_medida_br(km_atual, "km", 0))
-        c_h.metric("Horas atuais registradas", format_medida_br(horas_atual, "h", 0))
+        c_km.metric("KM atual registrado", f"{km_atual:.0f} km")
+        c_h.metric("Horas atuais registradas", f"{horas_atual:.0f} h")
         c_u.metric("Última coleta", ultima_data)
 
         tipo_leitura = _tipo_oficial(eqp)
@@ -459,11 +459,11 @@ def render():
             avisos = []
             if tipo_leitura == "km" and km_valor < km_atual:
                 avisos.append(
-                    f"⚠️ O KM informado **{format_numero_br(km_valor, 0)}** é menor que o atual **{format_numero_br(km_atual, 0)}**."
+                    f"⚠️ O KM informado **{km_valor:.0f}** é menor que o atual **{km_atual:.0f}**."
                 )
             if tipo_leitura == "horas" and horas_valor < horas_atual:
                 avisos.append(
-                    f"⚠️ As horas informadas **{format_numero_br(horas_valor, 0)}** são menores que as atuais **{format_numero_br(horas_atual, 0)}**."
+                    f"⚠️ As horas informadas **{horas_valor:.0f}** são menores que as atuais **{horas_atual:.0f}**."
                 )
 
             if avisos:

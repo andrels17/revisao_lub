@@ -1,17 +1,11 @@
 import streamlit as st
-
-try:
-    from utils.formatters import install_streamlit_br_patch
-except Exception:
-    def install_streamlit_br_patch(_st_module):
-        return None
 from ui import (
     alertas_page,
     auth_page,
     configuracoes_page,
     controle_revisoes_page,
-    dashboard_executivo_page,
     dashboard_page,
+    dashboard_executivo_page,
     equipamentos_page,
     grupos_page,
     prioridades_page,
@@ -47,8 +41,6 @@ except ModuleNotFoundError:
             st.title(pagina_atual)
 
 
-install_streamlit_br_patch(st)
-
 st.set_page_config(
     page_title="Revisão e Lubrificação",
     page_icon="🛠️",
@@ -69,26 +61,24 @@ except Exception:
     pass
 
 SECOES = {
-    "Painel": {
+    "Painéis": {
         "🧭 Painel Operacional": dashboard_page,
         "🧠 Painel Executivo": dashboard_executivo_page,
+        "🔥 Prioridades do Dia": prioridades_page,
     },
     "Operação": {
-        "🔥 Prioridades do Dia": prioridades_page,
         "📏 Leituras KM / Horas": leituras_page,
         "🔧 Controle de Revisões": controle_revisoes_page,
         "🛢️ Controle de Lubrificações": lubrificacoes_page,
     },
-    "Comunicação": {
-        "📱 Alertas WhatsApp": alertas_page,
-    },
-    "Ferramentas": {
-        "📥 Importar Equipamentos": importacao_page,
+    "Gestão": {
         "📈 Relatório de Manutenção": relatorio_page,
+        "📱 Alertas WhatsApp": alertas_page,
         "⚙️ Configurações": configuracoes_page,
         "👥 Usuários": usuarios_page,
     },
-    "Cadastros": {
+    "Cadastros e Planejamento": {
+        "📥 Importar Equipamentos": importacao_page,
         "🏢 Setores": setores_page,
         "🗂️ Grupos": grupos_page,
         "🚜 Equipamentos": equipamentos_page,

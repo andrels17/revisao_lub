@@ -16,7 +16,7 @@ ROLE_LABELS = {
 
 ROLE_PAGINAS: dict[str, set[str]] = {
     "admin": {
-        "Painel Operacional",
+        "Dashboard",
         "Setores", "Equipamentos", "Responsaveis",
         "Vinculos", "Templates",
         "Leituras KM / Horas", "Controle de Revisoes",
@@ -26,7 +26,7 @@ ROLE_PAGINAS: dict[str, set[str]] = {
         "Configuracoes",
     },
     "gestor": {
-        "Painel Operacional",
+        "Dashboard",
         "Setores", "Equipamentos", "Responsaveis",
         "Vinculos", "Templates",
         "Leituras KM / Horas", "Controle de Revisoes",
@@ -35,13 +35,13 @@ ROLE_PAGINAS: dict[str, set[str]] = {
         "Relatorio de Manutencao",
     },
     "operador": {
-        "Painel Operacional",
+        "Dashboard",
         "Leituras KM / Horas",
         "Controle de Revisoes",
         "Controle de Lubrificacoes",
     },
     "visualizador": {
-        "Painel Operacional",
+        "Dashboard",
         "Relatorio de Manutencao",
     },
 }

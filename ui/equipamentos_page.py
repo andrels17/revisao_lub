@@ -6,7 +6,6 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from utils import format_numero_br, format_medida_br
 from services import (
     comentarios_service,
     equipamentos_service,
@@ -318,7 +317,7 @@ def _health_descriptor(score: int) -> tuple[str, str, str]:
 
 def _format_num(v) -> str:
     try:
-        return format_numero_br(float(v or 0), 0)
+        return f"{float(v or 0):,.0f}"
     except Exception:
         return '0'
 
@@ -363,7 +362,7 @@ def _render_card(row: dict):
 
     km = float(row.get("km_atual") or 0)
     hrs = float(row.get("horas_atual") or 0)
-    medidor = format_medida_br(km, 'km', 0) if km else (format_medida_br(hrs, 'h', 0) if hrs else '—')
+    medidor = f"{km:,.0f} km" if km else (f"{hrs:,.0f} h" if hrs else "—")
     controle_txt = 'KM' if (row.get('tipo_controle') or 'km') == 'km' else 'Horas'
 
     badge_saude = _badge(row.get("saude", "-"))
@@ -475,16 +474,16 @@ def _render_resumo_section(eq_id: str, equipamento: dict, snap: dict, responsave
                 delta_km = max(0.0, km_novo - km_atual)
                 delta_horas = max(0.0, horas_novo - horas_atual)
                 st.caption(
-                    f'Atual: {format_medida_br(km_atual, "km", 0)} / {format_medida_br(horas_atual, "h", 0)} · ' +
-                    f'Variação: +{format_medida_br(delta_km, "km", 0)} / +{format_medida_br(delta_horas, "h", 0)}'
+                    f'Atual: {km_atual:,.0f} km / {horas_atual:,.0f} h · ' +
+                    f'Variação: +{delta_km:,.0f} km / +{delta_horas:,.0f} h'
                 )
 
                 if st.button('Salvar leitura', key=f'quick_save_leitura_{eq_id}', use_container_width=True, type='primary'):
                     erros = []
                     if km_novo < km_atual:
-                        erros.append(f'Novo KM não pode ser menor que o atual ({format_numero_br(km_atual, 0)}).')
+                        erros.append(f'Novo KM não pode ser menor que o atual ({km_atual:,.0f}).')
                     if horas_novo < horas_atual:
-                        erros.append(f'Novas horas não podem ser menores que as atuais ({format_numero_br(horas_atual, 0)}).')
+                        erros.append(f'Novas horas não podem ser menores que as atuais ({horas_atual:,.0f}).')
                     if not atualizou_km and not atualizou_horas:
                         erros.append('Informe pelo menos uma leitura maior que a atual.')
 
@@ -516,10 +515,10 @@ def _render_resumo_section(eq_id: str, equipamento: dict, snap: dict, responsave
 
     st.markdown('<div class="eq-inline-strip">', unsafe_allow_html=True)
     chips = [
-        f'<span class="eq-chip"><strong>KM atual</strong> {format_numero_br(km_atual, 0)}</span>',
-        f'<span class="eq-chip"><strong>Horas</strong> {format_numero_br(horas_atual, 0)}</span>',
-        f'<span class="eq-chip"><strong>KM inicial</strong> {format_numero_br(km_ini, 0)}</span>',
-        f'<span class="eq-chip"><strong>Horas iniciais</strong> {format_numero_br(horas_ini, 0)}</span>',
+        f'<span class="eq-chip"><strong>KM atual</strong> {km_atual:,.0f}</span>',
+        f'<span class="eq-chip"><strong>Horas</strong> {horas_atual:,.0f}</span>',
+        f'<span class="eq-chip"><strong>KM inicial</strong> {km_ini:,.0f}</span>',
+        f'<span class="eq-chip"><strong>Horas iniciais</strong> {horas_ini:,.0f}</span>',
     ]
     st.markdown("".join(chips) + "</div>", unsafe_allow_html=True)
 

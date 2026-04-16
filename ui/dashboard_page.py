@@ -271,7 +271,7 @@ def _hero(total_alertas: int):
     st.markdown(
         f"""
         <div class="dash-hero">
-            <div class="badge">Painel operacional</div>
+            <div class="badge">Dashboard executivo</div>
             <h2>Pendências de manutenção</h2>
             <p>Alertas consolidados de revisão e lubrificação · <strong>{total_alertas}</strong> item(ns) no total</p>
         </div>
