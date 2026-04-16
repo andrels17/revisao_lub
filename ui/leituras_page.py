@@ -29,7 +29,8 @@ def _carregar_historico(equipamento_id: str, limite: int = 100):
 
 
 def _fmt_eqp(e):
-    return f"{e['codigo']} — {e['nome']}  (KM: {float(e.get('km_atual') or 0):.0f} | H: {float(e.get('horas_atual') or 0):.0f})"
+    controle = 'KM' if (e.get('tipo_controle') or 'km') == 'km' else 'Horas'
+    return f"{e['codigo']} — {e['nome']}  ({controle} | KM: {float(e.get('km_atual') or 0):.0f} | H: {float(e.get('horas_atual') or 0):.0f})"
 
 
 def _render_page_header() -> None:
@@ -220,11 +221,14 @@ def render():
         with col1:
             eqp = st.selectbox("Equipamento", equipamentos, format_func=_fmt_eqp, key="leit_reg_eqp")
         with col2:
+            controle_eq = (eqp.get('tipo_controle') or 'km').lower()
+            opcoes_leitura = ['km'] if controle_eq == 'km' else ['horas']
             tipo_leitura = st.selectbox(
                 "O que atualizar",
-                ["ambos", "horas", "km"],
+                opcoes_leitura,
                 format_func=lambda x: {"ambos": "KM e Horas", "km": "Apenas KM", "horas": "Apenas Horas"}[x],
             )
+            st.caption(f"Controle oficial do equipamento: {'KM / hodômetro' if controle_eq == 'km' else 'Horas / horímetro'}")
         st.markdown("</div>", unsafe_allow_html=True)
 
         if not eqp:

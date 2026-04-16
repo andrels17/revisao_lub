@@ -363,6 +363,7 @@ def _render_card(row: dict):
     km = float(row.get("km_atual") or 0)
     hrs = float(row.get("horas_atual") or 0)
     medidor = f"{km:,.0f} km" if km else (f"{hrs:,.0f} h" if hrs else "—")
+    controle_txt = 'KM' if (row.get('tipo_controle') or 'km') == 'km' else 'Horas'
 
     badge_saude = _badge(row.get("saude", "-"))
     badge_venc = f'<span class="eq-b {"eq-danger" if venc else "eq-neutral"}">{venc} vencida{"s" if venc != 1 else ""}</span>'
@@ -374,7 +375,7 @@ def _render_card(row: dict):
         st.markdown(
             f'<div class="eq-card-code">{row.get("codigo", "-")}</div>'
             f'<div class="eq-card-title">{row.get("nome", "-")}</div>'
-            f'<div class="eq-card-meta">{row.get("setor_nome", "-")} · {row.get("tipo", "-")} · {medidor}</div>'
+            f'<div class="eq-card-meta">{row.get("setor_nome", "-")} · {row.get("tipo", "-")} · Controle: {controle_txt} · {medidor}</div>'
             f'<div class="eq-card-badges">{badge_saude}{badge_venc}{badge_prox}{badge_status}</div>',
             unsafe_allow_html=True,
         )
@@ -632,6 +633,20 @@ def _tipo_selector(prefixo: str, tipos_disponiveis: list[str], tipo_atual: str =
         return _normalizar_tipo_digitado(novo_tipo)
     return selected
 
+
+def _tipo_controle_selector(prefixo: str, valor_atual: str = 'km', label: str = 'Tipo de controle') -> str:
+    opcoes = {'km': 'KM / hodômetro', 'horas': 'Horas / horímetro'}
+    valor = (valor_atual or 'km').lower()
+    if valor not in opcoes:
+        valor = 'km'
+    return st.selectbox(
+        label,
+        options=list(opcoes.keys()),
+        index=list(opcoes.keys()).index(valor),
+        format_func=lambda x: opcoes[x],
+        key=f'{prefixo}_tipo_controle',
+    )
+
 def _render_config_section(eq_id: str, equipamento: dict, setor_map: dict, responsavel_map: dict):
     st.markdown('<div class="eq-config-wrap">', unsafe_allow_html=True)
     e1, e2, e3 = st.columns([2.2, 1.3, 0.8])
@@ -660,6 +675,8 @@ def _render_config_section(eq_id: str, equipamento: dict, setor_map: dict, respo
             format_func=lambda i: setor_labels[i],
             key=f"edit_setor_{eq_id}",
         )
+
+    tipo_controle_edit = _tipo_controle_selector(f'edit_{eq_id}', equipamento.get('tipo_controle') or 'km')
 
     km_inicial_atual = float(equipamento.get("km_inicial_plano", equipamento.get("km_base_plano", equipamento.get("km_atual", 0))) or 0)
     horas_inicial_atual = float(equipamento.get("horas_inicial_plano", equipamento.get("horas_base_plano", equipamento.get("horas_atual", 0))) or 0)
@@ -707,6 +724,7 @@ def _render_config_section(eq_id: str, equipamento: dict, setor_map: dict, respo
                 ativo=ativo_edit,
                 km_inicial_plano=km_inicial_edit,
                 horas_inicial_plano=horas_inicial_edit,
+                tipo_controle=tipo_controle_edit,
             )
             equipamentos_service.definir_responsavel_principal(eq_id, resp_ids[resp_idx] or None)
             _carregar_equipamento.clear()
@@ -735,6 +753,7 @@ def _render_ficha_conteudo(eq_id: str, setor_map: dict, responsavel_map: dict):
     nome = equipamento.get("nome") or snap.get("nome") or "-"
     setor_nome = equipamento.get("setor_nome") or snap.get("setor_nome") or "-"
     tipo = equipamento.get("tipo") or snap.get("tipo") or "-"
+    tipo_controle = 'KM' if (equipamento.get('tipo_controle') or snap.get('tipo_controle') or 'km') == 'km' else 'Horas'
     ativo = "Ativo" if equipamento.get("ativo", snap.get("ativo")) else "Inativo"
     saude = equipamento.get("saude") or snap.get("saude") or "Sem plano"
     score = int(equipamento.get("score_saude", snap.get("score_saude", 0)) or 0)
@@ -746,7 +765,7 @@ def _render_ficha_conteudo(eq_id: str, setor_map: dict, responsavel_map: dict):
     st.markdown(
         f'<div class="eq-modal-head"><div>'
         f'<div class="eq-modal-title">{codigo} — {nome}</div>'
-        f'<p class="eq-modal-sub">{setor_nome} · {tipo} · {ativo}</p>'
+        f'<p class="eq-modal-sub">{setor_nome} · {tipo} · Controle {tipo_controle} · {ativo}</p>'
         f'</div><div>{_score_ring(score)}</div></div>',
         unsafe_allow_html=True,
     )
@@ -835,7 +854,9 @@ def render():
             with c3:
                 novo_tipo = _tipo_selector("novo_eq", tipos_cadastro, "")
 
-            c4, c5, c6, c7 = st.columns([2.0, 1, 1, 0.8])
+            ctrl1, c4, c5, c6, c7 = st.columns([1.4, 2.0, 1, 1, 0.8])
+            with ctrl1:
+                novo_tipo_controle = _tipo_controle_selector('novo_eq', 'km', label='Controle')
             with c4:
                 novo_setor_id = st.selectbox(
                     "Setor",
@@ -849,13 +870,6 @@ def render():
                 novo_horas = st.number_input("Horas atuais", min_value=0.0, step=1.0, key="novo_eq_horas")
             with c7:
                 novo_ativo = st.checkbox("Ativo", value=True, key="novo_eq_ativo")
-
-            st.caption("Opcional: informe a base do plano quando o controle já começar de uma revisão/lubrificação anterior. Se deixar como está, o sistema usa o KM/Horas atuais como marco inicial.")
-            c8, c9 = st.columns(2)
-            with c8:
-                novo_km_inicial = st.number_input("KM inicial do plano", min_value=0.0, value=float(novo_km or 0), step=1.0, key="novo_eq_km_inicial")
-            with c9:
-                novo_horas_inicial = st.number_input("Horas iniciais do plano", min_value=0.0, value=float(novo_horas or 0), step=1.0, key="novo_eq_horas_inicial")
 
             if st.button("Cadastrar equipamento", type="primary", use_container_width=False, key="novo_eq_submit"):
                 codigo = (novo_codigo or '').strip()
@@ -873,8 +887,9 @@ def render():
                             km_atual=novo_km,
                             horas_atual=novo_horas,
                             ativo=novo_ativo,
-                            km_inicial_plano=novo_km_inicial,
-                            horas_inicial_plano=novo_horas_inicial,
+                            km_inicial_plano=novo_km,
+                            horas_inicial_plano=novo_horas,
+                            tipo_controle=novo_tipo_controle,
                         )
                         _carregar_equipamento.clear()
                         _revisoes_eq.clear()
