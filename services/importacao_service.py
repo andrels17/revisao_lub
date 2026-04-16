@@ -36,7 +36,7 @@ ALIASES = {
     "serie": ["serie", "numero_serie", "n_serie"],
 }
 
-CAMPOS_PREVIEW = ["codigo", "nome", "grupo", "tipo", "tipo_horimetro", "setor", "km_atual", "horas_atual", "ativo", "placa", "serie"]
+CAMPOS_PREVIEW = ["codigo", "nome", "grupo", "tipo", "tipo_horimetro", "tipo_controle", "setor", "km_atual", "horas_atual", "ativo", "placa", "serie"]
 
 
 def get_template_csv() -> bytes:
@@ -167,21 +167,14 @@ def normalizar_tipo(tipo_original: Any) -> str:
     return _classificacao_tipo_padrao(tipo_original)
 
 
-
-
-def normalizar_tipo_controle(valor: Any) -> str | None:
-    tipo = _normalizar_nome(valor)
-    if not tipo:
-        return None
-    if tipo in {"km", "k", "quilometro", "quilometros", "quilômetro", "quilômetros", "hodometro", "hodômetro", "odometro", "odômetro"}:
+def _normalizar_tipo_controle(valor: Any) -> str:
+    s = _normalizar_nome(valor)
+    if not s:
         return "km"
-    if tipo in {"h", "hr", "hrs", "hora", "horas", "horimetro", "horímetro"}:
+    if any(tok in s for tok in ["hora", "horimetro", "horimetro", "hr"]):
         return "horas"
-    if "hora" in tipo or "hori" in tipo:
-        return "horas"
-    if "km" in tipo or "quilo" in tipo or "odo" in tipo or "hodo" in tipo:
-        return "km"
-    return None
+    return "km"
+
 
 
 def _normalizar_texto_regra(valor: Any) -> str:
@@ -425,9 +418,11 @@ def _equipamentos_existentes(cur=None) -> dict[str, dict[str, Any]]:
         colunas = _colunas_tabela(cur, "equipamentos")
         possui_grupo_texto = "grupo" in colunas
         possui_grupo_id = "grupo_id" in colunas
+        possui_tipo_controle = "tipo_controle" in colunas
         possui_tabela_grupos = _tabela_existe(cur, "grupos")
         grupo_select = "coalesce(e.grupo, e.tipo)" if possui_grupo_texto else "coalesce(g.nome, e.tipo)"
         grupo_id_select = "e.grupo_id" if possui_grupo_id else "null::uuid"
+        tipo_controle_select = "e.tipo_controle" if possui_tipo_controle else "'km'::text"
         join_grupos = "left join grupos g on g.id = e.grupo_id" if possui_tabela_grupos and possui_grupo_id else ""
         cur.execute(
             f"""
@@ -435,7 +430,7 @@ def _equipamentos_existentes(cur=None) -> dict[str, dict[str, Any]]:
                    {grupo_select} as grupo,
                    e.setor_id, {grupo_id_select} as grupo_id,
                    e.km_atual, e.horas_atual, e.ativo, e.placa, e.serie,
-                   coalesce(e.tipo_controle, '') as tipo_controle
+                   {tipo_controle_select} as tipo_controle
               from equipamentos e
               {join_grupos}
             """
@@ -455,7 +450,7 @@ def _equipamentos_existentes(cur=None) -> dict[str, dict[str, Any]]:
                 "ativo": bool(r[9]) if r[9] is not None else True,
                 "placa": _to_str(r[10]),
                 "serie": _to_str(r[11]),
-                "tipo_controle": _to_str(r[12]),
+                "tipo_controle": _to_str(r[12]) or "km",
             }
             for r in rows if r and r[1] is not None
         }
@@ -673,6 +668,11 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
             if col not in df.columns:
                 df[col] = None
 
+        if "tipo_horimetro" not in df.columns:
+            df["tipo_horimetro"] = None
+        df["tipo_horimetro"] = df["tipo_horimetro"].apply(_to_str)
+        df["tipo_controle"] = df["tipo_horimetro"].apply(_normalizar_tipo_controle)
+
         df["codigo"] = df["codigo"].apply(_normalizar_codigo)
         df["nome"] = df["nome"].apply(_to_str)
         if "grupo" not in df.columns:
@@ -728,6 +728,8 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
             ativo = _parse_bool_ativo(row.get("ativo"))
             placa = _to_str(row.get("placa"))
             serie = _to_str(row.get("serie"))
+            tipo_horimetro = _to_str(row.get("tipo_horimetro"))
+            tipo_controle = _normalizar_tipo_controle(tipo_horimetro)
 
             linha_erros = []
             linha_avisos = []
@@ -806,6 +808,8 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
                         "grupo_resolvido": grupo_resolvido,
                         "acao_grupo": acao_grupo,
                         "tipo": tipo,
+                        "tipo_horimetro": tipo_horimetro,
+                        "tipo_controle": tipo_controle,
                         "setor": setor_nome,
                         "setor_id": setor_id,
                         "setor_resolvido": setor_resolvido,
@@ -831,6 +835,8 @@ def processar_arquivo(file_bytes: bytes, nome_arquivo: str) -> dict[str, Any]:
                     "grupo_resolvido": grupo_resolvido,
                     "ação_grupo": acao_grupo,
                     "tipo": tipo,
+                    "tipo_horimetro": tipo_horimetro,
+                    "tipo_controle": tipo_controle,
                     "setor": setor_nome,
                     "setor_resolvido": setor_resolvido,
                     "ação_setor": acao_setor,
@@ -907,6 +913,8 @@ def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dic
             add("grupo_id", row.get("grupo_id"))
         if "tipo" in colunas and row.get("tipo") and row.get("tipo") != _to_str(existente.get("tipo")):
             add("tipo", row.get("tipo"))
+        if "tipo_controle" in colunas and row.get("tipo_controle") and row.get("tipo_controle") != _to_str(existente.get("tipo_controle")):
+            add("tipo_controle", row.get("tipo_controle"))
         if setor_id is not None and "setor_id" in colunas and setor_id != existente.get("setor_id"):
             add("setor_id", setor_id)
         if row.get("km_atual") is not None and "km_atual" in colunas and float(row.get("km_atual") or 0) != float(existente.get("km_atual") or 0):
@@ -919,8 +927,6 @@ def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dic
             add("placa", row.get("placa"))
         if row.get("serie") and "serie" in colunas and row.get("serie") != _to_str(existente.get("serie")):
             add("serie", row.get("serie"))
-        if "tipo_controle" in colunas and row.get("tipo_controle") and row.get("tipo_controle") != _to_str(existente.get("tipo_controle")):
-            add("tipo_controle", row.get("tipo_controle"))
     elif modo == MODO_PREENCHER_VAZIOS:
         if not _to_str(existente.get("nome")) and row.get("nome"):
             add("nome", row.get("nome"))
@@ -930,6 +936,8 @@ def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dic
             add("grupo_id", row.get("grupo_id"))
         if "tipo" in colunas and not _to_str(existente.get("tipo")) and row.get("tipo"):
             add("tipo", row.get("tipo"))
+        if "tipo_controle" in colunas and not _to_str(existente.get("tipo_controle")) and row.get("tipo_controle"):
+            add("tipo_controle", row.get("tipo_controle"))
         if setor_id is not None and "setor_id" in colunas and not existente.get("setor_id"):
             add("setor_id", setor_id)
         if row.get("km_atual") is not None and "km_atual" in colunas:
@@ -944,8 +952,6 @@ def _atualizar_existente(cur, conn, colunas, existente: dict[str, Any], row: dic
             add("placa", row.get("placa"))
         if row.get("serie") and "serie" in colunas and not _to_str(existente.get("serie")):
             add("serie", row.get("serie"))
-        if "tipo_controle" in colunas and row.get("tipo_controle") and not _to_str(existente.get("tipo_controle")):
-            add("tipo_controle", row.get("tipo_controle"))
     else:
         return False
 
@@ -980,8 +986,6 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
         grupos_idx = _grupos_index(cur)
 
         import_cols = ["codigo", "nome", "tipo", "setor_id", "km_atual", "horas_atual", "ativo"]
-        if "tipo_controle" in colunas:
-            import_cols.insert(3, "tipo_controle")
         if "grupo" in colunas:
             import_cols.insert(3, "grupo")
         if "grupo_id" in colunas:
@@ -991,6 +995,8 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
             import_cols.append("placa")
         if "serie" in colunas:
             import_cols.append("serie")
+        if "tipo_controle" in colunas:
+            import_cols.append("tipo_controle")
         if "km_inicial_plano" in colunas:
             import_cols.append("km_inicial_plano")
         elif "km_base_plano" in colunas:
@@ -1016,7 +1022,6 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                 row = dict(row)
                 row["km_atual"] = _sanitize_meter(row.get("km_atual"), "km_atual")
                 row["horas_atual"] = _sanitize_meter(row.get("horas_atual"), "horas_atual")
-                row["tipo_controle"] = normalizar_tipo_controle(row.get("tipo_horimetro")) or normalizar_tipo_controle(existente.get("tipo_controle") if existente else None) or "km"
 
                 setor_nome = _to_str(row.get("setor"))
                 if setor_nome:
@@ -1029,6 +1034,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                     row["setor_resolvido"] = ""
 
                 row["tipo"] = _classificar_tipo_por_regras(row, regras_tipo)
+                row["tipo_controle"] = _normalizar_tipo_controle(row.get("tipo_horimetro") or row.get("tipo_controle"))
                 grupo_nome = _to_str(row.get("grupo") or row.get("tipo"))
                 if grupo_nome:
                     grupo_id, grupo_criado, grupo_resolvido = _obter_ou_criar_grupo(cur, conn, grupos_idx, grupo_nome, setor_id=row.get("setor_id"))
@@ -1057,7 +1063,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                                     "horas_atual": float(row.get("horas_atual") if row.get("horas_atual") is not None else existente.get("horas_atual") or 0),
                                     "placa": row.get("placa") or existente.get("placa"),
                                     "serie": row.get("serie") or existente.get("serie"),
-                                    "tipo_controle": row.get("tipo_controle") or existente.get("tipo_controle"),
+                                    "tipo_controle": row.get("tipo_controle") or existente.get("tipo_controle") or "km",
                                 }
                             )
                         else:
@@ -1077,8 +1083,6 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                                 existente["setor_id"] = row.get("setor_id")
                             if not existente.get("grupo_id") and row.get("grupo_id") is not None:
                                 existente["grupo_id"] = row.get("grupo_id")
-                            if not _to_str(existente.get("tipo_controle")) and row.get("tipo_controle"):
-                                existente["tipo_controle"] = row.get("tipo_controle")
                         else:
                             duplicados += 1
                     else:
@@ -1088,7 +1092,6 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         "codigo": codigo,
                         "nome": row.get("nome"),
                         "tipo": row.get("tipo") or "Outros",
-                        "tipo_controle": row.get("tipo_controle") or "km",
                         "grupo": row.get("grupo") or row.get("tipo") or "Outros",
                         "setor_id": row.get("setor_id"),
                         "grupo_id": row.get("grupo_id"),
@@ -1097,6 +1100,7 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         "ativo": bool(row.get("ativo", True)),
                         "placa": row.get("placa") or None,
                         "serie": row.get("serie") or None,
+                        "tipo_controle": row.get("tipo_controle") or "km",
                         "km_inicial_plano": row.get("km_atual") or 0,
                         "km_base_plano": row.get("km_atual") or 0,
                         "horas_inicial_plano": row.get("horas_atual") or 0,
@@ -1126,7 +1130,6 @@ def importar(df: pd.DataFrame, setor_padrao_id=None, modo_duplicados=MODO_IGNORA
                         "horas_atual": float(insert_data["horas_atual"] or 0),
                         "placa": _to_str(insert_data.get("placa")),
                         "serie": _to_str(insert_data.get("serie")),
-                        "tipo_controle": _to_str(insert_data.get("tipo_controle")),
                     }
             except Exception as e:
                 try:
