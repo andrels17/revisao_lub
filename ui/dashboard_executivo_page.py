@@ -329,13 +329,6 @@ def _css() -> None:
             color: #9fb2ca;
             background: rgba(255,255,255,.02);
         }
-        div[data-baseweb="tab-list"] {
-            gap: .35rem;
-        }
-        button[data-baseweb="tab"] {
-            border-radius: 999px !important;
-            padding: .35rem .82rem !important;
-        }
         @media (max-width: 1100px) {
             .exec-kpi-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
             .exec-hero-grid { grid-template-columns: 1fr; }
@@ -612,34 +605,36 @@ def render():
         _insights(dados)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    tab1, tab2, tab3 = st.tabs(["Movimentação", "Parados", "Plano de ação"])
+    st.markdown("### Desdobramento executivo")
+    st.caption("Os blocos abaixo substituem as abas e deixam a leitura mais direta, sem divisões em formato de cápsula.")
 
-    with tab1:
+    row1, row2 = st.columns(2, gap="large")
+
+    with row1:
         st.markdown('<div class="exec-section">', unsafe_allow_html=True)
         st.markdown('<div class="exec-section-head"><div><h3>Ranking de movimentação</h3><p>Equipamentos com maior uso recente, úteis para antecipar pressão sobre revisão e lubrificação.</p></div></div>', unsafe_allow_html=True)
         df_mov = pd.DataFrame(dados.get("ranking_movimentacao") or [])
         if df_mov.empty:
             st.markdown('<div class="exec-empty">Sem movimentação suficiente para consolidar ranking.</div>', unsafe_allow_html=True)
         else:
-            st.dataframe(df_mov, use_container_width=True, hide_index=True)
+            st.dataframe(df_mov.head(12), use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    with tab2:
+    with row2:
         st.markdown('<div class="exec-section">', unsafe_allow_html=True)
         st.markdown('<div class="exec-section-head"><div><h3>Equipamentos parados</h3><p>Itens que merecem validação operacional por baixa movimentação ou ausência de leitura recente.</p></div></div>', unsafe_allow_html=True)
         df_par = pd.DataFrame(dados.get("parados") or [])
         if df_par.empty:
             st.markdown('<div class="exec-empty">Nenhum equipamento parado acima da janela configurada.</div>', unsafe_allow_html=True)
         else:
-            st.dataframe(df_par, use_container_width=True, hide_index=True)
+            st.dataframe(df_par.head(12), use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    with tab3:
-        st.markdown('<div class="exec-section">', unsafe_allow_html=True)
-        st.markdown('<div class="exec-section-head"><div><h3>Plano de ação sugerido</h3><p>Desdobramento prático das prioridades para orientar reunião rápida de gestão.</p></div></div>', unsafe_allow_html=True)
-        plano = pd.DataFrame(dados.get("plano_acao") or [])
-        if plano.empty:
-            st.markdown('<div class="exec-empty">Sem plano de ação sugerido no momento.</div>', unsafe_allow_html=True)
-        else:
-            st.dataframe(plano, use_container_width=True, hide_index=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<div class="exec-section">', unsafe_allow_html=True)
+    st.markdown('<div class="exec-section-head"><div><h3>Plano de ação sugerido</h3><p>Desdobramento prático das prioridades para orientar reunião rápida de gestão.</p></div></div>', unsafe_allow_html=True)
+    plano = pd.DataFrame(dados.get("plano_acao") or [])
+    if plano.empty:
+        st.markdown('<div class="exec-empty">Sem plano de ação sugerido no momento.</div>', unsafe_allow_html=True)
+    else:
+        st.dataframe(plano, use_container_width=True, hide_index=True)
+    st.markdown('</div>', unsafe_allow_html=True)
