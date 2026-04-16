@@ -7,6 +7,7 @@ import streamlit as st
 
 from services import equipamentos_service, leituras_service, responsaveis_service
 from ui.exportacao import botao_exportar_excel
+from utils.formatters import format_dataframe_br, format_int_br
 
 
 PLOTLY_COLORS = {
@@ -40,7 +41,7 @@ def _carregar_historico(equipamento_id: str, limite: int = 100):
 
 def _fmt_eqp(e):
     controle = "KM" if (e.get("tipo_controle") or "km") == "km" else "Horas"
-    return f"{e['codigo']} — {e['nome']}  ({controle} | KM: {float(e.get('km_atual') or 0):.0f} | H: {float(e.get('horas_atual') or 0):.0f})"
+    return f"{e['codigo']} — {e['nome']}  ({controle} | KM: {format_int_br(e.get('km_atual') or 0)} | H: {format_int_br(e.get('horas_atual') or 0)})"
 
 
 def _render_page_header() -> None:
@@ -418,8 +419,8 @@ def render():
         )
 
         c_km, c_h, c_u = st.columns(3)
-        c_km.metric("KM atual registrado", f"{km_atual:.0f} km")
-        c_h.metric("Horas atuais registradas", f"{horas_atual:.0f} h")
+        c_km.metric("KM atual registrado", f"{format_int_br(km_atual)} km")
+        c_h.metric("Horas atuais registradas", f"{format_int_br(horas_atual)} h")
         c_u.metric("Última coleta", ultima_data)
 
         tipo_leitura = _tipo_oficial(eqp)
@@ -459,11 +460,11 @@ def render():
             avisos = []
             if tipo_leitura == "km" and km_valor < km_atual:
                 avisos.append(
-                    f"⚠️ O KM informado **{km_valor:.0f}** é menor que o atual **{km_atual:.0f}**."
+                    f"⚠️ O KM informado **{format_int_br(km_valor)}** é menor que o atual **{format_int_br(km_atual)}**."
                 )
             if tipo_leitura == "horas" and horas_valor < horas_atual:
                 avisos.append(
-                    f"⚠️ As horas informadas **{horas_valor:.0f}** são menores que as atuais **{horas_atual:.0f}**."
+                    f"⚠️ As horas informadas **{format_int_br(horas_valor)}** são menores que as atuais **{format_int_br(horas_atual)}**."
                 )
 
             if avisos:
@@ -554,7 +555,7 @@ def render():
                     )
 
                 preview_df = pd.DataFrame(analise["preview"])
-                st.dataframe(preview_df, use_container_width=True, hide_index=True)
+                st.dataframe(format_dataframe_br(preview_df), use_container_width=True, hide_index=True)
 
                 validos = analise["validos"]
                 if validos:
@@ -580,13 +581,13 @@ def render():
                                 f"Importação parcial concluída. {resultado['importados']} leitura(s) gravada(s) e {resultado['falhas']} falha(s)."
                             )
                             erros_df = pd.DataFrame(resultado["erros"])
-                            st.dataframe(erros_df, use_container_width=True, hide_index=True)
+                            st.dataframe(format_dataframe_br(erros_df), use_container_width=True, hide_index=True)
                         elif resultado["falhas"]:
                             st.error(
                                 f"Importação não concluída. {resultado['falhas']} linha(s) falharam e nenhuma leitura foi gravada."
                             )
                             erros_df = pd.DataFrame(resultado["erros"])
-                            st.dataframe(erros_df, use_container_width=True, hide_index=True)
+                            st.dataframe(format_dataframe_br(erros_df), use_container_width=True, hide_index=True)
                         else:
                             _carregar_base.clear()
                             _carregar_historico.clear()
@@ -648,7 +649,7 @@ def render():
         col_exp = st.columns([5, 1])[1]
         with col_exp:
             botao_exportar_excel(df, f"leituras_{eqp_hist['codigo']}", label="⬇️ Excel", key="exp_leit")
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(format_dataframe_br(df), use_container_width=True, hide_index=True)
 
 
 def _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs, permitir_regressao=False):

@@ -9,6 +9,14 @@ import datetime
 import pandas as pd
 import streamlit as st
 
+from utils.formatters import (
+    format_dataframe_br,
+    format_datetime_br,
+    format_int_br,
+    format_percent_br,
+    format_unidade_br,
+)
+
 
 def _normalizar_valor_excel(valor):
     if isinstance(valor, pd.Timestamp):
@@ -85,8 +93,8 @@ def _pdf_bytes_painel_360(equipamento: dict, saude: dict, pendencias: list[dict]
     line("Painel 360° do Equipamento", 15, True, 8)
     line(f"Equipamento: {equipamento.get('codigo', '-')} - {equipamento.get('nome', '-')}", 11, True)
     line(f"Setor: {equipamento.get('setor_nome') or '-'} | Tipo: {equipamento.get('tipo') or '-'}")
-    line(f"KM atual: {float(equipamento.get('km_atual') or 0):.0f} | Horas atuais: {float(equipamento.get('horas_atual') or 0):.0f}")
-    line(f"Saúde: {saude.get('faixa')} ({saude.get('score')}%)")
+    line(f"KM atual: {format_int_br(equipamento.get('km_atual') or 0)} | Horas atuais: {format_int_br(equipamento.get('horas_atual') or 0)}")
+    line(f"Saúde: {saude.get('faixa')} ({format_percent_br(saude.get('score'), casas=0)})")
     line("")
     line("Leitura gerencial", 12, True)
     for item in insights[:6]:
@@ -96,7 +104,7 @@ def _pdf_bytes_painel_360(equipamento: dict, saude: dict, pendencias: list[dict]
     if pendencias:
         for p in pendencias[:12]:
             line(
-                f"- {p.get('origem')}: {p.get('item')} | {p.get('status')} | atual {float(p.get('atual') or 0):.0f} | ref {float(p.get('referencia') or 0):.0f}"
+                f"- {p.get('origem')}: {p.get('item')} | {p.get('status')} | atual {format_int_br(p.get('atual') or 0)} | ref {format_int_br(p.get('referencia') or 0)}"
             )
     else:
         line("- Sem pendências vencidas ou próximas.")
@@ -159,13 +167,13 @@ def _fmt_atraso_pdf(valor, controle: str) -> str:
     except Exception:
         valor = 0.0
     sufixo = "h" if str(controle).lower().startswith("h") else "km"
-    return f"{valor:,.0f} {sufixo}".replace(",", ".")
+    return format_unidade_br(valor, sufixo, casas=0)
 
 
 def _dataframe_para_tabela(df: pd.DataFrame, max_rows: int = 30) -> list[list[str]]:
     if df is None or df.empty:
         return []
-    base = df.copy().head(max_rows).fillna("-")
+    base = format_dataframe_br(df.copy().head(max_rows).fillna("-"))
     cols = [str(c) for c in base.columns.tolist()]
     rows = [[_safe_text(v) for v in row] for row in base.astype(str).values.tolist()]
     return [cols] + rows
@@ -257,7 +265,7 @@ def _pdf_bytes_relatorio_manutencao(
     atrasadas_lub  = int(resumo_lub["Atrasadas"].sum()) if not resumo_lub.empty else 0
 
     periodo    = f"{pd.to_datetime(data_ini).strftime('%d/%m/%Y')} a {pd.to_datetime(data_fim).strftime('%d/%m/%Y')}"
-    gerado_em  = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    gerado_em  = format_datetime_br(datetime.datetime.now(), include_time=True)
     setor_txt  = _safe_text(setor_nome, "Todos")
     eqp_txt    = _safe_text(equipamento_nome, "Todos")
     sem_mov = prioridades_service.resumo_sem_movimentacao(setor_id=setor_id, equipamento_id=equipamento_id, limite=10)

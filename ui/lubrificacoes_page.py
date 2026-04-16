@@ -7,6 +7,7 @@ import streamlit as st
 
 from ui.constants import STATUS_LABEL, STATUS_ORDEM
 from ui.exportacao import botao_exportar_excel
+from utils.formatters import format_dataframe_br, format_int_br, format_unidade_br
 
 from services import (
     equipamentos_service,
@@ -194,12 +195,12 @@ def _status_resumo(item: dict) -> str:
     if item.get("status") == "SEM_BASE":
         atual = float(item.get("atual", 0) or 0)
         intervalo = float(item.get("intervalo", item.get("intervalo_valor", 0)) or 0)
-        return f"Registrar 1ª troca na leitura atual ({atual:.0f} {unidade}) • ciclo {intervalo:.0f} {unidade}"
+        return f"Registrar 1ª troca na leitura atual ({format_unidade_br(atual, unidade)}) • ciclo {format_unidade_br(intervalo, unidade)}"
 
     falta = float(item.get("diferenca", item.get("falta", 0)) or 0)
     if falta <= 0:
-        return f"Vencido há {abs(falta):.0f} {unidade}"
-    return f"Faltam {falta:.0f} {unidade}"
+        return f"Vencido há {format_unidade_br(abs(falta), unidade)}"
+    return f"Faltam {format_unidade_br(falta, unidade)}"
 
 
 def _render_card_lub(eqp: dict, item: dict, idx: int) -> None:
@@ -235,7 +236,7 @@ def _render_card_lub(eqp: dict, item: dict, idx: int) -> None:
         with meta4:
             st.caption(f"**Departamento:** {setor}")
         with meta5:
-            st.caption(f"**Próxima troca:** {vencimento:.0f} {unidade}")
+            st.caption(f"**Próxima troca:** {format_unidade_br(vencimento, unidade)}")
 
         badge_cols = st.columns([1.5, 2.5, 2, 1.5])
         with badge_cols[0]:
@@ -243,13 +244,13 @@ def _render_card_lub(eqp: dict, item: dict, idx: int) -> None:
         with badge_cols[1]:
             st.caption(resumo_status)
         with badge_cols[2]:
-            st.caption(f"Leitura atual {atual:.0f} {unidade}")
+            st.caption(f"Leitura atual {format_unidade_br(atual, unidade)}")
         with badge_cols[3]:
             st.caption("Ativo")
 
     with right:
         if status == "SEM_BASE":
-            st.metric("Ciclo", f"{float(item.get('intervalo', 0) or 0):.0f} {unidade}")
+            st.metric("Ciclo", f"{format_unidade_br(item.get('intervalo', 0) or 0, unidade)}")
         else:
             st.metric("Progresso", f"{progresso}%")
         if st.button("Detalhes", key=f"det_lub_{eqp['id']}_{idx}", use_container_width=True):
@@ -308,22 +309,22 @@ def _render_detalhe_lub(eqp: dict, item: dict, idx: int) -> None:
             st.rerun()
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric(f"Leitura atual ({unidade})", f"{atual:.0f}")
-    c2.metric(f"Próxima troca ({unidade})", f"{vencimento:.0f}")
+    c1.metric(f"Leitura atual ({unidade})", format_int_br(atual))
+    c2.metric(f"Próxima troca ({unidade})", format_int_br(vencimento))
     c3.metric("Progresso do ciclo", f"{progresso}%")
     if falta <= 0:
-        c4.metric("Situação", f"Vencido há {abs(falta):.0f} {unidade}")
+        c4.metric("Situação", f"Vencido há {format_unidade_br(abs(falta), unidade)}")
     else:
-        c4.metric("Situação", f"Faltam {falta:.0f} {unidade}")
+        c4.metric("Situação", f"Faltam {format_unidade_br(falta, unidade)}")
 
     st.caption(f"Produto: **{item.get('tipo_produto') or '—'}**")
     st.progress(progresso)
 
     intervalo = float(item.get("intervalo", item.get("intervalo_valor", 0)) or 0)
-    st.caption(f"Intervalo configurado do item: **{intervalo:.0f} {unidade}**")
+    st.caption(f"Intervalo configurado do item: **{format_unidade_br(intervalo, unidade)}**")
 
     if ult > 0:
-        st.caption(f"Última execução registrada: {ult:.0f} {unidade}")
+        st.caption(f"Última execução registrada: {format_unidade_br(ult, unidade)}")
     else:
         st.caption("Sem referência inicial registrada. Faça a primeira baixa informando a leitura real da troca para iniciar o ciclo.")
 
@@ -445,9 +446,9 @@ def _render_tabela(itens, titulo):
                 "Item": item.get("item"),
                 "Produto": item.get("tipo_produto") or "—",
                 "Status": STATUS_LABEL.get(item.get("status"), item.get("status")),
-                "Leitura atual": f"{atual:.0f} {unidade}",
-                "Próxima troca": f"{vencimento:.0f} {unidade}",
-                "Diferença": f"{diferenca:.0f} {unidade}",
+                "Leitura atual": f"{format_unidade_br(atual, unidade)}",
+                "Próxima troca": f"{format_unidade_br(vencimento, unidade)}",
+                "Diferença": f"{format_unidade_br(diferenca, unidade)}",
             }
         )
 
@@ -555,7 +556,7 @@ def _render_primeira_troca_dialog(eqp: dict, itens_eqp: list[dict]) -> None:
                 <div class="pt-chip">Grupo: <strong>{html.escape(str(grupo))}</strong></div>
                 <div class="pt-chip">Departamento: <strong>{html.escape(str(setor))}</strong></div>
                 <div class="pt-chip">Compartimentos pendentes: <strong>{len(itens_eqp)}</strong></div>
-                <div class="pt-chip">Leitura atual: <strong>{leitura:.0f} {unidade_eqp}</strong></div>
+                <div class="pt-chip">Leitura atual: <strong>{format_unidade_br(leitura, unidade_eqp)}</strong></div>
             </div>
         </div>
         """,
@@ -578,9 +579,9 @@ def _render_primeira_troca_dialog(eqp: dict, itens_eqp: list[dict]) -> None:
                 <div class="pt-item-title">{html.escape(str(item_nome))}</div>
                 <div class="pt-item-sub">Produto: {html.escape(str(produto))} • Compartimento em primeira troca</div>
                 <div class="pt-mini-grid">
-                    <div class="pt-mini-card"><div class="pt-mini-label">Leitura atual</div><div class="pt-mini-value">{atual:.0f} {unidade}</div></div>
-                    <div class="pt-mini-card"><div class="pt-mini-label">Ciclo</div><div class="pt-mini-value">{intervalo:.0f} {unidade}</div></div>
-                    <div class="pt-mini-card"><div class="pt-mini-label">Próxima troca</div><div class="pt-mini-value">{vencimento:.0f} {unidade}</div></div>
+                    <div class="pt-mini-card"><div class="pt-mini-label">Leitura atual</div><div class="pt-mini-value">{format_unidade_br(atual, unidade)}</div></div>
+                    <div class="pt-mini-card"><div class="pt-mini-label">Ciclo</div><div class="pt-mini-value">{format_unidade_br(intervalo, unidade)}</div></div>
+                    <div class="pt-mini-card"><div class="pt-mini-label">Próxima troca</div><div class="pt-mini-value">{format_unidade_br(vencimento, unidade)}</div></div>
                     <div class="pt-mini-card"><div class="pt-mini-label">Status</div><div class="pt-mini-value">Primeira troca</div></div>
                 </div>
             </div>
@@ -680,7 +681,7 @@ def _render_primeira_troca_listagem(itens: list[dict]) -> None:
         setor = eqp.get("setor_nome") or "—"
         leitura_valor = eqp.get("km_atual") if eqp.get("km_atual") not in (None, "") else eqp.get("horas_atual")
         leitura_un = "km" if eqp.get("km_atual") not in (None, "") else "h"
-        leitura_txt = f"{float(leitura_valor or 0):.0f} {leitura_un}"
+        leitura_txt = format_unidade_br(leitura_valor or 0, leitura_un)
 
         st.markdown("<div class='pt-list-row'>", unsafe_allow_html=True)
         col_a, col_b, col_c, col_d = st.columns([3.2, 1.7, 1.5, 1.4], vertical_alignment="center")

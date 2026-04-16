@@ -317,7 +317,7 @@ def _health_descriptor(score: int) -> tuple[str, str, str]:
 
 def _format_num(v) -> str:
     try:
-        return f"{float(v or 0):,.0f}"
+        return format_int_br(v or 0)
     except Exception:
         return '0'
 
@@ -362,7 +362,7 @@ def _render_card(row: dict):
 
     km = float(row.get("km_atual") or 0)
     hrs = float(row.get("horas_atual") or 0)
-    medidor = f"{km:,.0f} km" if km else (f"{hrs:,.0f} h" if hrs else "—")
+    medidor = f"{format_int_br(km)} km" if km else (f"{format_int_br(hrs)} h" if hrs else "—")
     controle_txt = 'KM' if (row.get('tipo_controle') or 'km') == 'km' else 'Horas'
 
     badge_saude = _badge(row.get("saude", "-"))
@@ -474,16 +474,16 @@ def _render_resumo_section(eq_id: str, equipamento: dict, snap: dict, responsave
                 delta_km = max(0.0, km_novo - km_atual)
                 delta_horas = max(0.0, horas_novo - horas_atual)
                 st.caption(
-                    f'Atual: {km_atual:,.0f} km / {horas_atual:,.0f} h · ' +
-                    f'Variação: +{delta_km:,.0f} km / +{delta_horas:,.0f} h'
+                    f'Atual: {format_int_br(km_atual)} km / {format_int_br(horas_atual)} h · ' +
+                    f'Variação: +{format_int_br(delta_km)} km / +{format_int_br(delta_horas)} h'
                 )
 
                 if st.button('Salvar leitura', key=f'quick_save_leitura_{eq_id}', use_container_width=True, type='primary'):
                     erros = []
                     if km_novo < km_atual:
-                        erros.append(f'Novo KM não pode ser menor que o atual ({km_atual:,.0f}).')
+                        erros.append(f'Novo KM não pode ser menor que o atual ({format_int_br(km_atual)}).')
                     if horas_novo < horas_atual:
-                        erros.append(f'Novas horas não podem ser menores que as atuais ({horas_atual:,.0f}).')
+                        erros.append(f'Novas horas não podem ser menores que as atuais ({format_int_br(horas_atual)}).')
                     if not atualizou_km and not atualizou_horas:
                         erros.append('Informe pelo menos uma leitura maior que a atual.')
 
@@ -515,10 +515,10 @@ def _render_resumo_section(eq_id: str, equipamento: dict, snap: dict, responsave
 
     st.markdown('<div class="eq-inline-strip">', unsafe_allow_html=True)
     chips = [
-        f'<span class="eq-chip"><strong>KM atual</strong> {km_atual:,.0f}</span>',
-        f'<span class="eq-chip"><strong>Horas</strong> {horas_atual:,.0f}</span>',
-        f'<span class="eq-chip"><strong>KM inicial</strong> {km_ini:,.0f}</span>',
-        f'<span class="eq-chip"><strong>Horas iniciais</strong> {horas_ini:,.0f}</span>',
+        f'<span class="eq-chip"><strong>KM atual</strong> {format_int_br(km_atual)}</span>',
+        f'<span class="eq-chip"><strong>Horas</strong> {format_int_br(horas_atual)}</span>',
+        f'<span class="eq-chip"><strong>KM inicial</strong> {format_int_br(km_ini)}</span>',
+        f'<span class="eq-chip"><strong>Horas iniciais</strong> {format_int_br(horas_ini)}</span>',
     ]
     st.markdown("".join(chips) + "</div>", unsafe_allow_html=True)
 
@@ -544,7 +544,7 @@ def _render_revisoes_section(eq_id: str):
             }
         )
         df["Status"] = df["Status"].map(lambda x: STATUS_LABEL.get(x, x))
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(format_dataframe_br(df), use_container_width=True, hide_index=True)
     else:
         st.info("Nenhuma revisão encontrada.")
 
@@ -564,7 +564,7 @@ def _render_lubrificacoes_section(eq_id: str):
             }
         )
         df["Status"] = df["Status"].map(lambda x: STATUS_LABEL.get(x, x))
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(format_dataframe_br(df), use_container_width=True, hide_index=True)
     else:
         st.info("Nenhuma lubrificação encontrada.")
 
@@ -706,9 +706,9 @@ def _render_config_section(eq_id: str, equipamento: dict, setor_map: dict, respo
             key=f"edit_resp_{eq_id}",
         )
     with r2:
-        st.caption(f"KM atual: {float(equipamento.get('km_atual', 0) or 0):,.0f}")
+        st.caption(f"KM atual: {format_int_br(equipamento.get('km_atual', 0) or 0)}")
     with r3:
-        st.caption(f"Horas atuais: {float(equipamento.get('horas_atual', 0) or 0):,.0f}")
+        st.caption(f"Horas atuais: {format_int_br(equipamento.get('horas_atual', 0) or 0)}")
 
     a1, a2 = st.columns([1.3, 1])
     with a1:

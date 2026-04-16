@@ -56,9 +56,9 @@ def validar_leitura(equipamento_id, tipo_leitura: str, km_valor=None, horas_valo
 
     erros = []
     if tipo_leitura in ("km", "ambos") and km_valor is not None and float(km_valor) < float(eqp["km_atual"]):
-        erros.append(f"KM informado ({float(km_valor):.0f}) menor que o atual ({float(eqp['km_atual']):.0f}).")
+        erros.append(f"KM informado ({format_int_br(km_valor)}) menor que o atual ({format_int_br(eqp['km_atual'])}).")
     if tipo_leitura in ("horas", "ambos") and horas_valor is not None and float(horas_valor) < float(eqp["horas_atual"]):
-        erros.append(f"Horas informadas ({float(horas_valor):.0f}) menores que as atuais ({float(eqp['horas_atual']):.0f}).")
+        erros.append(f"Horas informadas ({format_int_br(horas_valor)}) menores que as atuais ({format_int_br(eqp['horas_atual'])}).")
 
     if erros and not permitir_regressao:
         raise ValidacaoNegocioError(" ".join(erros))
