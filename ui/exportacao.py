@@ -10,13 +10,37 @@ import pandas as pd
 import streamlit as st
 
 
+def _normalizar_valor_excel(valor):
+    if isinstance(valor, pd.Timestamp):
+        return valor.tz_localize(None) if valor.tzinfo else valor
+    if isinstance(valor, datetime.datetime):
+        return valor.replace(tzinfo=None) if valor.tzinfo else valor
+    return valor
+
+
+def _normalizar_dataframe_excel(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+
+    base = df.copy()
+    for coluna in base.columns:
+        serie = base[coluna]
+        if pd.api.types.is_datetime64tz_dtype(serie):
+            base[coluna] = serie.dt.tz_localize(None)
+            continue
+        if pd.api.types.is_object_dtype(serie):
+            base[coluna] = serie.map(_normalizar_valor_excel)
+    return base
+
+
 def _df_para_excel(df: pd.DataFrame) -> bytes:
+    df_excel = _normalizar_dataframe_excel(df)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Dados")
+        df_excel.to_excel(writer, index=False, sheet_name="Dados")
         ws = writer.sheets["Dados"]
-        for col_idx, col in enumerate(df.columns, 1):
-            max_len = max(len(str(col)), df[col].astype(str).str.len().max() if not df.empty else 0)
+        for col_idx, col in enumerate(df_excel.columns, 1):
+            max_len = max(len(str(col)), df_excel[col].astype(str).str.len().max() if not df_excel.empty else 0)
             ws.column_dimensions[ws.cell(1, col_idx).column_letter].width = min(max_len + 4, 60)
     return buf.getvalue()
 
