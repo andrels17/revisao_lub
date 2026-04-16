@@ -1,5 +1,10 @@
 import streamlit as st
-from utils import install_streamlit_br_patch
+
+try:
+    from utils.formatters import install_streamlit_br_patch
+except Exception:
+    def install_streamlit_br_patch(_st_module):
+        return None
 from ui import (
     alertas_page,
     auth_page,
