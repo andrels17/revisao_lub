@@ -5,7 +5,7 @@ import io
 import pandas as pd
 import streamlit as st
 
-from services import dashboard_service, equipamentos_service, leituras_service, responsaveis_service
+from services import equipamentos_service, leituras_service, responsaveis_service
 from ui.exportacao import botao_exportar_excel
 
 
@@ -257,6 +257,7 @@ def _analisar_arquivo(df: pd.DataFrame, equipamentos: list[dict]) -> dict:
     validos = []
     invalidos = 0
     avisos = 0
+    avisos_regressao = 0
     duplicados = 0
     vistos = {}
 
@@ -305,10 +306,13 @@ def _analisar_arquivo(df: pd.DataFrame, equipamentos: list[dict]) -> dict:
             else:
                 medidor_atual = float(equipamento.get("km_atual") or 0)
                 km_valor = leitura_atual
+            permitir_regressao_item = False
             if leitura_atual < medidor_atual:
                 status = "Atenção"
                 motivo.append("Leitura menor que a atual")
+                permitir_regressao_item = True
                 avisos += 1
+                avisos_regressao += 1
             if tipo_planilha:
                 tipo_planilha_norm = "horas" if "hora" in tipo_planilha.lower() or "hr" in tipo_planilha.lower() else "km"
                 if tipo_planilha_norm != tipo_cadastro:
@@ -329,6 +333,7 @@ def _analisar_arquivo(df: pd.DataFrame, equipamentos: list[dict]) -> dict:
                     "horas_valor": horas_valor,
                     "data_leitura": data_leitura,
                     "observacoes": observacoes or None,
+                    "permitir_regressao": permitir_regressao_item,
                 }
             )
 
@@ -355,6 +360,7 @@ def _analisar_arquivo(df: pd.DataFrame, equipamentos: list[dict]) -> dict:
             "erros": invalidos,
             "avisos": avisos,
             "duplicados": duplicados,
+            "avisos_regressao": avisos_regressao,
         },
     }
 
@@ -517,7 +523,12 @@ def render():
                     if responsaveis
                     else None
                 )
-                permitir_regressao = st.checkbox("Permitir leituras menores que a atual", value=False)
+                permitir_regressao = st.checkbox("Permitir todas as leituras menores que a atual", value=False)
+                importar_atencao_automaticamente = st.checkbox(
+                    "Importar automaticamente leituras com atenção (possível reset)",
+                    value=True,
+                    help="Quando marcado, leituras menores que a atual entram como atenção e são importadas sem bloquear o lote.",
+                )
             obs_padrao = st.text_input("Observação padrão do lote (opcional)", key="leit_imp_obs")
 
         if arquivo is not None:
@@ -537,6 +548,10 @@ def render():
                 c4.metric("Com atenção", resumo["avisos"])
                 if resumo["duplicados"]:
                     st.warning(f"A planilha possui {resumo['duplicados']} código(s) repetido(s). Revise antes de importar.")
+                if resumo.get("avisos_regressao"):
+                    st.info(
+                        f"{resumo['avisos_regressao']} leitura(s) estão menores que o valor atual e podem ser tratadas como possível reset de horímetro/hodômetro."
+                    )
 
                 preview_df = pd.DataFrame(analise["preview"])
                 st.dataframe(preview_df, use_container_width=True, hide_index=True)
@@ -544,13 +559,29 @@ def render():
                 validos = analise["validos"]
                 if validos:
                     if st.button("✅ Importar leituras válidas", type="primary", use_container_width=True):
-                        resultado = leituras_service.registrar_lote(
-                            validos,
-                            responsavel_id=resp_import["id"] if resp_import else None,
-                            observacoes_padrao=obs_padrao.strip() or None,
-                            permitir_regressao=permitir_regressao,
-                        )
-                        if resultado["falhas"]:
+                        itens_importacao = []
+                        for item in validos:
+                            item_payload = dict(item)
+                            if item_payload.get("permitir_regressao"):
+                                item_payload["permitir_regressao"] = importar_atencao_automaticamente or permitir_regressao
+                            itens_importacao.append(item_payload)
+
+                        with st.spinner("Importando leituras e atualizando a base operacional…"):
+                            resultado = leituras_service.registrar_lote(
+                                itens_importacao,
+                                responsavel_id=resp_import["id"] if resp_import else None,
+                                observacoes_padrao=obs_padrao.strip() or None,
+                                permitir_regressao=permitir_regressao,
+                            )
+                        if resultado["importados"] and resultado["falhas"]:
+                            _carregar_base.clear()
+                            _carregar_historico.clear()
+                            st.warning(
+                                f"Importação parcial concluída. {resultado['importados']} leitura(s) gravada(s) e {resultado['falhas']} falha(s)."
+                            )
+                            erros_df = pd.DataFrame(resultado["erros"])
+                            st.dataframe(erros_df, use_container_width=True, hide_index=True)
+                        elif resultado["falhas"]:
                             st.error(
                                 f"Importação não concluída. {resultado['falhas']} linha(s) falharam e nenhuma leitura foi gravada."
                             )
@@ -559,18 +590,7 @@ def render():
                         else:
                             _carregar_base.clear()
                             _carregar_historico.clear()
-                            try:
-                                dashboard_service.carregar_movimentacao.clear()
-                            except Exception:
-                                pass
-                            mov = dashboard_service.carregar_movimentacao()
-                            anom = mov.get("anomalias", {})
-                            st.success(f"✅ {resultado['importados']} leitura(s) importada(s) com sucesso. Revisões, lubrificações e alertas foram recalculados automaticamente.")
-                            c1, c2, c3 = st.columns(3)
-                            c1.metric("Travadas detectadas", len(anom.get("travadas", [])))
-                            c2.metric("Saltos anormais", len(anom.get("saltos", [])))
-                            c3.metric("Inconsistências KM/H", len(anom.get("inconsistencias", [])))
-                            st.caption("A aba de Alertas/WhatsApp e o Dashboard já passam a refletir a nova base sem recarga manual do planejamento.")
+                            st.success(f"✅ {resultado['importados']} leitura(s) importada(s) com sucesso.")
                             st.rerun()
                 else:
                     st.info("Nenhuma linha válida encontrada para importação.")
@@ -645,11 +665,7 @@ def _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp
         )
         _carregar_base.clear()
         _carregar_historico.clear()
-        try:
-            dashboard_service.carregar_movimentacao.clear()
-        except Exception:
-            pass
-        st.success(f"✅ Leitura registrada com sucesso para **{eqp['codigo']} — {eqp['nome']}**. Alertas e indicadores foram atualizados automaticamente.")
+        st.success(f"✅ Leitura registrada com sucesso para **{eqp['codigo']} — {eqp['nome']}**.")
         st.rerun()
     except Exception as e:
         st.error(f"Erro ao salvar leitura: {e}")

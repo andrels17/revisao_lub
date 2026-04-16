@@ -7,7 +7,7 @@ from psycopg2 import errors
 from psycopg2 import sql
 
 from database.connection import get_conn, release_conn
-from services import auditoria_service, cache_service, validacoes_service
+from services import auditoria_service, validacoes_service
 
 
 def _inferir_tipo_leitura(km_valor=None, horas_valor=None):
@@ -204,10 +204,6 @@ def registrar(
             schema=schema,
         )
         conn.commit()
-        try:
-            cache_service.invalidate_planejamento()
-        except Exception:
-            pass
         return leitura_id
     finally:
         release_conn(conn)
@@ -230,6 +226,7 @@ def registrar_lote(
         cols = _table_columns(cur)
         schema = _schema_map(cols)
         for item in itens:
+            cur.execute("SAVEPOINT sp_leitura_lote")
             try:
                 observacoes = item.get("observacoes") or observacoes_padrao
                 _registrar_no_conn(
@@ -242,12 +239,15 @@ def registrar_lote(
                     data_leitura=item.get("data_leitura"),
                     responsavel_id=item.get("responsavel_id") or responsavel_id,
                     observacoes=observacoes,
-                    permitir_regressao=permitir_regressao,
+                    permitir_regressao=item.get("permitir_regressao", permitir_regressao),
                     cols=cols,
                     schema=schema,
                 )
+                cur.execute("RELEASE SAVEPOINT sp_leitura_lote")
                 importados += 1
             except Exception as exc:
+                cur.execute("ROLLBACK TO SAVEPOINT sp_leitura_lote")
+                cur.execute("RELEASE SAVEPOINT sp_leitura_lote")
                 erros.append(
                     {
                         "linha": item.get("linha"),
@@ -255,14 +255,7 @@ def registrar_lote(
                         "erro": str(exc),
                     }
                 )
-        if erros:
-            conn.rollback()
-        else:
-            conn.commit()
-            try:
-                cache_service.invalidate_planejamento()
-            except Exception:
-                pass
+        conn.commit()
         return {"importados": importados, "falhas": len(erros), "erros": erros}
     finally:
         release_conn(conn)
