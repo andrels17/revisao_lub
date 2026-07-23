@@ -11,6 +11,7 @@ import streamlit as st
 from database.connection import get_conn, release_conn
 from services import prioridades_service
 from ui.exportacao import botao_exportar_excel, botao_exportar_pdf_relatorio_manutencao
+from ui.theme import render_hero
 
 try:
     import psycopg2
@@ -558,15 +559,10 @@ def _render_sem_movimentacao(setor_id=None, equipamento_id=None) -> None:
     st.dataframe(pd.DataFrame(top10), use_container_width=True, hide_index=True)
 
 def _render_page_header() -> None:
-    st.markdown(
-        """
-        <div class="page-header-card">
-            <div class="eyebrow">📈 Ferramentas</div>
-            <h2>Relatório de manutenção</h2>
-            <p>Consolide revisões e lubrificações por período, enxergue a distribuição operacional e exporte o resultado em um formato mais executivo.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_hero(
+        "Relatório de manutenção",
+        "Consolide revisões e lubrificações por período, enxergue a distribuição operacional e exporte o resultado em um formato mais executivo.",
+        badge="📈 Ferramentas",
     )
 
 

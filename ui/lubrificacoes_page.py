@@ -7,6 +7,7 @@ import streamlit as st
 
 from ui.constants import STATUS_LABEL, STATUS_ORDEM
 from ui.exportacao import botao_exportar_excel
+from ui.theme import render_hero
 
 from services import (
     equipamentos_service,
@@ -122,15 +123,10 @@ def _render_primeira_troca_styles() -> None:
 
 
 def _render_page_header() -> None:
-    st.markdown(
-        """
-        <div class="page-header-card">
-            <div class="eyebrow">🛢️ Operação</div>
-            <h2>Controle de lubrificações</h2>
-            <p>Priorize itens críticos, acompanhe o ciclo por equipamento e registre execuções com uma leitura mais limpa e objetiva.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_hero(
+        "Controle de lubrificações",
+        "Priorize itens críticos, acompanhe o ciclo por equipamento e registre execuções com uma leitura mais limpa e objetiva.",
+        badge="🛢️ Operação",
     )
 
 

@@ -7,18 +7,14 @@ import pandas as pd
 import streamlit as st
 
 from services import auth_service, ciclos_service
+from ui.theme import render_hero
 
 
 def _render_header() -> None:
-    st.markdown(
-        """
-        <div class="page-header-card">
-            <div class="eyebrow">🔄 Operação</div>
-            <h2>Ciclos operacionais</h2>
-            <p>Abra, acompanhe e feche ciclos formais de revisão e lubrificação com rastreabilidade e histórico confiável.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_hero(
+        "Ciclos operacionais",
+        "Abra, acompanhe e feche ciclos formais de revisão e lubrificação com rastreabilidade e histórico confiável.",
+        badge="🔄 Operação",
     )
 
 

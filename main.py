@@ -1,6 +1,5 @@
 import traceback
 import unicodedata
-import re
 
 import streamlit as st
 from ui import (
@@ -93,15 +92,9 @@ SECOES = {
 
 
 def _slugify(texto: str) -> str:
-    texto = (
-        unicodedata.normalize("NFKD", texto)
-        .encode("ascii", "ignore")
-        .decode("ascii")
-    )
-
-    slug = re.sub(r"[^a-zA-Z0-9]+", "-", texto.lower())
-    slug = re.sub(r"-+", "-", slug).strip("-")
-
+    """Gera um url_path ascii/kebab-case a partir do título da página."""
+    normalizado = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    slug = "-".join(normalizado.lower().split())
     return slug or "pagina"
 
 

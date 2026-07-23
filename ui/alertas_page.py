@@ -15,6 +15,7 @@ from services import (
 )
 from ui.constants import STATUS_LABEL
 from ui.exportacao import botao_exportar_excel
+from ui.theme import pill_html, render_hero
 
 
 QUEUE_READY = "Prontos para envio"
@@ -38,15 +39,9 @@ def _inject_styles():
         .alerts-card .item,.queue-card .item{color:#a9bdd8;font-size:.84rem;font-weight:700;}
         .alerts-card .meta,.queue-card .meta{color:#9db0c7;font-size:.82rem;margin-top:.45rem;line-height:1.55;}
         .alerts-card .resp,.queue-card .resp{color:#c7d7ec;font-size:.83rem;margin-top:.45rem;}
+        /* .alert-badge/.alert-badges — badges agora usam o componente
+           .pill de ui/theme.py; .alert-badges (wrapper flex) permanece. */
         .alert-badges{display:flex;gap:.45rem;flex-wrap:wrap;margin-bottom:.35rem;}
-        .alert-badge{
-            display:inline-flex;align-items:center;padding:.22rem .6rem;border-radius:999px;
-            font-size:.72rem;font-weight:800;border:1px solid transparent;
-        }
-        .alert-badge-danger{background:rgba(239,68,68,.12);color:#fecaca;border-color:rgba(239,68,68,.18);}
-        .alert-badge-warning{background:rgba(245,158,11,.12);color:#fde68a;border-color:rgba(245,158,11,.18);}
-        .alert-badge-info{background:rgba(79,140,255,.12);color:#dcebff;border-color:rgba(79,140,255,.18);}
-        .alert-badge-success{background:rgba(34,197,94,.12);color:#bbf7d0;border-color:rgba(34,197,94,.18);}
         .alert-message pre {
             background:rgba(7,17,31,.72) !important;border:1px solid rgba(148,163,184,.1) !important;
             border-radius:14px !important;color:#e7f0ff !important;
@@ -208,15 +203,10 @@ def _batch_message(recipient_name: str, itens: list[dict]) -> str:
 
 
 def _render_page_header() -> None:
-    st.markdown(
-        """
-        <div class="page-header-card">
-            <div class="eyebrow">Comunicação</div>
-            <h2>Central de WhatsApp</h2>
-            <p>Agora a aba funciona como uma fila operacional real: mostra quem deve ser acionado, o que está pronto para envio, o que está bloqueado e o histórico do que já foi disparado.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_hero(
+        "Central de WhatsApp",
+        "Agora a aba funciona como uma fila operacional real: mostra quem deve ser acionado, o que está pronto para envio, o que está bloqueado e o histórico do que já foi disparado.",
+        badge="Comunicação",
     )
 
 
@@ -279,22 +269,8 @@ def _mensagem_alerta(tipo: str, eqp: dict, item: dict, responsavel_nome: str):
     return alertas_service.montar_mensagem_lubrificacao(eqp, item, responsavel_nome)
 
 
-def _badge_css(status_raw: str) -> str:
-    if status_raw == "VENCIDO":
-        return "alert-badge alert-badge-danger"
-    if status_raw == "PROXIMO":
-        return "alert-badge alert-badge-warning"
-    return "alert-badge alert-badge-info"
-
-
 def _queue_badge(label: str, kind: str = "info") -> str:
-    css = {
-        "danger": "alert-badge alert-badge-danger",
-        "warning": "alert-badge alert-badge-warning",
-        "success": "alert-badge alert-badge-success",
-        "info": "alert-badge alert-badge-info",
-    }.get(kind, "alert-badge alert-badge-info")
-    return f"<span class='{css}'>{label}</span>"
+    return pill_html(label, kind)
 
 
 def _recipient_selector(prefix: str, destinatarios: list[dict]):

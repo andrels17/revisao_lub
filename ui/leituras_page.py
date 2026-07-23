@@ -7,6 +7,7 @@ import streamlit as st
 
 from services import equipamentos_service, leituras_service, responsaveis_service
 from ui.exportacao import botao_exportar_excel
+from ui.theme import render_hero
 
 
 PLOTLY_COLORS = {
@@ -44,15 +45,10 @@ def _fmt_eqp(e):
 
 
 def _render_page_header() -> None:
-    st.markdown(
-        """
-        <div class="page-header-card">
-            <div class="eyebrow">🧾 Operação</div>
-            <h2>Leituras de KM / horas</h2>
-            <p>Atualize hodômetros e horímetros manualmente ou por planilha, com histórico pronto para consulta e auditoria.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_hero(
+        "Leituras de KM / horas",
+        "Atualize hodômetros e horímetros manualmente ou por planilha, com histórico pronto para consulta e auditoria.",
+        badge="🧾 Operação",
     )
 
 
