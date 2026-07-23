@@ -49,13 +49,26 @@ def render():
         if not email or not senha:
             st.warning("Preencha e-mail e senha.")
         else:
+            erro_exibido = False
+            usuario = None
             with st.spinner("Verificando credenciais…"):
-                usuario = auth_service.login(email, senha)
+                try:
+                    usuario = auth_service.login(email, senha)
+                except PermissionError as exc:
+                    minutos = str(exc).replace("BLOQUEADO:", "").strip()
+                    st.error(
+                        f"🔒 **Acesso bloqueado temporariamente.** "
+                        f"Muitas tentativas incorretas. Aguarde ~{minutos} min."
+                    )
+                    erro_exibido = True
+                except Exception:
+                    st.error("Erro de conexão. Tente novamente em instantes.")
+                    erro_exibido = True
             if usuario:
                 st.session_state["usuario"] = usuario
                 st.session_state.pop("pagina_atual", None)
                 st.rerun()
-            else:
+            elif not erro_exibido:
                 st.error("E-mail ou senha incorretos, ou usuário inativo.")
 
     st.caption("Esqueceu sua senha? Contate o administrador do sistema.")

@@ -57,6 +57,7 @@ ROLE_PAGINAS["admin"] = {
     "📥 Importar Equipamentos", "📈 Relatório de Manutenção",
     "⚙️ Configurações",
     "🔥 Prioridades do Dia",
+    "📋 Log de Auditoria",
 }
 ROLE_PAGINAS["gestor"] = {
     "🧭 Painel Operacional",
@@ -93,7 +94,104 @@ def verificar_senha(senha: str, senha_hash: str) -> bool:
     except Exception:
         return False
 
+def _validar_senha(senha: str) -> tuple[bool, str]:
+    """Valida requisitos mínimos de segurança para senhas."""
+    if not senha or len(senha) < 8:
+        return False, "Senha deve ter ao menos 8 caracteres."
+    if not any(c.isupper() for c in senha):
+        return False, "Senha deve conter ao menos uma letra maiúscula."
+    if not any(c.isdigit() for c in senha):
+        return False, "Senha deve conter ao menos um número."
+    return True, ""
+
+MAX_TENTATIVAS = 5
+BLOQUEIO_MINUTOS = 15
+
+
+def _garantir_tabela_tentativas() -> None:
+    """Cria a tabela de tentativas de login se não existir."""
+    try:
+        with get_conn() as conn:
+            conn.cursor().execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.tentativas_login (
+                    id SERIAL PRIMARY KEY,
+                    email VARCHAR(255) NOT NULL,
+                    ip VARCHAR(45),
+                    sucesso BOOLEAN NOT NULL DEFAULT FALSE,
+                    tentativa_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_tentativas_login_email_em
+                    ON public.tentativas_login(email, tentativa_em);
+                """
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+
+def _registrar_tentativa(email: str, sucesso: bool) -> None:
+    """Registra uma tentativa de login no banco."""
+    try:
+        with get_conn() as conn:
+            conn.cursor().execute(
+                "INSERT INTO public.tentativas_login (email, sucesso) VALUES (%s, %s)",
+                (email.strip().lower(), sucesso),
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+
+def verificar_bloqueio(email: str) -> tuple[bool, int]:
+    """
+    Verifica se o email está bloqueado por excesso de tentativas.
+    Retorna (bloqueado: bool, minutos_restantes: int).
+    """
+    try:
+        _garantir_tabela_tentativas()
+        janela = f"NOW() - INTERVAL '{BLOQUEIO_MINUTOS} minutes'"
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                f"""
+                SELECT COUNT(*) FROM public.tentativas_login
+                WHERE email = %s
+                  AND sucesso = FALSE
+                  AND tentativa_em >= {janela}
+                """,
+                (email.strip().lower(),),
+            )
+            count = cur.fetchone()[0]
+            if count >= MAX_TENTATIVAS:
+                cur.execute(
+                    f"""
+                    SELECT MAX(tentativa_em) FROM public.tentativas_login
+                    WHERE email = %s AND sucesso = FALSE AND tentativa_em >= {janela}
+                    """,
+                    (email.strip().lower(),),
+                )
+                ultima = cur.fetchone()[0]
+                if ultima:
+                    import datetime as _dt
+                    agora = _dt.datetime.now(_dt.timezone.utc)
+                    try:
+                        delta = agora - ultima
+                    except TypeError:
+                        delta = agora.replace(tzinfo=None) - ultima
+                    restante = max(0, BLOQUEIO_MINUTOS * 60 - int(delta.total_seconds()))
+                    return True, restante // 60
+    except Exception:
+        pass
+    return False, 0
+
+
 def login(email: str, senha: str) -> dict | None:
+    _garantir_tabela_tentativas()
+    bloqueado, minutos = verificar_bloqueio(email)
+    if bloqueado:
+        raise PermissionError(f"BLOQUEADO:{minutos}")
+
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -107,12 +205,16 @@ def login(email: str, senha: str) -> dict | None:
         )
         row = cur.fetchone()
     if not row:
+        _registrar_tentativa(email, False)
         return None
     uid, nome, email_db, senha_hash, role, ativo, resp_id = row
     if not ativo:
+        _registrar_tentativa(email, False)
         return None
     if not verificar_senha(senha, senha_hash):
+        _registrar_tentativa(email, False)
         return None
+    _registrar_tentativa(email, True)
     try:
         with get_conn() as conn:
             conn.cursor().execute(
@@ -122,7 +224,7 @@ def login(email: str, senha: str) -> dict | None:
     except Exception:
         pass
     return {
-        "id":             uid,  # UUID como str
+        "id":             uid,
         "nome":           nome,
         "email":          email_db,
         "role":           role,
@@ -176,6 +278,9 @@ def criar_usuario(
     responsavel_id: str | None = None,
 ) -> tuple[bool, str]:
     try:
+        ok_pwd, msg_pwd = _validar_senha(senha)
+        if not ok_pwd:
+            return False, msg_pwd
         h = hash_senha(senha)
         with get_conn() as conn:
             conn.cursor().execute(
@@ -204,6 +309,9 @@ def editar_usuario(
         with get_conn() as conn:
             cur = conn.cursor()
             if nova_senha:
+                ok_pwd, msg_pwd = _validar_senha(nova_senha)
+                if not ok_pwd:
+                    return False, msg_pwd
                 cur.execute(
                     """
                     UPDATE usuarios

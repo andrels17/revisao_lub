@@ -99,3 +99,85 @@ def registrar_no_conn(conn, acao: str, entidade: str, entidade_id=None, valor_an
             conn.rollback()
         except Exception:
             pass
+
+
+def listar_logs(
+    limite: int = 500,
+    usuario_id: str | None = None,
+    entidade: str | None = None,
+    acao: str | None = None,
+    data_inicio=None,
+    data_fim=None,
+) -> list[dict]:
+    """Lista logs de auditoria com filtros opcionais."""
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        filtros = []
+        params: list = []
+        if usuario_id:
+            filtros.append("l.usuario_id = %s::uuid")
+            params.append(usuario_id)
+        if entidade:
+            filtros.append("l.entidade = %s")
+            params.append(entidade)
+        if acao:
+            filtros.append("l.acao = %s")
+            params.append(acao)
+        if data_inicio:
+            filtros.append("l.criado_em::date >= %s")
+            params.append(data_inicio)
+        if data_fim:
+            filtros.append("l.criado_em::date <= %s")
+            params.append(data_fim)
+        where = ("WHERE " + " AND ".join(filtros)) if filtros else ""
+        params.append(limite)
+        cur.execute(
+            f"""
+            SELECT l.id, l.criado_em, l.acao, l.entidade, l.entidade_id,
+                   u.nome AS usuario_nome, u.email AS usuario_email,
+                   l.valor_antigo, l.valor_novo
+            FROM public.log_auditoria l
+            LEFT JOIN public.usuarios u ON u.id = l.usuario_id
+            {where}
+            ORDER BY l.criado_em DESC
+            LIMIT %s
+            """,
+            params,
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return []
+    finally:
+        release_conn(conn)
+
+
+def listar_entidades() -> list[str]:
+    """Retorna entidades distintas registradas no log de auditoria."""
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT DISTINCT entidade FROM public.log_auditoria ORDER BY entidade")
+        return [r[0] for r in cur.fetchall() if r[0]]
+    except Exception:
+        return []
+    finally:
+        release_conn(conn)
+
+
+def listar_acoes() -> list[str]:
+    """Retorna ações distintas registradas no log de auditoria."""
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT DISTINCT acao FROM public.log_auditoria ORDER BY acao")
+        return [r[0] for r in cur.fetchall() if r[0]]
+    except Exception:
+        return []
+    finally:
+        release_conn(conn)

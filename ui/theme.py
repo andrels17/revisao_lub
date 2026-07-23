@@ -431,8 +431,41 @@ def apply_global_theme() -> None:
         label, .stMarkdown, p, span, div { color: inherit; }
         h1, h2, h3 { letter-spacing: -.018em; }
 
+        /* ── Responsividade mobile (melhoria #8) ───────────────────── */
         @media (max-width: 768px) {
-            .block-container { padding-left: .8rem !important; padding-right: .8rem !important; }
+            .block-container {
+                padding-left: .6rem !important;
+                padding-right: .6rem !important;
+                padding-top: .8rem !important;
+            }
+            /* KPI grids colapsam para 2 colunas em tablets */
+            .status-kpi-grid { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+            .kpi-grid-rich { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+            /* Ajuste de texto em cards */
+            .status-kpi .value { font-size: 1.4rem !important; }
+            .kpi-card-rich .kpi-val { font-size: 1.6rem !important; }
+            /* App hero mais compacto */
+            .app-hero { padding: .6rem .75rem !important; }
+            .app-hero h2 { font-size: .95rem !important; }
+            /* DataFrames com scroll horizontal */
+            [data-testid="stDataFrame"] { overflow-x: auto !important; }
+            /* Section cards mais compactos */
+            .section-card { padding: .65rem .75rem .6rem !important; }
+        }
+        @media (max-width: 520px) {
+            /* Em celulares, tudo em coluna única */
+            .status-kpi-grid { grid-template-columns: 1fr !important; }
+            .kpi-grid-rich { grid-template-columns: 1fr !important; }
+            /* Sidebar oculta automaticamente (comportamento nativo do Streamlit) */
+            .block-container {
+                padding-left: .4rem !important;
+                padding-right: .4rem !important;
+            }
+            /* Botões full-width em mobile */
+            .stButton > button { width: 100% !important; }
+            /* Texto hero menor */
+            .page-hero h2 { font-size: 1.5rem !important; }
+            .page-hero p { font-size: .84rem !important; }
         }
         </style>
         """,

@@ -405,3 +405,69 @@ def carregar_movimentacao(janela_dias: int = 30) -> dict[str, Any]:
             "inconsistencias": inconsistencias[:10],
         },
     }
+
+
+def estimar_data_vencimento(
+    historico_leituras: list[dict],
+    falta: float,
+    tipo_controle: str = "km",
+) -> str | None:
+    """
+    Estima em quantos dias o equipamento atingirá o vencimento,
+    com base na velocidade média de uso das últimas leituras.
+    
+    Retorna string formatada como 'em ~N dias' ou None se não for possível calcular.
+    """
+    import datetime as _dt
+    
+    if not historico_leituras or len(historico_leituras) < 2 or falta <= 0:
+        return None
+    
+    try:
+        tipo = str(tipo_controle or "km").lower()
+        val_key = "horas_valor" if tipo == "horas" else "km_valor"
+        
+        # Usar as últimas N leituras para calcular velocidade média
+        amostras = historico_leituras[:6]
+        deltas = []
+        for i in range(len(amostras) - 1):
+            atual = amostras[i]
+            anterior = amostras[i + 1]
+            val_atual = _safe_float(atual.get(val_key))
+            val_anterior = _safe_float(anterior.get(val_key))
+            data_atual = atual.get("data_leitura")
+            data_anterior = anterior.get("data_leitura")
+            
+            if not data_atual or not data_anterior:
+                continue
+            diff_valor = val_atual - val_anterior
+            try:
+                diff_dias = (data_atual - data_anterior).days
+            except Exception:
+                continue
+            
+            if diff_dias > 0 and diff_valor > 0:
+                deltas.append(diff_valor / diff_dias)  # unidade por dia
+        
+        if not deltas:
+            return None
+        
+        velocidade_media = sum(deltas) / len(deltas)
+        if velocidade_media <= 0:
+            return None
+        
+        dias_estimados = round(falta / velocidade_media)
+        
+        if dias_estimados <= 0:
+            return "hoje"
+        if dias_estimados == 1:
+            return "em ~1 dia"
+        if dias_estimados < 7:
+            return f"em ~{dias_estimados} dias"
+        semanas = round(dias_estimados / 7)
+        if semanas < 4:
+            return f"em ~{semanas} sem."
+        meses = round(dias_estimados / 30)
+        return f"em ~{meses} mês(es)"
+    except Exception:
+        return None

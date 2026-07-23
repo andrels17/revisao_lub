@@ -167,6 +167,74 @@ def _grafico_evolucao(dados: list, tipo_leitura: str):
         st.line_chart(df[series].set_index("Data"), use_container_width=True)
 
 
+def _render_grafico_historico(historico: list, tipo_controle: str) -> None:
+    """Renderiza gráfico de linha com evolução de KM/Horas ao longo do tempo."""
+    if not historico or len(historico) < 2:
+        return
+    try:
+        import plotly.graph_objects as go
+        import pandas as pd
+        
+        df = pd.DataFrame(historico)
+        # Determinar coluna de data e valor
+        data_col = next((c for c in ["data_leitura", "data", "data_registro"] if c in df.columns), None)
+        if tipo_controle == "horas":
+            val_col = next((c for c in ["horas_valor", "horas"] if c in df.columns), None)
+            label_eixo = "Horas"
+            cor = PLOTLY_COLORS["horas"]
+        else:
+            val_col = next((c for c in ["km_valor", "km"] if c in df.columns), None)
+            label_eixo = "KM"
+            cor = PLOTLY_COLORS["km"]
+        
+        if not data_col or not val_col:
+            return
+        
+        df_plot = df[[data_col, val_col]].dropna().copy()
+        df_plot = df_plot.sort_values(data_col)
+        df_plot[val_col] = pd.to_numeric(df_plot[val_col], errors="coerce")
+        df_plot = df_plot.dropna()
+        
+        if df_plot.empty:
+            return
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df_plot[data_col],
+            y=df_plot[val_col],
+            mode="lines+markers",
+            name=label_eixo,
+            line=dict(color=cor, width=2.5),
+            marker=dict(size=6, color=cor, line=dict(color="#07111f", width=1.5)),
+            hovertemplate=f"%{{x|%d/%m/%Y}}: %{{y:,.0f}} {label_eixo.lower()}<extra></extra>",
+            fill="tozeroy",
+            fillcolor=f"rgba({','.join(str(int(cor.lstrip('#')[i:i+2], 16)) for i in (0, 2, 4))}, 0.08)",
+        ))
+        fig.update_layout(
+            height=220,
+            margin=dict(t=8, b=8, l=8, r=8),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#c8dcf4", size=11),
+            showlegend=False,
+            xaxis=dict(
+                showgrid=False, zeroline=False, showline=False, ticks="",
+                tickfont=dict(color="#8fa4c0", size=10),
+            ),
+            yaxis=dict(
+                showgrid=True, gridcolor="rgba(148,163,184,.08)",
+                zeroline=False, showline=False, ticks="",
+                tickfont=dict(color="#8fa4c0", size=10),
+                tickformat=",.0f",
+            ),
+            hoverlabel=dict(bgcolor="#0b1525", font=dict(color="#e8f1ff", size=12)),
+        )
+        st.markdown(f"**📈 Evolução de {label_eixo}**")
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    except Exception:
+        pass
+
+
 def _determinar_tipo_grafico(dados: list, escolha: str):
     if escolha != "automatico":
         return escolha
@@ -645,6 +713,9 @@ def render():
         with col_exp:
             botao_exportar_excel(df, f"leituras_{eqp_hist['codigo']}", label="⬇️ Excel", key="exp_leit")
         st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        tipo_controle_eqp = _tipo_oficial(eqp_hist)
+        _render_grafico_historico(dados, tipo_controle_eqp)
 
 
 def _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs, permitir_regressao=False):

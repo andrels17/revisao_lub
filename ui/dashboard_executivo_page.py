@@ -597,6 +597,33 @@ def render():
     with st.spinner("Consolidando visão executiva…"):
         dados = inteligencia_service.carregar_painel_executivo()
 
+    # Exibir Fleet Health Score
+    hs = dados.get("health_score") or {}
+    if hs:
+        score = hs.get("score", 0)
+        nivel = hs.get("nivel", "-")
+        cor = hs.get("cor", "#8fa4c0")
+        st.markdown(
+            f"""
+            <div style="border:1px solid rgba(148,163,184,.14);border-radius:18px;padding:1rem 1.2rem;
+                        background:linear-gradient(135deg,rgba(16,26,44,.96),rgba(11,23,38,.98));
+                        margin-bottom:.8rem;display:flex;align-items:center;gap:1.5rem;">
+                <div style="flex:0 0 auto;">
+                    <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#8fa4c0;margin-bottom:.3rem;">Fleet Health Score</div>
+                    <div style="font-size:2.8rem;font-weight:900;color:{cor};line-height:1;">{score:.0f}<span style="font-size:1.2rem;color:#8fa4c0;">%</span></div>
+                </div>
+                <div style="flex:1;">
+                    <div style="height:12px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:.5rem;">
+                        <div style="height:100%;width:{score:.0f}%;border-radius:inherit;background:linear-gradient(90deg,{cor}88,{cor});"></div>
+                    </div>
+                    <div style="font-size:.84rem;font-weight:700;color:#eff6ff;">{nivel}</div>
+                    <div style="font-size:.76rem;color:#8fa4c0;margin-top:.15rem;">Índice composto de saúde da frota baseado em alertas, equipamentos parados e anomalias de leitura.</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     _hero(dados)
 
     k = dados.get("kpis", {})

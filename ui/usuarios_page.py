@@ -55,8 +55,9 @@ def _form_criar():
             erros.append("Senha obrigatória.")
         if senha != senha2:
             erros.append("As senhas não coincidem.")
-        if len(senha) < 6:
-            erros.append("Senha deve ter ao menos 6 caracteres.")
+        ok_senha, msg_senha = auth_service._validar_senha(senha)
+        if not ok_senha:
+            erros.append(msg_senha)
         if erros:
             for e in erros:
                 st.error(e)

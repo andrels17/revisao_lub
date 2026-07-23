@@ -354,6 +354,33 @@ def _render_card_alerta(item_payload: dict, tipo: str, mapa_operacionais: dict, 
             st.success("Envio registrado.")
             _refresh_central()
 
+    # ── Envio por e-mail (Melhoria #5) ─────────────────────────────────────
+    try:
+        from services import email_service
+        if email_service.email_configurado():
+            email_dest = (destinatario or {}).get("email") or ""
+            if email_dest:
+                if tipo == "revisao":
+                    html_corpo, texto_corpo = email_service.montar_html_revisao(eqp, item, nome_destinatario)
+                    assunto = f"[Revisão] {eqp.get('codigo')} — {titulo_item}"
+                else:
+                    html_corpo, texto_corpo = email_service.montar_html_lubrificacao(eqp, item, nome_destinatario)
+                    assunto = f"[Lubrificação] {eqp.get('codigo')} — {titulo_item}"
+                if st.button(
+                    f"📧 Enviar e-mail para {nome_destinatario}",
+                    key=f"email_{tipo}_{eqp['id']}_{titulo_item}",
+                    use_container_width=True,
+                ):
+                    ok, msg_email = email_service.enviar_email(email_dest, assunto, html_corpo, texto_corpo)
+                    if ok:
+                        st.success("📧 E-mail enviado com sucesso!")
+                    else:
+                        st.error(f"Falha ao enviar e-mail: {msg_email}")
+            else:
+                st.caption("📧 Sem e-mail cadastrado para este responsável.")
+    except ImportError:
+        pass  # email_service não disponível
+
     with st.expander("Mensagem pronta"):
         st.markdown("<div class='alert-message'>", unsafe_allow_html=True)
         st.code(mensagem)

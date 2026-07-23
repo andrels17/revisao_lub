@@ -2,9 +2,11 @@ import traceback
 import unicodedata
 import re
 import streamlit as st
+import os
 
 from ui import (
     alertas_page,
+    auditoria_page,
     auth_page,
     configuracoes_page,
     controle_revisoes_page,
@@ -52,6 +54,28 @@ st.set_page_config(
 
 apply_global_theme()
 
+# ── Verificação de configuração na inicialização ──────────────────────
+def _verificar_env():
+    """Verifica variáveis críticas e exibe alerta claro para o admin."""
+    dsn_candidates = [
+        os.getenv("DATABASE_URL"),
+        os.getenv("DB_URL"),
+        os.getenv("NEON_DATABASE_URL"),
+        st.secrets.get("DATABASE_URL") if hasattr(st, "secrets") else None,
+        st.secrets.get("DB_URL") if hasattr(st, "secrets") else None,
+        st.secrets.get("NEON_DATABASE_URL") if hasattr(st, "secrets") else None,
+    ]
+    if not any(dsn_candidates):
+        st.error(
+            "⚠️ **Configuração ausente:** Nenhuma string de conexão com o banco de dados foi encontrada.\n\n"
+            "Defina `DATABASE_URL`, `DB_URL` ou `NEON_DATABASE_URL` em:\n"
+            "- `.streamlit/secrets.toml` (local)\n"
+            "- Variáveis de ambiente do servidor"
+        )
+        st.stop()
+
+_verificar_env()
+
 # Guard de autenticação
 if not auth_service.usuario_logado():
     auth_page.render()
@@ -79,6 +103,7 @@ SECOES = {
         "📱 Alertas WhatsApp": alertas_page,
         "⚙️ Configurações": configuracoes_page,
         "👥 Usuários": usuarios_page,
+        "📋 Log de Auditoria": auditoria_page,
     },
     "Cadastros e Planejamento": {
         "📥 Importar Equipamentos": importacao_page,
