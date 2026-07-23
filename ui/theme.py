@@ -103,7 +103,7 @@ def apply_global_theme() -> None:
             margin-bottom: .2rem;
         }
 
-        /* ── KPI card ───────────────────────────────────────────────── */
+        /* ── KPI card (versão simples, ainda suportada) ────────────────── */
         .status-kpi-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -133,6 +133,109 @@ def apply_global_theme() -> None:
 
         @media (max-width: 900px) { .status-kpi-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
         @media (max-width: 520px) { .status-kpi-grid { grid-template-columns: 1fr; } }
+
+        /* ── KPI card "rico" ────────────────────────────────────────────
+           Componente único para todos os grids de indicadores do app
+           (dashboard, painel executivo, prioridades, equipamentos etc.).
+           Use render_kpi_grid() em vez de recriar isso em cada página. */
+        .kpi-grid-rich {
+            display: grid;
+            grid-template-columns: repeat(var(--kpi-cols, 4), minmax(0, 1fr));
+            gap: .6rem;
+            margin-bottom: .75rem;
+        }
+        .kpi-card-rich {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: .9rem .95rem .85rem;
+            background:
+                radial-gradient(circle at top right, rgba(255,255,255,.045), transparent 36%),
+                linear-gradient(180deg, rgba(16,31,52,.96), rgba(11,24,40,.98));
+            min-height: 120px;
+            transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+        }
+        .kpi-card-rich:hover {
+            transform: translateY(-2px);
+            border-color: rgba(96,165,250,.22);
+            box-shadow: 0 10px 22px rgba(2,8,23,.22);
+        }
+        .kpi-card-rich::before {
+            content: "";
+            position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+            background: var(--kpi-accent, var(--brand));
+        }
+        .kpi-card-rich .kpi-top {
+            display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem;
+        }
+        .kpi-card-rich .kpi-main { min-width: 0; flex: 1; }
+        .kpi-card-rich .kpi-lbl  {
+            font-size: .74rem; color: var(--muted); font-weight: 700;
+            letter-spacing: .02em; margin-bottom: .30rem;
+        }
+        .kpi-card-rich .kpi-val  {
+            font-size: 2rem; font-weight: 800; line-height: .95;
+            color: var(--text); margin-bottom: .28rem;
+        }
+        .kpi-card-rich .kpi-hint { font-size: .73rem; color: var(--muted-2); margin-top: .26rem; line-height: 1.3; }
+        .kpi-card-rich .kpi-meta {
+            display: inline-flex; align-items: center; gap: .35rem;
+            padding: .18rem .52rem; border-radius: 999px;
+            font-size: .68rem; font-weight: 700;
+            background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.05);
+            color: #cfe0f7; white-space: nowrap;
+        }
+        .kpi-card-rich .kpi-icon {
+            flex: 0 0 auto; width: 40px; height: 40px;
+            display: inline-flex; align-items: center; justify-content: center;
+            border-radius: 12px; background: rgba(255,255,255,.05);
+            border: 1px solid rgba(255,255,255,.06);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+        }
+        .kpi-card-rich .kpi-icon .orb {
+            width: 14px; height: 14px; border-radius: 999px;
+            background: var(--kpi-accent, var(--brand));
+            box-shadow: 0 0 0 4px color-mix(in srgb, var(--kpi-accent, var(--brand)) 18%, transparent);
+        }
+        .kpi-card-rich.tone-neutral { --kpi-accent: var(--brand); }
+        .kpi-card-rich.tone-danger  { --kpi-accent: var(--danger); }
+        .kpi-card-rich.tone-warning { --kpi-accent: var(--warning); }
+        .kpi-card-rich.tone-success { --kpi-accent: var(--success); }
+
+        @media (max-width: 900px) { .kpi-grid-rich { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+
+        /* ── Pill / badge de status ─────────────────────────────────────
+           Componente único para os selos coloridos (vencido/próximo/em dia,
+           severidade, etc.) usados em várias páginas. Use pill_html(). */
+        .pill {
+            display: inline-flex; align-items: center;
+            padding: .13rem .5rem; border-radius: 999px;
+            font-size: .68rem; font-weight: 700; white-space: nowrap;
+        }
+        .pill-neutral { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.05); color: #dbeafe; }
+        .pill-danger  { background: rgba(239,68,68,.10);  color: #fecaca; }
+        .pill-warning { background: rgba(245,158,11,.10); color: #fde68a; }
+        .pill-success { background: rgba(34,197,94,.10);  color: #86efac; }
+        .pill-info    { background: rgba(96,165,250,.10); color: #bfdbfe; }
+
+        /* ── Hero de página (cabeçalho com contexto) ────────────────────
+           Use render_hero() em vez de recriar em cada página. */
+        .app-hero {
+            padding: .75rem .9rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            background: var(--surface);
+            margin-bottom: .85rem;
+        }
+        .app-hero .badge {
+            display: inline-block; padding: .15rem .5rem; border-radius: 999px;
+            background: rgba(79,140,255,.10); border: 1px solid rgba(79,140,255,.16);
+            color: #cde0ff; font-size: .68rem; font-weight: 700; margin-bottom: .4rem;
+        }
+        .app-hero h2 { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text); }
+        .app-hero p  { margin: .22rem 0 0; color: var(--muted); font-size: .83rem; }
 
         /* ── Section card ───────────────────────────────────────────── */
         .section-card {
@@ -411,6 +514,75 @@ def render_page_intro(title: str, description: str, chip: str | None = None, bad
         <div class="page-hero">
             {chip_html}
             <h2>{title}</h2>
+            {desc_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_kpi_grid(itens: list[dict], colunas: int | None = None) -> None:
+    """Renderiza um grid de KPI cards padronizado (ícone, valor, meta, hint).
+
+    Cada item em `itens` aceita as chaves:
+        label (str), value (str|int|float), hint (str, opcional),
+        meta (str, opcional — texto do selinho no topo do card),
+        tone ("neutral" | "danger" | "warning" | "success", opcional)
+
+    Substitui os blocos `.dash-kpi`, `.prio-kpi`, `.exec-kpi`, `.eq-kpi`
+    que antes eram reimplementados em cada página.
+    """
+    colunas = colunas or len(itens) or 1
+    style = f" style='--kpi-cols:{colunas}'" if colunas != 4 else ""
+    partes = [f"<div class='kpi-grid-rich'{style}>"]
+    for item in itens:
+        tone = item.get("tone", "neutral")
+        label = html.escape(str(item.get("label", "")))
+        value = html.escape(str(item.get("value", "")))
+        hint = html.escape(str(item.get("hint", "")))
+        meta = item.get("meta")
+        meta_html = f"<div class='kpi-meta'>{html.escape(str(meta))}</div>" if meta else ""
+        hint_html = f"<div class='kpi-hint'>{hint}</div>" if hint else ""
+        partes.append(
+            f"""<div class="kpi-card-rich tone-{tone}">
+                <div class="kpi-top">
+                    <div class="kpi-main">
+                        <div class="kpi-lbl">{label}</div>
+                        <div class="kpi-val">{value}</div>
+                        {meta_html}
+                        {hint_html}
+                    </div>
+                    <div class="kpi-icon"><span class="orb"></span></div>
+                </div>
+            </div>"""
+        )
+    partes.append("</div>")
+    st.markdown("".join(partes), unsafe_allow_html=True)
+
+
+def pill_html(texto: str, tone: str = "neutral") -> str:
+    """Retorna o HTML de um selo/pill colorido (vencido, próximo, em dia etc.).
+
+    Uso: st.markdown(pill_html("Vencido", "danger"), unsafe_allow_html=True)
+    ou embuta em blocos maiores de HTML que a própria página já monta.
+    Substitui `.alert-badge`, `.prio-badge`, `.exec-badge`, `.rev-b`, `.eq-chip`.
+    """
+    return f"<span class='pill pill-{tone}'>{html.escape(str(texto))}</span>"
+
+
+def render_hero(titulo: str, descricao: str = "", badge: str = "") -> None:
+    """Cabeçalho de destaque no topo de uma página (substitui `.dash-hero`,
+    `.prio-hero`, `.exec-hero` — todos eram o mesmo componente com nomes
+    diferentes)."""
+    titulo = html.escape(str(titulo))
+    descricao = html.escape(str(descricao))
+    badge_html = f"<div class='badge'>{html.escape(str(badge))}</div>" if badge else ""
+    desc_html = f"<p>{descricao}</p>" if descricao else ""
+    st.markdown(
+        f"""
+        <div class="app-hero">
+            {badge_html}
+            <h2>{titulo}</h2>
             {desc_html}
         </div>
         """,

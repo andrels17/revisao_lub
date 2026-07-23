@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from services import dashboard_service, inteligencia_service, prioridades_service
-from ui.theme import render_page_intro
+from ui.theme import pill_html, render_page_intro
 
 
 def _css() -> None:
@@ -53,22 +53,7 @@ def _css() -> None:
             background: radial-gradient(circle, rgba(79,140,255,.22) 0%, rgba(79,140,255,0) 72%);
             pointer-events: none;
         }
-        .exec-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: .35rem;
-            padding: .22rem .62rem;
-            border-radius: 999px;
-            border: 1px solid rgba(255,255,255,.08);
-            background: rgba(255,255,255,.05);
-            color: #dbeafe;
-            font-size: .72rem;
-            font-weight: 800;
-            letter-spacing: .02em;
-        }
-        .exec-badge.crit { background: rgba(239,68,68,.14); color: #fecaca; }
-        .exec-badge.alt { background: rgba(245,158,11,.14); color: #fde68a; }
-        .exec-badge.ok { background: rgba(34,197,94,.14); color: #bbf7d0; }
+        /* .exec-badge removido — agora é o componente .pill de ui/theme.py */
 
         .exec-hero-grid {
             display: grid;
@@ -260,16 +245,7 @@ def _css() -> None:
             gap: .36rem;
             margin-top: .55rem;
         }
-        .exec-tag {
-            display: inline-flex;
-            padding: .16rem .48rem;
-            border-radius: 999px;
-            background: rgba(255,255,255,.04);
-            border: 1px solid rgba(255,255,255,.06);
-            color: #dbeafe;
-            font-size: .68rem;
-            font-weight: 700;
-        }
+        /* .exec-tag removido — agora é o componente .pill (tone-neutral) */
         .exec-priority-action {
             margin-top: .7rem;
             padding: .62rem .72rem;
@@ -290,20 +266,7 @@ def _css() -> None:
             font-size: .8rem;
             line-height: 1.4;
         }
-        .exec-severity {
-            display: inline-flex;
-            align-items: center;
-            gap: .3rem;
-            padding: .18rem .55rem;
-            border-radius: 999px;
-            font-size: .7rem;
-            font-weight: 800;
-            border: 1px solid rgba(255,255,255,.08);
-        }
-        .exec-severity.crit { background: rgba(239,68,68,.14); color: #fecaca; }
-        .exec-severity.alt { background: rgba(245,158,11,.14); color: #fde68a; }
-        .exec-severity.med { background: rgba(79,140,255,.14); color: #bfdbfe; }
-        .exec-severity.low { background: rgba(34,197,94,.14); color: #bbf7d0; }
+        /* .exec-severity removido — agora é o componente .pill de ui/theme.py */
 
         .exec-risk-list { display: grid; gap: .55rem; }
         .exec-risk-row {
@@ -404,6 +367,10 @@ def _sev_class(criticidade: str) -> str:
     return {"Crítica": "crit", "Alta": "alt", "Média": "med", "Baixa": "low"}.get(criticidade, "low")
 
 
+_TONE_SEVERIDADE = {"crit": "danger", "alt": "warning", "med": "info", "low": "success"}
+_TONE_STATUS = {"crit": "danger", "alt": "warning", "ok": "success"}
+
+
 def _safe_int(valor) -> int:
     try:
         return int(float(valor or 0))
@@ -443,7 +410,7 @@ def _hero(dados: dict) -> None:
         <div class="exec-hero">
             <div class="exec-hero-grid">
                 <div>
-                    <span class="exec-badge {badge_css}">{html.escape(badge_txt)}</span>
+                    {pill_html(badge_txt, _TONE_STATUS.get(badge_css, "neutral"))}
                     <h2>{html.escape(titulo)}</h2>
                     <p>{html.escape(subtitulo)}</p>
                 </div>
@@ -492,12 +459,12 @@ def _render_priority_card(item: dict, pos: int) -> None:
                     <h4>{pos}. {html.escape(equipamento)}</h4>
                     <div class="subtitle">{html.escape(resumo)}</div>
                 </div>
-                <span class="exec-severity {sev}">{html.escape(criticidade)}</span>
+                {pill_html(criticidade, _TONE_SEVERIDADE.get(sev, "neutral"))}
             </div>
             <div class="exec-tag-row">
-                <span class="exec-tag">{html.escape(setor)}</span>
-                <span class="exec-tag">{html.escape(origem)}</span>
-                <span class="exec-tag">{html.escape(status)}</span>
+                {pill_html(setor, "neutral")}
+                {pill_html(origem, "neutral")}
+                {pill_html(status, "neutral")}
             </div>
             <div class="exec-priority-action">
                 <div class="lbl">Ação recomendada</div>
@@ -653,7 +620,7 @@ def render():
     with left:
         with st.container():
             st.markdown('<div class="exec-panel">', unsafe_allow_html=True)
-            _section_head("Ações prioritárias", "O que a diretoria precisa enxergar primeiro para direcionar a rotina.", '<div class="exec-badge crit">Top 5</div>')
+            _section_head("Ações prioritárias", "O que a diretoria precisa enxergar primeiro para direcionar a rotina.", pill_html("Top 5", "danger"))
             top_alertas = dados.get("top_alertas") or []
             if top_alertas:
                 for idx, item in enumerate(top_alertas[:5], start=1):

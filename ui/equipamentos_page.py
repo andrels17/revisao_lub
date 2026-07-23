@@ -16,31 +16,17 @@ from services import (
     setores_service,
     leituras_service,
 )
+from ui import nav
 from ui.constants import STATUS_LABEL
-from ui.theme import render_page_intro
+from ui.theme import pill_html, render_kpi_grid, render_page_intro
 
 
 def _inject_css():
     st.markdown(
         """
         <style>
-        .eq-kpi-strip {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0,1fr));
-            gap: .55rem;
-            margin-bottom: 1rem;
-        }
-        .eq-kpi {
-            border: 1px solid rgba(148,163,184,.12);
-            border-radius: 10px;
-            padding: .65rem .85rem;
-            background: #0d1929;
-        }
-        .eq-kpi .lbl  { font-size: .70rem; color: #6b84a0; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin-bottom: .22rem; }
-        .eq-kpi .val  { font-size: 1.45rem; font-weight: 700; line-height: 1; color: #e8f1ff; }
-        .eq-kpi .val.ok     { color: #86efac; }
-        .eq-kpi .val.warn   { color: #fcd34d; }
-        .eq-kpi .val.danger { color: #fca5a5; }
+        /* KPI strip e badges (.eq-b/.eq-ok/.eq-warn/.eq-danger/.eq-neutral)
+           agora vêm de ui/theme.py (render_kpi_grid / pill_html). */
 
         .eq-card {
             border: 1px solid rgba(148,163,184,.12);
@@ -65,16 +51,8 @@ def _inject_css():
             font-size: .65rem; font-weight: 700;
         }
 
-        .eq-b {
-            display: inline-block;
-            padding: .14rem .45rem;
-            border-radius: 999px;
-            font-size: .69rem; font-weight: 700;
-        }
-        .eq-ok      { background: rgba(34,197,94,.10);  color: #86efac; }
-        .eq-warn    { background: rgba(245,158,11,.10); color: #fcd34d; }
-        .eq-danger  { background: rgba(239,68,68,.10);  color: #fca5a5; }
-        .eq-neutral { background: rgba(148,163,184,.09); color: #94a8c4; }
+        /* .eq-b/.eq-ok/.eq-warn/.eq-danger/.eq-neutral removidos — agora
+           usam o componente .pill de ui/theme.py */
 
         .eq-modal-head {
             display:flex; align-items:flex-start; justify-content:space-between; gap:1rem;
@@ -158,7 +136,7 @@ def _inject_css():
             margin-top:.35rem;
         }
         @media (max-width: 900px) {
-            .eq-kpi-strip, .eq-modal-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+            .eq-modal-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
         }
         </style>
         """,
@@ -166,21 +144,14 @@ def _inject_css():
     )
 
 
-def _kpi(label: str, value, css_class: str = ""):
-    st.markdown(
-        f'<div class="eq-kpi"><div class="lbl">{label}</div><div class="val {css_class}">{value}</div></div>',
-        unsafe_allow_html=True,
-    )
-
-
 def _badge(saude: str) -> str:
-    css = {
-        "Saudável": "eq-b eq-ok",
-        "Atenção": "eq-b eq-warn",
-        "Crítico": "eq-b eq-danger",
-        "Sem plano": "eq-b eq-neutral",
-    }.get(saude, "eq-b eq-neutral")
-    return f'<span class="{css}">{saude}</span>'
+    tone = {
+        "Saudável": "success",
+        "Atenção": "warning",
+        "Crítico": "danger",
+        "Sem plano": "neutral",
+    }.get(saude, "neutral")
+    return pill_html(saude, tone)
 
 
 def _score_ring(score: int) -> str:
@@ -253,17 +224,12 @@ def _render_summary(rows):
     criticos = sum(1 for r in rows if r.get("saude") == "Crítico")
     sem_plano = sum(1 for r in rows if r.get("saude") == "Sem plano")
 
-    st.markdown('<div class="eq-kpi-strip">', unsafe_allow_html=True)
-    c1, c2, c3, c4 = st.columns(4, gap="small")
-    with c1:
-        _kpi("Total", total)
-    with c2:
-        _kpi("Ativos", ativos, "ok")
-    with c3:
-        _kpi("Críticos", criticos, "danger" if criticos else "")
-    with c4:
-        _kpi("Sem plano", sem_plano, "warn" if sem_plano else "")
-    st.markdown("</div>", unsafe_allow_html=True)
+    render_kpi_grid([
+        {"label": "Total", "value": total, "tone": "neutral"},
+        {"label": "Ativos", "value": ativos, "tone": "success"},
+        {"label": "Críticos", "value": criticos, "tone": "danger" if criticos else "neutral"},
+        {"label": "Sem plano", "value": sem_plano, "tone": "warning" if sem_plano else "neutral"},
+    ])
 
 
 def _slice(rows, page, page_size):
@@ -366,9 +332,9 @@ def _render_card(row: dict):
     controle_txt = 'KM' if (row.get('tipo_controle') or 'km') == 'km' else 'Horas'
 
     badge_saude = _badge(row.get("saude", "-"))
-    badge_venc = f'<span class="eq-b {"eq-danger" if venc else "eq-neutral"}">{venc} vencida{"s" if venc != 1 else ""}</span>'
-    badge_prox = f'<span class="eq-b {"eq-warn" if prox else "eq-neutral"}">{prox} próxima{"s" if prox != 1 else ""}</span>'
-    badge_status = f'<span class="eq-b {"eq-ok" if ativo else "eq-neutral"}">{"Ativo" if ativo else "Inativo"}</span>'
+    badge_venc = pill_html(f'{venc} vencida{"s" if venc != 1 else ""}', "danger" if venc else "neutral")
+    badge_prox = pill_html(f'{prox} próxima{"s" if prox != 1 else ""}', "warning" if prox else "neutral")
+    badge_status = pill_html("Ativo" if ativo else "Inativo", "success" if ativo else "neutral")
 
     col_info, col_score, col_btn = st.columns([6, 1, 1], gap="small")
     with col_info:
@@ -426,14 +392,12 @@ def _render_resumo_section(eq_id: str, equipamento: dict, snap: dict, responsave
             a1, a2 = st.columns(2, gap="small")
             with a1:
                 if st.button('Abrir revisões', key=f'quick_rev_{eq_id}', use_container_width=True):
-                    st.session_state['pagina_atual'] = '🔧 Controle de Revisões'
                     st.session_state.pop('eq_modal_id', None)
-                    st.rerun()
+                    nav.ir_para('🔧 Controle de Revisões')
             with a2:
                 if st.button('Abrir lubrificações', key=f'quick_lub_{eq_id}', use_container_width=True):
-                    st.session_state['pagina_atual'] = '🛢️ Controle de Lubrificações'
                     st.session_state.pop('eq_modal_id', None)
-                    st.rerun()
+                    nav.ir_para('🛢️ Controle de Lubrificações')
 
             with st.expander('Atualizar KM / Horas', expanded=False):
                 km_novo_default = float(equipamento.get('km_atual', snap.get('km_atual', 0)) or 0)

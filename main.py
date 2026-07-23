@@ -1,3 +1,6 @@
+import traceback
+import unicodedata
+
 import streamlit as st
 from ui import (
     alertas_page,
@@ -20,13 +23,14 @@ from ui import (
     vinculos_page,
 )
 from services import auth_service, configuracoes_service
+from ui.nav import registrar_paginas
 
 # Import seguro do tema
 try:
-    from ui.theme import apply_global_theme, render_sidebar_user, render_topbar
+    from ui.theme import apply_global_theme, render_sidebar_user
 except ModuleNotFoundError:
     try:
-        from theme import apply_global_theme, render_sidebar_user, render_topbar
+        from theme import apply_global_theme, render_sidebar_user
     except ModuleNotFoundError:
         def apply_global_theme():
             return None
@@ -36,9 +40,6 @@ except ModuleNotFoundError:
             email = usuario.get("email") or "-"
             st.sidebar.markdown(f"**{nome}**")
             st.sidebar.caption(f"{role_label} · {email}")
-
-        def render_topbar(usuario: dict, pagina_atual: str):
-            st.title(pagina_atual)
 
 
 st.set_page_config(
@@ -60,6 +61,7 @@ try:
 except Exception:
     pass
 
+# Estrutura de navegação: seção -> {"nome exibido" (com emoji): módulo da página}
 SECOES = {
     "Painéis": {
         "🧭 Painel Operacional": dashboard_page,
@@ -88,68 +90,98 @@ SECOES = {
     },
 }
 
+
+def _slugify(texto: str) -> str:
+    """Gera um url_path ascii/kebab-case a partir do título da página."""
+    normalizado = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    slug = "-".join(normalizado.lower().split())
+    return slug or "pagina"
+
+
+def _split_icon_titulo(label: str) -> tuple[str | None, str]:
+    """Separa o emoji do título em labels como '🧭 Painel Operacional'."""
+    partes = label.split(" ", 1)
+    if len(partes) == 2 and partes[0]:
+        return partes[0], partes[1]
+    return None, label
+
+
+def _com_tratamento_de_erro(mod, nome_pagina: str):
+    """Envolve o render() de cada página com o mesmo tratamento de erro de antes,
+    preservando o comportamento ao migrar para st.navigation."""
+
+    def _render():
+        try:
+            mod.render()
+        except Exception as exc:
+            st.error(
+                f"**Erro ao carregar a página '{nome_pagina}'.**\n\n"
+                f"`{type(exc).__name__}: {exc}`\n\n"
+                "Tente atualizar a página. Se o erro persistir, verifique a conexão com o banco de dados."
+            )
+            with st.expander("🔍 Detalhes técnicos"):
+                st.code(traceback.format_exc(), language="python")
+            if st.button("🔄 Tentar novamente", key=f"retry_{nome_pagina}"):
+                st.rerun()
+
+    return _render
+
+
 usuario = auth_service.usuario_logado()
 role = usuario["role"]
 role_label = auth_service.ROLE_LABELS.get(role, role)
 usuario = {**usuario, "role_label": role_label}
 
-secoes_filtradas = {}
-for secao, paginas in SECOES.items():
-    paginas_permitidas = {
-        nome: mod
-        for nome, mod in paginas.items()
-        if auth_service.pode_acessar(nome) or (nome == "👥 Usuários" and role == "admin")
-    }
-    if paginas_permitidas:
-        secoes_filtradas[secao] = paginas_permitidas
+# Monta as seções de navegação já filtradas por permissão do usuário
+paginas_por_secao: dict[str, list[st.Page]] = {}
+registro_flat: dict[str, st.Page] = {}
+slugs_usados: set[str] = set()
 
-paginas_map = {nome: mod for sec in secoes_filtradas.values() for nome, mod in sec.items()}
+for secao, paginas in SECOES.items():
+    lista_paginas = []
+    for nome_pagina, mod in paginas.items():
+        permitido = auth_service.pode_acessar(nome_pagina) or (
+            nome_pagina == "👥 Usuários" and role == "admin"
+        )
+        if not permitido:
+            continue
+
+        icone, titulo = _split_icon_titulo(nome_pagina)
+        slug_base = _slugify(titulo)
+        slug = slug_base
+        contador = 2
+        while slug in slugs_usados:
+            slug = f"{slug_base}-{contador}"
+            contador += 1
+        slugs_usados.add(slug)
+
+        page_obj = st.Page(
+            _com_tratamento_de_erro(mod, nome_pagina),
+            title=titulo,
+            icon=icone,
+            url_path=slug,
+        )
+        lista_paginas.append(page_obj)
+        registro_flat[nome_pagina] = page_obj
+    if lista_paginas:
+        paginas_por_secao[secao] = lista_paginas
+
+registrar_paginas(registro_flat)
 
 with st.sidebar:
     render_sidebar_user(usuario.get("nome"), role_label, usuario.get("email"))
 
-    if "pagina_atual" not in st.session_state:
-        primeira = next(iter(paginas_map), None)
-        st.session_state["pagina_atual"] = primeira or ""
+if not paginas_por_secao:
+    st.warning("Nenhuma página disponível para o seu perfil de acesso.")
+    st.stop()
 
-    if st.session_state.get("pagina_atual") not in paginas_map:
-        st.session_state["pagina_atual"] = next(iter(paginas_map), "")
+pg = st.navigation(paginas_por_secao, position="sidebar")
 
-    for secao, paginas in secoes_filtradas.items():
-        st.markdown(f"<div class='sidebar-section'>{secao}</div>", unsafe_allow_html=True)
-        for nome_pagina in paginas:
-            selecionado = st.session_state["pagina_atual"] == nome_pagina
-            if st.button(
-                nome_pagina,
-                key=f"nav_{nome_pagina}",
-                use_container_width=True,
-                type="primary" if selecionado else "secondary",
-            ):
-                st.session_state["pagina_atual"] = nome_pagina
-                st.rerun()
-
-    st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+with st.sidebar:
+    st.markdown("<div style='height:.4rem'></div>", unsafe_allow_html=True)
     st.markdown("<div class='soft-divider'></div>", unsafe_allow_html=True)
-
     if st.button("🚪 Sair", key="sidebar_logout", use_container_width=True):
         auth_service.logout()
         st.rerun()
 
-pagina_atual = st.session_state.get("pagina_atual", "")
-
-if not pagina_atual or pagina_atual not in paginas_map:
-    st.warning("Selecione uma página no menu lateral.")
-else:
-    try:
-        paginas_map[pagina_atual].render()
-    except Exception as exc:
-        st.error(
-            f"**Erro ao carregar a página '{pagina_atual}'.**\n\n"
-            f"`{type(exc).__name__}: {exc}`\n\n"
-            "Tente atualizar a página. Se o erro persistir, verifique a conexão com o banco de dados."
-        )
-        with st.expander("🔍 Detalhes técnicos"):
-            import traceback
-            st.code(traceback.format_exc(), language="python")
-        if st.button("🔄 Tentar novamente"):
-            st.rerun()
+pg.run()

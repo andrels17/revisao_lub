@@ -6,45 +6,17 @@ import pandas as pd
 import streamlit as st
 
 from services import cache_service, prioridades_service
+from ui import nav
 from ui.exportacao import botao_exportar_excel
+from ui.theme import pill_html, render_hero, render_kpi_grid
 
 
 def _inject_css() -> None:
     st.markdown(
         """
         <style>
-        .prio-hero {
-            padding: .85rem 1rem;
-            border: 1px solid rgba(148,163,184,.12);
-            border-radius: 16px;
-            background: #0d1929;
-            margin-bottom: .85rem;
-        }
-        .prio-chip {
-            display:inline-flex; align-items:center; gap:.35rem;
-            padding:.18rem .5rem; border-radius:999px;
-            background:rgba(249,115,22,.10); color:#fed7aa;
-            border:1px solid rgba(249,115,22,.18);
-            font-size:.68rem; font-weight:700; margin-bottom:.45rem;
-        }
-        .prio-hero h2 { margin:0; font-size:1.08rem; font-weight:800; }
-        .prio-hero p { margin:.2rem 0 0; color:#8fa4c0; font-size:.83rem; }
-
-        .prio-kpi-grid {
-            display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.6rem; margin-bottom:.8rem;
-        }
-        .prio-kpi {
-            border:1px solid rgba(148,163,184,.12);
-            border-radius:14px; padding:.85rem .95rem;
-            background:linear-gradient(180deg, rgba(16,31,52,.96), rgba(11,24,40,.98));
-        }
-        .prio-kpi .lbl { font-size:.72rem; color:#8fa4c0; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
-        .prio-kpi .val { font-size:1.85rem; font-weight:800; color:#f8fbff; line-height:1.05; margin:.22rem 0; }
-        .prio-kpi .sub { font-size:.74rem; color:#89a2bd; }
-        .prio-kpi.danger .val { color:#fca5a5; }
-        .prio-kpi.warn .val { color:#fcd34d; }
-        .prio-kpi.info .val { color:#93c5fd; }
-        .prio-kpi.ok .val { color:#86efac; }
+        /* Hero, KPI grid e badges agora vêm de ui/theme.py
+           (render_hero / render_kpi_grid / pill_html). */
 
         .prio-filters, .prio-section {
             border:1px solid rgba(148,163,184,.12);
@@ -66,32 +38,14 @@ def _inject_css() -> None:
         .prio-title { font-size:.95rem; font-weight:800; color:#eff6ff; }
         .prio-sub { font-size:.77rem; color:#8fa4c0; margin-top:.15rem; }
         .prio-badges { display:flex; flex-wrap:wrap; gap:.28rem; margin-top:.5rem; }
-        .prio-badge {
-            display:inline-flex; align-items:center; gap:.3rem;
-            border-radius:999px; padding:.14rem .48rem; font-size:.68rem; font-weight:700;
-            border:1px solid rgba(255,255,255,.06); background:rgba(255,255,255,.04); color:#dbeafe;
-        }
-        .prio-badge.danger { background:rgba(239,68,68,.10); color:#fecaca; }
-        .prio-badge.warn { background:rgba(245,158,11,.10); color:#fde68a; }
-        .prio-badge.info { background:rgba(96,165,250,.10); color:#bfdbfe; }
-        .prio-badge.ok { background:rgba(34,197,94,.10); color:#bbf7d0; }
         .prio-table-note { font-size:.74rem; color:#8fa4c0; margin-top:.35rem; }
-
-        @media (max-width: 900px) {
-            .prio-kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-        }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def _kpi(label: str, valor: int | str, subtitulo: str, css: str = "") -> None:
-    st.markdown(
-        f"<div class='prio-kpi {css}'><div class='lbl'>{html.escape(label)}</div>"
-        f"<div class='val'>{valor}</div><div class='sub'>{html.escape(subtitulo)}</div></div>",
-        unsafe_allow_html=True,
-    )
+_TONE_POR_SIGLA = {"danger": "danger", "warn": "warning", "info": "info", "ok": "success", "": "neutral"}
 
 
 def _status_css(status: str) -> str:
@@ -126,19 +80,21 @@ def _ir_para_destino(item: dict) -> None:
     equipamento_label = item.get("equipamento_label")
     codigo = item.get("codigo") or ""
     if destino == "revisoes":
-        st.session_state["rev_eqp"] = [equipamento_label]
-        st.session_state["rev_status"] = "Todos"
-        st.session_state["pagina_atual"] = "🔧 Controle de Revisões"
+        nav.ir_para(
+            "🔧 Controle de Revisões",
+            rev_eqp=[equipamento_label],
+            rev_status="Todos",
+        )
     elif destino == "lubrificacoes":
-        st.session_state["lub_eqp"] = [equipamento_label]
-        st.session_state["lub_status"] = "Todos"
-        st.session_state["pagina_atual"] = "🛢️ Controle de Lubrificações"
+        nav.ir_para(
+            "🛢️ Controle de Lubrificações",
+            lub_eqp=[equipamento_label],
+            lub_status="Todos",
+        )
     elif destino == "leituras":
-        st.session_state["pagina_atual"] = "📏 Leituras KM / Horas"
+        nav.ir_para("📏 Leituras KM / Horas")
     else:
-        st.session_state["eq_busca"] = codigo
-        st.session_state["pagina_atual"] = "🚜 Equipamentos"
-    st.rerun()
+        nav.ir_para("🚜 Equipamentos", eq_busca=codigo)
 
 
 def _render_card(item: dict, idx: int) -> None:
@@ -165,7 +121,7 @@ def _render_card(item: dict, idx: int) -> None:
         elif status == "SEM_LEITURA":
             badges.append((f"{int(float(item.get('dias_sem_leitura', 0)))} dia(s)", "info"))
         badges_html = "".join(
-            f"<span class='prio-badge {cls}'>{html.escape(str(txt))}</span>" for txt, cls in badges
+            pill_html(txt, _TONE_POR_SIGLA.get(cls, "neutral")) for txt, cls in badges
         )
         st.markdown(f"<div class='prio-badges'>{badges_html}</div>", unsafe_allow_html=True)
     with top2:
@@ -213,15 +169,10 @@ def render() -> None:
 
     left, right = st.columns([5, 1], vertical_alignment="center")
     with left:
-        st.markdown(
-            """
-            <div class="prio-hero">
-                <div class="prio-chip">🔥 Operação diária</div>
-                <h2>Prioridades do dia</h2>
-                <p>Veja o que precisa de ação imediata, acompanhe equipamentos críticos e abra o fluxo certo com um clique.</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        render_hero(
+            "Prioridades do dia",
+            "Veja o que precisa de ação imediata, acompanhe equipamentos críticos e abra o fluxo certo com um clique.",
+            badge="🔥 Operação diária",
         )
     with right:
         st.write("")
@@ -237,16 +188,12 @@ def render() -> None:
         st.success("Nenhuma prioridade aberta no momento.")
         return
 
-    st.markdown("<div class='prio-kpi-grid'>", unsafe_allow_html=True)
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        _kpi("Pendências abertas", int(resumo.get("total_pendencias", 0)), "Tudo que pede ação hoje", "danger")
-    with k2:
-        _kpi("Equipamentos críticos", int(resumo.get("equipamentos_criticos", 0)), "Com atraso ou sem leitura", "warn")
-    with k3:
-        _kpi("Vencidos", int(resumo.get("vencidos", 0)), "Ações urgentes", "danger")
-    with k4:
-        _kpi("Sem leitura recente", int(resumo.get("sem_leitura", 0)), "Acima da janela de 7 dias", "info")
+    render_kpi_grid([
+        {"label": "Pendências abertas", "value": int(resumo.get("total_pendencias", 0)), "hint": "Tudo que pede ação hoje", "tone": "danger"},
+        {"label": "Equipamentos críticos", "value": int(resumo.get("equipamentos_criticos", 0)), "hint": "Com atraso ou sem leitura", "tone": "warning"},
+        {"label": "Vencidos", "value": int(resumo.get("vencidos", 0)), "hint": "Ações urgentes", "tone": "danger"},
+        {"label": "Sem leitura recente", "value": int(resumo.get("sem_leitura", 0)), "hint": "Acima da janela de 7 dias", "tone": "neutral"},
+    ])
 
     filtros = prioridades_service.listar_opcoes_filtro()
     st.markdown("<div class='prio-filters'><div class='prio-section-title'>Filtros operacionais</div>", unsafe_allow_html=True)

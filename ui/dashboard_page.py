@@ -4,8 +4,10 @@ import pandas as pd
 import streamlit as st
 
 from services import dashboard_service, prioridades_service
+from ui import nav
 from ui.constants import STATUS_LABEL
 from ui.exportacao import botao_exportar_excel
+from ui.theme import render_hero, render_kpi_grid
 
 
 PLOTLY_COLORS = {
@@ -26,146 +28,8 @@ def _inject_styles():
         """
         <style>
         /* ── Dashboard ─────────────────────────────────────────────── */
-        .dash-hero {
-            padding: .75rem .9rem;
-            border: 1px solid rgba(148,163,184,.12);
-            border-radius: 14px;
-            background: #0d1929;
-            margin-bottom: .85rem;
-        }
-        .dash-hero .badge {
-            display: inline-block;
-            padding: .15rem .5rem;
-            border-radius: 999px;
-            background: rgba(79,140,255,.10);
-            border: 1px solid rgba(79,140,255,.16);
-            color: #cde0ff;
-            font-size: .68rem; font-weight: 700;
-            margin-bottom: .4rem;
-        }
-        .dash-hero h2 { margin: 0; font-size: 1.05rem; font-weight: 700; }
-        .dash-hero p  { margin: .22rem 0 0; color: #8fa4c0; font-size: .83rem; }
-
-        /* KPI grid — 4 colunas no dashboard */
-        .dash-kpi-grid {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0,1fr));
-            gap: .6rem;
-            margin-bottom: .75rem;
-        }
-        .dash-kpi-grid.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
-
-        .dash-kpi {
-            position: relative;
-            overflow: hidden;
-            border: 1px solid rgba(148,163,184,.12);
-            border-radius: 16px;
-            padding: .9rem .95rem .85rem;
-            background:
-                radial-gradient(circle at top right, rgba(255,255,255,.045), transparent 36%),
-                linear-gradient(180deg, rgba(16,31,52,.96), rgba(11,24,40,.98));
-            min-height: 120px;
-            transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
-        }
-        .dash-kpi:hover {
-            transform: translateY(-2px);
-            border-color: rgba(96,165,250,.22);
-            box-shadow: 0 10px 22px rgba(2,8,23,.22);
-        }
-        .dash-kpi::before {
-            content: "";
-            position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-            background: var(--kpi-accent, #4f8cff);
-        }
-        .dash-kpi::after {
-            content: "";
-            position: absolute;
-            inset: auto -24px -24px auto;
-            width: 86px;
-            height: 86px;
-            border-radius: 999px;
-            background: radial-gradient(circle, var(--kpi-glow, rgba(79,140,255,.18)) 0%, rgba(79,140,255,0) 72%);
-            pointer-events: none;
-        }
-        .dash-kpi-top {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: .75rem;
-        }
-        .dash-kpi-main {
-            min-width: 0;
-            flex: 1;
-        }
-        .dash-kpi .lbl  {
-            font-size: .74rem;
-            color: #8fa4c0;
-            font-weight: 700;
-            letter-spacing: .02em;
-            margin-bottom: .30rem;
-        }
-        .dash-kpi .val  {
-            font-size: 2rem;
-            font-weight: 800;
-            line-height: .95;
-            color: #f8fbff;
-            margin-bottom: .28rem;
-        }
-        .dash-kpi .hint {
-            font-size: .73rem;
-            color: #88a2bf;
-            margin-top: .26rem;
-            line-height: 1.3;
-        }
-        .dash-kpi .meta {
-            display: inline-flex;
-            align-items: center;
-            gap: .35rem;
-            padding: .18rem .52rem;
-            border-radius: 999px;
-            font-size: .68rem;
-            font-weight: 700;
-            background: rgba(255,255,255,.04);
-            border: 1px solid rgba(255,255,255,.05);
-            color: #cfe0f7;
-            white-space: nowrap;
-        }
-        .dash-kpi .icon {
-            flex: 0 0 auto;
-            width: 40px;
-            height: 40px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 12px;
-            background: rgba(255,255,255,.05);
-            border: 1px solid rgba(255,255,255,.06);
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
-        }
-        .dash-kpi .icon .orb {
-            width: 14px;
-            height: 14px;
-            border-radius: 999px;
-            background: var(--kpi-accent, #4f8cff);
-            box-shadow: 0 0 0 4px color-mix(in srgb, var(--kpi-accent, #4f8cff) 18%, transparent);
-        }
-        .dash-kpi.n  {
-            --kpi-accent: #4f8cff;
-            --kpi-glow: rgba(79,140,255,.22);
-        }
-        .dash-kpi.d  {
-            --kpi-accent: #ef4444;
-            --kpi-glow: rgba(239,68,68,.22);
-        }
-        .dash-kpi.w  {
-            --kpi-accent: #f59e0b;
-            --kpi-glow: rgba(245,158,11,.22);
-        }
-        .dash-kpi.s  {
-            --kpi-accent: #22c55e;
-            --kpi-glow: rgba(34,197,94,.22);
-        }
+        /* Hero e KPI cards agora vêm de ui/theme.py (render_hero /
+           render_kpi_grid) — deixaram de ser duplicados aqui. */
 
         /* Section wrapper */
         .dash-section {
@@ -257,47 +121,20 @@ def _inject_styles():
             .dash-prio-grid { grid-template-columns:1fr; }
             .dash-prio-mini-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
         }
-        @media (max-width: 900px) {
-            .dash-kpi-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-            .dash-kpi-grid.three { grid-template-columns: repeat(2,minmax(0,1fr)); }
-        }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
+_TONE_POR_SIGLA = {"n": "neutral", "d": "danger", "w": "warning", "s": "success"}
+
+
 def _hero(total_alertas: int):
-    st.markdown(
-        f"""
-        <div class="dash-hero">
-            <div class="badge">Dashboard executivo</div>
-            <h2>Pendências de manutenção</h2>
-            <p>Alertas consolidados de revisão e lubrificação · <strong>{total_alertas}</strong> item(ns) no total</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def _kpi(label: str, value, hint: str = "", cls: str = "", meta: str = ""):
-    css = f"dash-kpi {cls}".strip()
-    meta_html = f'<div class="meta">{meta}</div>' if meta else ""
-    st.markdown(
-        f"""
-        <div class="{css}">
-            <div class="dash-kpi-top">
-                <div class="dash-kpi-main">
-                    <div class="lbl">{label}</div>
-                    <div class="val">{value}</div>
-                    {meta_html}
-                    <div class="hint">{hint}</div>
-                </div>
-                <div class="icon"><span class="orb"></span></div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_hero(
+        "Pendências de manutenção",
+        f"Alertas consolidados de revisão e lubrificação · <strong>{total_alertas}</strong> item(ns) no total",
+        badge="Dashboard executivo",
     )
 
 
@@ -309,27 +146,18 @@ def _render_cards(kpis):
     pct_proximos = round((int(kpis["proximos"]) / max(total_alertas or 1, 1)) * 100) if total_alertas else 0
     pct_em_dia = round((int(kpis["em_dia"]) / max(int(kpis["em_dia"]) + total_alertas, 1)) * 100)
 
-    st.markdown('<div class="dash-kpi-grid">', unsafe_allow_html=True)
-    c1, c2, c3, c4 = st.columns(4, gap="small")
-    with c1:
-        _kpi("Equipamentos", kpis["total_equipamentos"], "Base monitorada no dashboard", "n", "Visão geral")
-    with c2:
-        _kpi("Alertas vencidos", kpis["vencidos"], "Itens que já passaram do ponto de execução", "d", f"{pct_vencidos}% dos alertas")
-    with c3:
-        _kpi("Alertas próximos", kpis["proximos"], "Itens entrando na janela de atenção", "w", f"{pct_proximos}% dos alertas")
-    with c4:
-        _kpi("Itens em dia", kpis["em_dia"], "Pendências saudáveis no ciclo atual", "s", f"{pct_em_dia}% do total")
-    st.markdown("</div>", unsafe_allow_html=True)
+    render_kpi_grid([
+        {"label": "Equipamentos", "value": kpis["total_equipamentos"], "hint": "Base monitorada no dashboard", "tone": "neutral", "meta": "Visão geral"},
+        {"label": "Alertas vencidos", "value": kpis["vencidos"], "hint": "Itens que já passaram do ponto de execução", "tone": "danger", "meta": f"{pct_vencidos}% dos alertas"},
+        {"label": "Alertas próximos", "value": kpis["proximos"], "hint": "Itens entrando na janela de atenção", "tone": "warning", "meta": f"{pct_proximos}% dos alertas"},
+        {"label": "Itens em dia", "value": kpis["em_dia"], "hint": "Pendências saudáveis no ciclo atual", "tone": "success", "meta": f"{pct_em_dia}% do total"},
+    ])
 
-    st.markdown('<div class="dash-kpi-grid three">', unsafe_allow_html=True)
-    c5, c6, c7 = st.columns(3, gap="small")
-    with c5:
-        _kpi("Equip. com alerta", kpis["equipamentos_com_alerta"], "Ao menos um item vencido ou próximo", "d", f"{pct_alerta}% da frota")
-    with c6:
-        _kpi("Equip. vencidos", kpis["equipamentos_vencidos"], "Equipamentos com criticidade imediata", "d", "Ação prioritária")
-    with c7:
-        _kpi("Equip. próximos", kpis["equipamentos_proximos"], "Equipamentos que merecem acompanhamento", "w", "Prevenção operacional")
-    st.markdown("</div>", unsafe_allow_html=True)
+    render_kpi_grid([
+        {"label": "Equip. com alerta", "value": kpis["equipamentos_com_alerta"], "hint": "Ao menos um item vencido ou próximo", "tone": "danger", "meta": f"{pct_alerta}% da frota"},
+        {"label": "Equip. vencidos", "value": kpis["equipamentos_vencidos"], "hint": "Equipamentos com criticidade imediata", "tone": "danger", "meta": "Ação prioritária"},
+        {"label": "Equip. próximos", "value": kpis["equipamentos_proximos"], "hint": "Equipamentos que merecem acompanhamento", "tone": "warning", "meta": "Prevenção operacional"},
+    ], colunas=3)
 
 
 def _apply_plotly_theme(fig, height: int):
@@ -523,8 +351,7 @@ def _prio_label(status: str) -> str:
 
 
 def _abrir_prioridades() -> None:
-    st.session_state["pagina_atual"] = "🔥 Prioridades do Dia"
-    st.rerun()
+    nav.ir_para("🔥 Prioridades do Dia")
 
 
 def _render_bloco_prioridades_dashboard() -> None:
