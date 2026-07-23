@@ -543,18 +543,22 @@ def render_kpi_grid(itens: list[dict], colunas: int | None = None) -> None:
         meta = item.get("meta")
         meta_html = f"<div class='kpi-meta'>{html.escape(str(meta))}</div>" if meta else ""
         hint_html = f"<div class='kpi-hint'>{hint}</div>" if hint else ""
+        # Importante: manter tudo em uma única linha, sem indentação.
+        # Linhas com 4+ espaços de indentação dentro de st.markdown() são
+        # interpretadas pelo parser de Markdown como bloco de código,
+        # o que faz o HTML aparecer como texto literal em vez de renderizar.
         partes.append(
-            f"""<div class="kpi-card-rich tone-{tone}">
-                <div class="kpi-top">
-                    <div class="kpi-main">
-                        <div class="kpi-lbl">{label}</div>
-                        <div class="kpi-val">{value}</div>
-                        {meta_html}
-                        {hint_html}
-                    </div>
-                    <div class="kpi-icon"><span class="orb"></span></div>
-                </div>
-            </div>"""
+            f'<div class="kpi-card-rich tone-{tone}">'
+            f'<div class="kpi-top">'
+            f'<div class="kpi-main">'
+            f'<div class="kpi-lbl">{label}</div>'
+            f'<div class="kpi-val">{value}</div>'
+            f'{meta_html}'
+            f'{hint_html}'
+            f'</div>'
+            f'<div class="kpi-icon"><span class="orb"></span></div>'
+            f'</div>'
+            f'</div>'
         )
     partes.append("</div>")
     st.markdown("".join(partes), unsafe_allow_html=True)
