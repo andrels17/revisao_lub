@@ -301,12 +301,12 @@ def _construir_controles(modo="dashboard"):
         release_conn(conn)
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def listar_controle_revisoes():
     return _construir_controles(modo="dashboard")
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def listar_controle_revisoes_por_equipamento():
     agrupado = defaultdict(list)
     for item in listar_controle_revisoes():
@@ -314,7 +314,7 @@ def listar_controle_revisoes_por_equipamento():
     return dict(agrupado)
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def listar_controle_revisoes_painel(equipamento_id=None):
     itens = _construir_controles(modo="painel")
     if equipamento_id is None:

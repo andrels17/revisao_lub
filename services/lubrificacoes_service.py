@@ -173,7 +173,7 @@ def _carregar_ultimas_execucoes_batch(cur, equipamento_ids, schema):
     return dict(item_map), dict(nome_map)
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def diagnosticar_carregamento():
     conn = get_conn()
     cur = conn.cursor()
@@ -236,7 +236,7 @@ def diagnosticar_carregamento():
         release_conn(conn)
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def calcular_proximas_lubrificacoes_batch(equipamento_ids):
     if not equipamento_ids:
         return {}
@@ -435,7 +435,7 @@ def registrar_execucao(dados):
 
 # ── leitura ──────────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=90, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def listar_por_equipamento(equipamento_id):
     conn = get_conn()
     cur = conn.cursor()
@@ -473,7 +473,7 @@ def listar_por_equipamento(equipamento_id):
         release_conn(conn)
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def listar_todos():
     conn = get_conn()
     cur = conn.cursor()

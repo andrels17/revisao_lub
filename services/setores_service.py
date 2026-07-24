@@ -4,6 +4,7 @@ from typing import Any
 
 from database.connection import get_conn, release_conn
 from services import auditoria_service, escopo_service
+import streamlit as st
 
 
 VINCULOS_TABLE = "vinculos_setor_responsavel"
@@ -83,6 +84,7 @@ def _validar_pai(cur, setor_id: Any, setor_pai_id: Any):
             raise ValueError("Não é permitido mover um setor para dentro de um descendente.")
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def listar():
     conn = get_conn()
     cur = conn.cursor()

@@ -237,7 +237,7 @@ def _slice(rows, page, page_size):
     return rows[start : start + page_size]
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _responsaveis_ativos():
     try:
         return [r for r in responsaveis_service.listar() if r.get("ativo")]
@@ -245,7 +245,7 @@ def _responsaveis_ativos():
         return []
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _setores():
     try:
         return setores_service.listar()
@@ -253,22 +253,22 @@ def _setores():
         return []
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _carregar_equipamento(eq_id: str):
     return equipamentos_service.obter(eq_id)
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _revisoes_eq(eq_id: str):
     return revisoes_service.listar_controle_revisoes_por_equipamento().get(eq_id, [])
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _lubrificacoes_eq(eq_id: str):
     return lubrificacoes_service.calcular_proximas_lubrificacoes_batch([eq_id]).get(eq_id, [])
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _timeline_eq(eq_id: str):
     return painel_360_service.montar_timeline_equipamento(eq_id, limite=20)
 

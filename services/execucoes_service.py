@@ -7,6 +7,11 @@ from database.connection import get_conn, release_conn
 from services import auditoria_service, cache_service, validacoes_service
 
 try:
+    from psycopg2.extras import execute_values as _execute_values
+except ImportError:
+    _execute_values = None
+
+try:
     import psycopg2
 except Exception:  # pragma: no cover
     psycopg2 = None
@@ -88,19 +93,36 @@ def salvar_itens_execucao_no_conn(cur, execucao_id, itens_executados):
     cols_sql = ", ".join(insert_cols)
     sql = f"insert into execucao_manutencao_itens ({cols_sql}) values ({placeholders})"
 
-    for item in itens_executados:
-        values = [execucao_id]
-        if "item_id_referencia" in colunas:
-            values.append(item.get("id"))
-        if "item_nome" in colunas:
-            values.append(item.get("nome_item") or item.get("item_nome") or "Item sem nome")
-        if "produto" in colunas:
-            values.append(item.get("tipo_produto") or item.get("produto"))
-        if "intervalo_valor" in colunas:
-            values.append(item.get("intervalo_valor"))
-        if "marcado" in colunas:
-            values.append(True)
-        cur.execute(sql, tuple(values))
+    if _execute_values is not None and itens_executados:
+        rows = []
+        for item in itens_executados:
+            values = [execucao_id]
+            if "item_id_referencia" in colunas:
+                values.append(item.get("id"))
+            if "item_nome" in colunas:
+                values.append(item.get("nome_item") or item.get("item_nome") or "Item sem nome")
+            if "produto" in colunas:
+                values.append(item.get("tipo_produto") or item.get("produto"))
+            if "intervalo_valor" in colunas:
+                values.append(item.get("intervalo_valor"))
+            if "marcado" in colunas:
+                values.append(True)
+            rows.append(tuple(values))
+        _execute_values(cur, sql, rows)
+    else:
+        for item in itens_executados:
+            values = [execucao_id]
+            if "item_id_referencia" in colunas:
+                values.append(item.get("id"))
+            if "item_nome" in colunas:
+                values.append(item.get("nome_item") or item.get("item_nome") or "Item sem nome")
+            if "produto" in colunas:
+                values.append(item.get("tipo_produto") or item.get("produto"))
+            if "intervalo_valor" in colunas:
+                values.append(item.get("intervalo_valor"))
+            if "marcado" in colunas:
+                values.append(True)
+            cur.execute(sql, tuple(values))
 
 
 

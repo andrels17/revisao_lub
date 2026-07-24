@@ -39,9 +39,12 @@ def _safe_close_raw(conn) -> None:
 
 
 def _safe_rollback(conn) -> None:
+    """Rollback condicional: só faz roundtrip se há transação ativa."""
     try:
         if conn and not conn.closed:
-            conn.rollback()
+            # STATUS_READY (1) = sem transação. Evita roundtrip desnecessário.
+            if getattr(conn, 'status', None) != 1:  # 1 = STATUS_READY
+                conn.rollback()
     except Exception:
         pass
 
@@ -70,14 +73,18 @@ def _mark_discarded(conn) -> None:
 
 def _is_connection_usable(conn) -> bool:
     """
-    Validação leve, sem roundtrip obrigatório de SELECT 1 a cada checkout/release.
-    Em conexões pooladas, isso evita uma ida extra ao Neon por uso.
+    Validação leve sem roundtrip ao banco.
+    Verifica apenas se a conexão está aberta e em estado válido.
     """
     try:
         if conn is None or conn.closed:
             return False
-        conn.rollback()
-        return not conn.closed
+        # STATUS_READY=1, STATUS_BEGIN=2, STATUS_IN_TRANSACTION=2, STATUS_INTRANS_INERROR=3
+        # STATUS_INTRANS_INERROR (3) indica erro não tratado — conexão inutilizável
+        status = getattr(conn, 'status', None)
+        if status == 3:  # STATUS_INTRANS_INERROR
+            return False
+        return True
     except Exception:
         return False
 

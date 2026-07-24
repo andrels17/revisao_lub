@@ -34,6 +34,7 @@ except Exception:
 
 # ── helpers de dados ─────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=600, show_spinner=False)
 def _carregar_setores() -> list[tuple]:
     conn = get_conn()
     try:
@@ -44,6 +45,7 @@ def _carregar_setores() -> list[tuple]:
         release_conn(conn)
 
 
+@st.cache_data(ttl=600, show_spinner=False)
 def _carregar_equipamentos(setor_id=None) -> list[tuple]:
     conn = get_conn()
     try:

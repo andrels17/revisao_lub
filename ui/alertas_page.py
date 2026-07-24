@@ -81,7 +81,7 @@ def _inject_styles():
     )
 
 
-@st.cache_data(ttl=60, show_spinner="Carregando central de alertas…")
+@st.cache_data(ttl=180, show_spinner="Carregando central de alertas…")
 def _carregar_central():
     equipamentos = equipamentos_service.listar()
     if not equipamentos:

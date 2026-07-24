@@ -10,7 +10,7 @@ from database.connection import get_conn, release_conn
 from services import configuracoes_service, equipamentos_service, lubrificacoes_service, revisoes_service
 
 STATUS_ORDEM = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2, "REALIZADO": 3}
-TTL_ALERTAS = 120  # segundos
+TTL_ALERTAS = 300  # segundos
 
 
 def _safe_float(value: Any) -> float:
@@ -188,7 +188,7 @@ def _delta_principal(equipamento: dict[str, Any], atual: dict[str, Any], anterio
     return label, max(0.0, valor_atual - valor_anterior)
 
 
-@st.cache_data(ttl=90, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def carregar_movimentacao(janela_dias: int = 30) -> dict[str, Any]:
     equipamentos = equipamentos_service.listar()
     if not equipamentos:
@@ -256,6 +256,7 @@ def carregar_movimentacao(janela_dias: int = 30) -> dict[str, Any]:
                 {horas_sql}
             from public.leituras l
             where l.{eq_col} is not null
+              and l.{data_col} >= NOW() - INTERVAL '90 days'
             order by l.{eq_col}, l.{data_col} desc nulls last
             """
         )

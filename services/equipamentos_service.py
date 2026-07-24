@@ -14,7 +14,7 @@ from services import (
 )
 
 
-TTL_EQ = 120
+TTL_EQ = 300
 
 
 def _safe_close(conn) -> None:

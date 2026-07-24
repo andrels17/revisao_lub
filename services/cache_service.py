@@ -38,6 +38,9 @@ def invalidate_planejamento() -> None:
     _clear_attr(dashboard_service, "carregar_movimentacao")
 
     try:
+        from services import setores_service, grupos_service
+        _clear_attr(setores_service, "listar")
+        _clear_attr(grupos_service, "listar")
         prioridades_service.limpar_cache()
     except Exception:
         pass

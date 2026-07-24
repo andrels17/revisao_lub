@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from database.connection import get_conn, release_conn
 from services import auditoria_service
+import streamlit as st
 
 
 TABLE_NAME = "grupos"
@@ -109,6 +110,7 @@ def _validar_nome(cur, nome: str, setor_id: Any, grupo_id_atual: Any = None):
         raise ValueError('Já existe um grupo com esse nome neste departamento.')
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def listar() -> list[dict[str, Any]]:
     conn = get_conn()
     cur = conn.cursor()
