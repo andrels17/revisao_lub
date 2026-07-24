@@ -146,24 +146,66 @@ def validar_execucao_lubrificacao(equipamento_id, item_id, data_execucao, km_exe
     if not eqp.get("template_lubrificacao_id"):
         raise ValidacaoNegocioError("Equipamento sem template de lubrificação configurado.")
 
+    km    = float(km_execucao or 0)
+    horas = float(horas_execucao or 0)
+
     conn = get_conn()
-    cur = conn.cursor()
+    cur  = conn.cursor()
     try:
-        cur.execute(
-            """
-            select 1
-            from execucoes_lubrificacao
-            where equipamento_id = %s
-              and coalesce(item_id, 0) = coalesce(%s, 0)
-              and data_execucao = %s
-              and coalesce(km_execucao, 0) = %s
-              and coalesce(horas_execucao, 0) = %s
-            limit 1
-            """,
-            (equipamento_id, item_id, data_execucao, float(km_execucao or 0), float(horas_execucao or 0)),
-        )
-        if cur.fetchone():
-            raise ValidacaoNegocioError("Já existe uma execução de lubrificação idêntica para este item/equipamento.")
+        # Verifica duplicata com janela de 2 minutos — protege contra duplo-clique.
+        # Se a tabela ainda não existir no schema, ignora a verificação e prossegue.
+        try:
+            cur.execute(
+                """
+                select 1
+                from execucoes_lubrificacao
+                where equipamento_id = %s
+                  and coalesce(item_id, 0) = coalesce(%s, 0)
+                  and data_execucao = %s
+                  and coalesce(km_execucao, 0) = %s
+                  and coalesce(horas_execucao, 0) = %s
+                  and created_at >= NOW() - INTERVAL '2 minutes'
+                limit 1
+                """,
+                (equipamento_id, item_id, data_execucao, km, horas),
+            )
+            if cur.fetchone():
+                raise ValidacaoNegocioError(
+                    "Essa lubrificação já foi registrada agora mesmo. "
+                    "Aguarde alguns instantes antes de registrar novamente."
+                )
+        except ValidacaoNegocioError:
+            raise
+        except Exception:
+            # Tabela não existe ou coluna created_at ausente — tenta sem janela de tempo
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            try:
+                cur.execute(
+                    """
+                    select 1
+                    from execucoes_lubrificacao
+                    where equipamento_id = %s
+                      and coalesce(item_id, 0) = coalesce(%s, 0)
+                      and data_execucao = %s
+                      and coalesce(km_execucao, 0) = %s
+                      and coalesce(horas_execucao, 0) = %s
+                    limit 1
+                    """,
+                    (equipamento_id, item_id, data_execucao, km, horas),
+                )
+                if cur.fetchone():
+                    raise ValidacaoNegocioError(
+                        "Já existe uma execução de lubrificação idêntica para este item/equipamento."
+                    )
+            except ValidacaoNegocioError:
+                raise
+            except Exception:
+                # Tabela execucoes_lubrificacao não existe ainda — permite prosseguir;
+                # o service de lubrificação criará a tabela ao inserir.
+                pass
     finally:
         release_conn(conn)
     return eqp
