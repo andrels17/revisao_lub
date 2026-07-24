@@ -1101,8 +1101,15 @@ def render():
     with tab_tabela:
         _render_tabela(filtrados, f"Todos os itens ({len(filtrados)})", "Nenhum item para exibir.")
 
-    if st.session_state.get("rev_modal_item"):
-        _dialog_revisao(mapa_vinculos, templates_lub, cache_analises)
+    # ── Abertura de modais: apenas UM por execução do script (limitação do Streamlit) ──
+    # Se ambos estiverem setados (troca de aba / rerun rápido), dá prioridade ao
+    # detalhe de revisão individual e descarta o estado de frota.
+    _abrir_item  = bool(st.session_state.get("rev_modal_item"))
+    _abrir_frota = bool(st.session_state.get("rev_modal_frota"))
 
-    if st.session_state.get("rev_modal_frota"):
+    if _abrir_item:
+        # Garante que o modal de frota não esteja ativo ao mesmo tempo
+        st.session_state.pop("rev_modal_frota", None)
+        _dialog_revisao(mapa_vinculos, templates_lub, cache_analises)
+    elif _abrir_frota:
         _dialog_frota()
