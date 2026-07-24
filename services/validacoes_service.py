@@ -11,6 +11,47 @@ class ConfirmacaoNecessariaError(ValidacaoNegocioError):
     pass
 
 
+def _ensure_execucoes_lubrificacao_table(cur) -> None:
+    """Cria a tabela execucoes_lubrificacao se ela ainda não existir.
+
+    Segue o mesmo padrão de auto-migração usado em outras tabelas do
+    projeto (ex.: grupos, tipos_equipamento_map). Sem isso, tanto a
+    validação quanto o insert em registrar_execucao quebram com
+    UndefinedTable caso a tabela não exista no banco.
+    """
+    try:
+        cur.execute(
+            """
+            create table if not exists execucoes_lubrificacao (
+                id uuid primary key default gen_random_uuid(),
+                equipamento_id uuid not null references equipamentos(id) on delete cascade,
+                item_id uuid null,
+                responsavel_id uuid null,
+                nome_item text null,
+                tipo_produto text null,
+                data_execucao date not null,
+                km_execucao numeric null,
+                horas_execucao numeric null,
+                observacoes text null,
+                created_at timestamptz not null default now()
+            )
+            """
+        )
+        cur.execute(
+            "create index if not exists idx_execucoes_lubrificacao_equipamento "
+            "on execucoes_lubrificacao(equipamento_id)"
+        )
+        cur.execute(
+            "create index if not exists idx_execucoes_lubrificacao_data "
+            "on execucoes_lubrificacao(data_execucao)"
+        )
+    except Exception:
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
+
+
 def obter_equipamento_contexto(equipamento_id) -> dict | None:
     conn = get_conn()
     cur = conn.cursor()
@@ -152,6 +193,7 @@ def validar_execucao_lubrificacao(equipamento_id, item_id, data_execucao, km_exe
     conn = get_conn()
     cur  = conn.cursor()
     try:
+        _ensure_execucoes_lubrificacao_table(cur)
         # Verifica duplicata com janela de 2 minutos — protege contra duplo-clique.
         # Se a tabela ainda não existir no schema, ignora a verificação e prossegue.
         try:
