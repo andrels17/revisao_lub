@@ -509,17 +509,21 @@ def _form_registrar(item, key_suffix, integracao=None):
         salvar = st.form_submit_button("Registrar execução", use_container_width=True, type="primary")
 
         if salvar:
-            execucoes_service.criar_execucao({
-                "equipamento_id":   eqp["id"],
-                "responsavel_id":   resp["id"] if resp else None,
-                "tipo":             "revisao",
-                "data_execucao":    data_exec,
-                "km_execucao":      km_exec,
-                "horas_execucao":   horas_exec,
-                "observacoes":      obs.strip() or None,
-                "itens_executados": itens_marcados,
-                "status":           "concluida",
-            })
+            try:
+                execucoes_service.criar_execucao({
+                    "equipamento_id":   eqp["id"],
+                    "responsavel_id":   resp["id"] if resp else None,
+                    "tipo":             "revisao",
+                    "data_execucao":    data_exec,
+                    "km_execucao":      km_exec,
+                    "horas_execucao":   horas_exec,
+                    "observacoes":      obs.strip() or None,
+                    "itens_executados": itens_marcados,
+                    "status":           "concluida",
+                })
+            except Exception as exc:
+                st.error(str(exc))
+                return
             if hasattr(revisoes_service, "listar_controle_revisoes"):
                 try:
                     cache_service.invalidate_planejamento()
@@ -527,6 +531,9 @@ def _form_registrar(item, key_suffix, integracao=None):
                 except Exception:
                     pass
             st.success("Revisão registrada com sucesso!")
+            # Limpa o estado do modal para não reabri-lo no próximo rerun
+            st.session_state.pop("rev_modal_item", None)
+            st.session_state.pop("rev_modal_frota", None)
             st.rerun()
 
 

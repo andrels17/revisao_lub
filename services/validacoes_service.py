@@ -80,6 +80,9 @@ def validar_execucao_revisao(equipamento_id, data_execucao, km_execucao=None, ho
     conn = get_conn()
     cur = conn.cursor()
     try:
+        # Verifica duplicata por janela de 2 minutos com mesmos dados principais.
+        # Observações são intencionalmente excluídas da comparação para evitar
+        # falsos positivos causados por reruns do Streamlit ou variações de texto.
         cur.execute(
             """
             select 1
@@ -89,14 +92,48 @@ def validar_execucao_revisao(equipamento_id, data_execucao, km_execucao=None, ho
               and data_execucao = %s
               and coalesce(km_execucao, 0) = %s
               and coalesce(horas_execucao, 0) = %s
-              and coalesce(observacoes, '') = %s
               and coalesce(status, 'concluida') = %s
+              and created_at >= NOW() - INTERVAL '2 minutes'
             limit 1
             """,
-            (equipamento_id, data_execucao, km, horas, observacoes or "", status or "concluida"),
+            (equipamento_id, data_execucao, km, horas, status or "concluida"),
         )
         if cur.fetchone():
-            raise ValidacaoNegocioError("Já existe uma execução de revisão idêntica para este equipamento.")
+            raise ValidacaoNegocioError(
+                "Essa revisão já foi registrada agora mesmo. "
+                "Aguarde alguns instantes antes de registrar novamente."
+            )
+    except ValidacaoNegocioError:
+        raise
+    except Exception:
+        # Se created_at não existir no schema, faz checagem simples sem janela de tempo
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        conn2 = get_conn()
+        cur2 = conn2.cursor()
+        try:
+            cur2.execute(
+                """
+                select 1
+                from execucoes_manutencao
+                where equipamento_id = %s
+                  and tipo = 'revisao'
+                  and data_execucao = %s
+                  and coalesce(km_execucao, 0) = %s
+                  and coalesce(horas_execucao, 0) = %s
+                  and coalesce(status, 'concluida') = %s
+                limit 1
+                """,
+                (equipamento_id, data_execucao, km, horas, status or "concluida"),
+            )
+            if cur2.fetchone():
+                raise ValidacaoNegocioError(
+                    "Já existe uma execução de revisão idêntica para este equipamento."
+                )
+        finally:
+            release_conn(conn2)
     finally:
         release_conn(conn)
     return eqp
