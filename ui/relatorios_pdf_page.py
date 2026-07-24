@@ -20,7 +20,16 @@ from services import (
     inteligencia_service,
     relatorio_pdf_service,
 )
+from ui.relatorio_page import (
+    _carregar_revisoes as _rel_revisoes,
+    _carregar_lubrificacoes as _rel_lubrificacoes,
+)
 from ui.theme import render_page_intro
+
+try:
+    import psycopg2
+except Exception:
+    psycopg2 = None
 
 
 # ── helpers de dados ─────────────────────────────────────────────────────────
@@ -59,81 +68,24 @@ def _carregar_equipamentos(setor_id=None) -> list[tuple]:
         release_conn(conn)
 
 
-def _carregar_revisoes_periodo(data_ini, data_fim, setor_id=None, eqp_id=None) -> pd.DataFrame:
-    conn = get_conn()
+def _carregar_revisoes_periodo(data_ini, data_fim, setor_id=None, eqp_id=None):
+    """Wrapper sobre a função já existente em relatorio_page (com tratamento de UndefinedTable)."""
     try:
-        cur = conn.cursor()
-        filtros = ["em.tipo = 'revisao'", "em.data_execucao >= %s", "em.data_execucao <= %s"]
-        params = [data_ini, data_fim]
-        if setor_id:
-            filtros.append("e.setor_id = %s"); params.append(setor_id)
-        if eqp_id:
-            filtros.append("em.equipamento_id = %s"); params.append(eqp_id)
-        cur.execute(
-            f"""SELECT em.id, em.data_execucao,
-                       e.codigo, e.nome AS equipamento,
-                       COALESCE(s.nome, '-') AS setor,
-                       em.km_execucao AS "KM", em.horas_execucao AS "Horas",
-                       COALESCE(r.nome, '-') AS responsavel,
-                       COALESCE(em.status, 'concluida') AS status,
-                       em.observacoes
-                FROM execucoes_manutencao em
-                JOIN equipamentos e ON e.id = em.equipamento_id
-                LEFT JOIN setores s ON s.id = e.setor_id
-                LEFT JOIN responsaveis r ON r.id = em.responsavel_id
-                WHERE {' AND '.join(filtros)}
-                ORDER BY em.data_execucao DESC""",
-            params,
-        )
-        rows = cur.fetchall()
-        df = pd.DataFrame(rows, columns=[
-            "ID", "Data", "Código", "Equipamento", "Setor",
-            "KM", "Horas", "Responsável", "Status", "Observações",
-        ])
-        if not df.empty and "Data" in df.columns:
-            df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
-        return df
-    finally:
-        release_conn(conn)
+        import pandas as pd
+        df = _rel_revisoes(data_ini, data_fim, setor_id, eqp_id)
+        return df if df is not None else pd.DataFrame()
+    except Exception:
+        return __import__("pandas").DataFrame()
 
 
-def _carregar_lubrificacoes_periodo(data_ini, data_fim, setor_id=None, eqp_id=None) -> pd.DataFrame:
-    conn = get_conn()
+def _carregar_lubrificacoes_periodo(data_ini, data_fim, setor_id=None, eqp_id=None):
+    """Wrapper sobre a função já existente em relatorio_page (com tratamento de UndefinedTable)."""
     try:
-        cur = conn.cursor()
-        filtros = ["el.data_execucao >= %s", "el.data_execucao <= %s"]
-        params = [data_ini, data_fim]
-        if setor_id:
-            filtros.append("e.setor_id = %s"); params.append(setor_id)
-        if eqp_id:
-            filtros.append("el.equipamento_id = %s"); params.append(eqp_id)
-        cur.execute(
-            f"""SELECT el.id, el.data_execucao,
-                       e.codigo, e.nome AS equipamento,
-                       COALESCE(s.nome, '-') AS setor,
-                       el.nome_item AS item,
-                       COALESCE(el.tipo_produto, '-') AS produto,
-                       el.km_execucao AS "KM", el.horas_execucao AS "Horas",
-                       COALESCE(r.nome, '-') AS responsavel,
-                       el.observacoes
-                FROM execucoes_lubrificacao el
-                JOIN equipamentos e ON e.id = el.equipamento_id
-                LEFT JOIN setores s ON s.id = e.setor_id
-                LEFT JOIN responsaveis r ON r.id = el.responsavel_id
-                WHERE {' AND '.join(filtros)}
-                ORDER BY el.data_execucao DESC""",
-            params,
-        )
-        rows = cur.fetchall()
-        df = pd.DataFrame(rows, columns=[
-            "ID", "Data", "Código", "Equipamento", "Setor",
-            "Item", "Produto", "KM", "Horas", "Responsável", "Observações",
-        ])
-        if not df.empty and "Data" in df.columns:
-            df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
-        return df
-    finally:
-        release_conn(conn)
+        import pandas as pd
+        df = _rel_lubrificacoes(data_ini, data_fim, setor_id, eqp_id)
+        return df if df is not None else pd.DataFrame()
+    except Exception:
+        return __import__("pandas").DataFrame()
 
 
 def _carregar_historico_equipamento(eqp_id, limite=20) -> tuple[list[dict], list[dict]]:
@@ -156,22 +108,26 @@ def _carregar_historico_equipamento(eqp_id, limite=20) -> tuple[list[dict], list
              "Responsável": r[4], "Observações": r[5]}
             for r in cur.fetchall()
         ]
-        cur.execute(
-            """SELECT el.data_execucao, el.nome_item,
-                      COALESCE(el.tipo_produto, '-'),
-                      el.km_execucao, el.horas_execucao,
-                      COALESCE(r.nome, '-')
-               FROM execucoes_lubrificacao el
-               LEFT JOIN responsaveis r ON r.id = el.responsavel_id
-               WHERE el.equipamento_id = %s
-               ORDER BY el.data_execucao DESC LIMIT %s""",
-            (eqp_id, limite),
-        )
-        lubrificacoes = [
-            {"Data": r[0], "Item": r[1], "Produto": r[2],
-             "KM": r[3], "Horas": r[4], "Responsável": r[5]}
-            for r in cur.fetchall()
-        ]
+        try:
+            cur.execute(
+                """SELECT el.data_execucao, el.nome_item,
+                          COALESCE(el.tipo_produto, '-'),
+                          el.km_execucao, el.horas_execucao,
+                          COALESCE(r.nome, '-')
+                   FROM execucoes_lubrificacao el
+                   LEFT JOIN responsaveis r ON r.id = el.responsavel_id
+                   WHERE el.equipamento_id = %s
+                   ORDER BY el.data_execucao DESC LIMIT %s""",
+                (eqp_id, limite),
+            )
+            lubrificacoes = [
+                {"Data": r[0], "Item": r[1], "Produto": r[2],
+                 "KM": r[3], "Horas": r[4], "Responsável": r[5]}
+                for r in cur.fetchall()
+            ]
+        except Exception:
+            conn.rollback()
+            lubrificacoes = []
         return revisoes, lubrificacoes
     finally:
         release_conn(conn)
