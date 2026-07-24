@@ -385,6 +385,7 @@ def registrar_execucao(dados):
     conn = get_conn()
     cur = conn.cursor()
     try:
+        validacoes_service._ensure_execucoes_lubrificacao_table(cur)
         cur.execute(
             """
             insert into execucoes_lubrificacao
