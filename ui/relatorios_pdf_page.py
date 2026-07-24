@@ -199,6 +199,73 @@ def _status_lubrificacoes_equipamento(eqp_id) -> list[dict]:
 
 # ── estilos da página ─────────────────────────────────────────────────────────
 
+def _safe(v, default="-") -> str:
+    if v is None: return default
+    s = str(v).strip()
+    return s if s and s != "nan" else default
+
+def _montar_progresso_revisoes(setor_id=None, eqp_id=None) -> list[dict]:
+    """
+    Carrega o estado atual de revisões de cada equipamento,
+    estruturado para o PDF de progresso.
+    Retorna lista de dicts com: codigo, equipamento_nome, setor_nome,
+    tipo_controle, leitura_atual, status_geral, etapas (list).
+    """
+    from services import revisoes_service
+    try:
+        todos = revisoes_service.listar_controle_revisoes_por_equipamento()
+    except Exception:
+        return []
+
+    # Agrupar por equipamento
+    from collections import defaultdict
+    por_equipamento: dict = defaultdict(list)
+    for eqp_id_item, etapas in todos.items():
+        for etapa in etapas:
+            por_equipamento[str(eqp_id_item)].append(etapa)
+
+    # Filtrar por setor se especificado
+    resultado = []
+    for eid, etapas in por_equipamento.items():
+        if not etapas:
+            continue
+        ref = etapas[0]
+        # Filtro por equipamento específico
+        if eqp_id and str(ref.get("equipamento_id", "")) != str(eqp_id):
+            continue
+        # Filtro por setor
+        if setor_id and str(ref.get("setor_id", "")) != str(setor_id):
+            continue
+
+        # Determinar status_geral do equipamento (pior status entre etapas)
+        STATUS_PIORIDADE = {"VENCIDO": 0, "PROXIMO": 1, "EM DIA": 2, "REALIZADO": 3, "EM_DIA": 2}
+        status_geral_ordem = min(
+            (STATUS_PIORIDADE.get(str(e.get("status", "EM_DIA")).upper(), 2) for e in etapas),
+            default=2,
+        )
+        status_geral_map = {0: "VENCIDO", 1: "PROXIMO", 2: "EM_DIA", 3: "EM_DIA"}
+        status_geral = status_geral_map.get(status_geral_ordem, "EM_DIA")
+
+        # Ordenar etapas por gatilho_valor
+        etapas_ord = sorted(etapas, key=lambda e: float(e.get("gatilho_valor") or e.get("gatilho") or 0))
+
+        resultado.append({
+            "equipamento_id": eid,
+            "codigo":          _safe(ref.get("codigo")),
+            "equipamento_nome": _safe(ref.get("equipamento_nome")),
+            "setor_nome":      _safe(ref.get("setor_nome")),
+            "tipo_controle":   str(ref.get("tipo_controle") or ref.get("tipo") or "km").lower(),
+            "leitura_atual":   float(ref.get("leitura_atual") or ref.get("atual") or 0),
+            "status_geral":    status_geral,
+            "etapas":          etapas_ord,
+        })
+
+    # Ordenar: vencidos primeiro, depois próximos, depois em dia
+    ORDEM_STATUS = {"VENCIDO": 0, "PROXIMO": 1, "EM_DIA": 2}
+    resultado.sort(key=lambda x: (ORDEM_STATUS.get(x["status_geral"], 9), x["codigo"]))
+    return resultado
+
+
 def _inject_styles() -> None:
     st.markdown(
         """
@@ -409,9 +476,9 @@ def render() -> None:
                     except Exception as exc:
                         st.error(f"Erro ao gerar PDF: {exc}")
 
-    # ─────────────────────────────────────────────────────────────────────────
+    # ───────────────────────────────────────────────────────────────────────────────
     # RELATÓRIO 2 — Conformidade de Revisões
-    # ─────────────────────────────────────────────────────────────────────────
+    # ───────────────────────────────────────────────────────────────────────────────
     with col_b:
         with st.container(border=True):
             st.markdown(
@@ -421,43 +488,50 @@ def render() -> None:
                         <div style='font-size:.95rem;font-weight:800;color:#f0f6ff'>Conformidade de Revisões</div>
                         <span style='font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
                             background:rgba(79,140,255,.12);color:#93c5fd;border:1px solid rgba(79,140,255,.2);
-                            border-radius:999px;padding:.06rem .4rem'>Ciclo atual</span>
+                            border-radius:999px;padding:.06rem .4rem'>Com progresso visual</span>
                     </div>
                 </div>
-                <div style='font-size:.8rem;color:#7fa8cc;line-height:1.5;margin-bottom:.6rem'>
-                    Mostra quantas revisões predefinidas foram realizadas no período e o status
-                    atual de cada equipamento: <strong style='color:#86efac'>em dia</strong>,
-                    <strong style='color:#fcd34d'>próximo</strong> ou
-                    <strong style='color:#fca5a5'>vencido</strong>.
-                    Perfeito para apresentar à supervisão.
+                <div style='font-size:.8rem;color:#7fa8cc;line-height:1.5;margin-bottom:.5rem'>
+                    Para cada equipamento: ✓ etapas realizadas, ▶ vencidas, ○ futuras.
+                    Hodometro/horímetro atual e quanto falta para a próxima revisão.
                 </div>""",
                 unsafe_allow_html=True,
             )
-            if st.button("⬇️ Gerar PDF — Revisões", key="btn_pdf_rev", use_container_width=True, type="primary"):
+            # Filtros específicos do relatório 2
+            frc1, frc2 = st.columns(2)
+            with frc1:
+                eqps_rev = _carregar_equipamentos(setor_id)
+                eqp_rev_sel = st.selectbox(
+                    "Equipamento (Rel. 2)",
+                    [None] + list(eqps_rev),
+                    format_func=lambda e: "Todos" if e is None else f"{e[1]} — {e[2]}",
+                    key="pdf_eqp_rev2",
+                )
+                eqp_id_rev2 = eqp_rev_sel[0] if eqp_rev_sel else None
+            with frc2:
+                status_filtro = st.selectbox(
+                    "Filtrar por status",
+                    ["Todos", "Vencidos primeiro", "Somente vencidos", "Somente próximos", "Somente em dia"],
+                    key="pdf_status_rev2",
+                )
+
+            if st.button("⬇️ Gerar PDF — Conformidade", key="btn_pdf_rev", use_container_width=True, type="primary"):
                 with st.spinner("Gerando relatório de conformidade…"):
                     try:
-                        df_rev = _carregar_revisoes_periodo(data_ini, data_fim, setor_id, eqp_id_global)
-                        # Status atual de todos os equipamentos
-                        alertas_raw, _ = dashboard_service.carregar_alertas()
-                        alertas_rev = [
-                            a for a in alertas_raw
-                            if a.get("origem") == "Revisão"
-                            and (not setor_id or str(a.get("setor_id", "")) == str(setor_id))
-                        ]
-                        status_atual = [
-                            {
-                                "codigo": a.get("codigo"),
-                                "nome": a.get("equipamento"),
-                                "setor_nome": a.get("setor"),
-                                "etapa": a.get("etapa"),
-                                "status": a.get("status"),
-                                "falta": abs(float(a.get("falta", 0) or 0)),
-                                "unidade": "h" if str(a.get("tipo", "km")).lower().startswith("h") else "km",
-                            }
-                            for a in alertas_rev
-                        ]
+                        df_rev = _carregar_revisoes_periodo(data_ini, data_fim, setor_id, eqp_id_rev2)
+                        progresso = _montar_progresso_revisoes(setor_id, eqp_id_rev2)
+
+                        # Aplicar filtro de status
+                        if status_filtro == "Somente vencidos":
+                            progresso = [p for p in progresso if p["status_geral"] == "VENCIDO"]
+                        elif status_filtro == "Somente próximos":
+                            progresso = [p for p in progresso if p["status_geral"] == "PROXIMO"]
+                        elif status_filtro == "Somente em dia":
+                            progresso = [p for p in progresso if p["status_geral"] == "EM_DIA"]
+                        # "Vencidos primeiro" já é a ordem padrão
+
                         pdf_bytes = relatorio_pdf_service.gerar_pdf_conformidade_revisoes(
-                            df_rev, status_atual, data_ini, data_fim, setor_nome
+                            df_rev, progresso, data_ini, data_fim, setor_nome
                         )
                         st.download_button(
                             label="📥 Baixar PDF — Conformidade de Revisões",
@@ -468,7 +542,8 @@ def render() -> None:
                             use_container_width=True,
                         )
                         total = len(df_rev) if not df_rev.empty else 0
-                        st.success(f"✅ PDF gerado com {total} revisão(ões).")
+                        venc = sum(1 for p in progresso if p["status_geral"] == "VENCIDO")
+                        st.success(f"✅ PDF gerado — {len(progresso)} equipamento(s), {total} revisão(oes), {venc} vencido(s).")
                     except Exception as exc:
                         st.error(f"Erro ao gerar PDF: {exc}")
 

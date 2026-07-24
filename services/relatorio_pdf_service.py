@@ -409,15 +409,18 @@ def gerar_pdf_historico_lubrificacoes(
 
 def gerar_pdf_conformidade_revisoes(
     df_rev: pd.DataFrame,
-    df_status_atual: list[dict],  # lista de {codigo, nome, setor_nome, etapa, status, falta, unidade}
+    equipamentos_progresso: list[dict],  # lista de dicts com etapas por equipamento
     data_ini,
     data_fim,
     setor_nome: str | None = None,
 ) -> bytes:
     """
     Relatório 2: Conformidade de revisões predefinidas.
-    Mostra quantas revisões foram realizadas, percentual de conformidade,
-    equipamentos em atraso e equipamentos em dia.
+    Para cada equipamento, exibe:
+      - Leitura atual (KM/Horas)
+      - Barra de progresso com cada etapa marcada como ✓ (feita), ✗ (vencida) ou ○ (futura)
+      - Quanto falta para a próxima
+      - Resumo geral de conformidade
     """
     from reportlab.lib.units import mm
     from reportlab.lib.pagesizes import A4
@@ -438,85 +441,221 @@ def gerar_pdf_conformidade_revisoes(
         _cabeçalho_padrao(
             canvas_obj, doc,
             "Relatório de Conformidade — Revisões",
-            "Cumprimento das revisões predefinidas no ciclo atual",
-            f"Período de execuções: {periodo}   ·   Setor: {setor_txt}",
+            "Progresso de cada etapa de revisão por equipamento",
+            f"Execuções: {periodo}   ·   Setor: {setor_txt}",
             gerado_em,
         )
 
     elements = []
 
-    # ── KPIs ─────────────────────────────────────────────────────────────────
+    # ── KPIs de topo ───────────────────────────────────────────────────────
+    total_itens    = len(equipamentos_progresso)
+    itens_em_dia   = sum(1 for e in equipamentos_progresso if e.get("status_geral") == "EM_DIA")
+    itens_vencidos = sum(1 for e in equipamentos_progresso if e.get("status_geral") == "VENCIDO")
+    itens_proximos = sum(1 for e in equipamentos_progresso if e.get("status_geral") == "PROXIMO")
+    pct_conf = round(itens_em_dia / max(total_itens, 1) * 100)
     total_rev = len(df_rev) if df_rev is not None and not df_rev.empty else 0
-
-    vencidos = [s for s in df_status_atual if str(s.get("status", "")).upper() == "VENCIDO"]
-    proximos = [s for s in df_status_atual if str(s.get("status", "")).upper() == "PROXIMO"]
-    em_dia   = [s for s in df_status_atual if str(s.get("status", "")).upper() == "EM_DIA"]
-    total_itens = len(df_status_atual)
-    pct_conformidade = round((len(em_dia) / total_itens * 100)) if total_itens > 0 else 0
 
     elements.append(Spacer(1, 3 * mm))
     elements.append(_kpi_bar([
-        ("Revisões realizadas",  total_rev,           P["blue"]),
-        ("Itens em dia",         len(em_dia),          P["green"]),
-        ("Itens vencidos",       len(vencidos),        P["red"] if vencidos else P["muted"]),
-        ("Próximos ao vencimento", len(proximos),      P["amber"]),
-        ("Conformidade atual",   f"{pct_conformidade}%", P["green"] if pct_conformidade >= 80 else (P["amber"] if pct_conformidade >= 50 else P["red"])),
+        ("Equipamentos",        total_itens,  P["navy"]),
+        ("Revisões realizadas", total_rev,   P["blue"]),
+        ("Em dia",              itens_em_dia,  P["green"]),
+        ("Vencidos",            itens_vencidos, P["red"] if itens_vencidos > 0 else P["muted"]),
+        ("Próximos",           itens_proximos, P["amber"] if itens_proximos > 0 else P["muted"]),
+        ("Conformidade",        f"{pct_conf}%", P["green"] if pct_conf >= 80 else (P["amber"] if pct_conf >= 50 else P["red"])),
     ], P, PW))
-    elements.append(Spacer(1, 4 * mm))
+    elements.append(Spacer(1, 3 * mm))
 
-    # ── Barra de conformidade ─────────────────────────────────────────────────
+    # Barra de conformidade visual
     from reportlab.lib.styles import ParagraphStyle
-    s_conf = ParagraphStyle("conf", fontName="Helvetica-Bold", fontSize=9,
-        textColor=P["navy"], leading=12)
-    elements.append(Paragraph("Índice de conformidade do ciclo atual", s_conf))
-    elements.append(Spacer(1, 2 * mm))
-
-    # Barra visual via canvas — usando Table com fundo colorido
-    pct = pct_conformidade / 100
-    cor_bar = P["green"] if pct_conformidade >= 80 else (P["amber"] if pct_conformidade >= 50 else P["red"])
-    bar_preenchida = PW * pct
-    bar_vazia = PW - bar_preenchida
-    bar_data = [["" , ""]]
-    bar_cw = [max(bar_preenchida, 1), max(bar_vazia, 1)] if bar_preenchida < PW else [PW, 0.1]
-    bar_t = Table(bar_data, colWidths=bar_cw, rowHeights=[6])
-    bar_style = [
+    pct = pct_conf / 100
+    cor_bar = P["green"] if pct_conf >= 80 else (P["amber"] if pct_conf >= 50 else P["red"])
+    bar_preenche = max(PW * pct, 1)
+    bar_vazia    = max(PW - bar_preenche, 0.5)
+    bar_t = Table([["" , ""]], colWidths=[bar_preenche, bar_vazia], rowHeights=[5])
+    bar_t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, 0), cor_bar),
         ("BACKGROUND", (1, 0), (1, 0), P["gray_mid"]),
-        ("LEFTPADDING",  (0,0), (-1,-1), 0),
-        ("RIGHTPADDING", (0,0), (-1,-1), 0),
-        ("TOPPADDING",   (0,0), (-1,-1), 0),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 0),
-    ]
-    bar_t.setStyle(TableStyle(bar_style))
+        ("LEFTPADDING",  (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("TOPPADDING",   (0,0), (-1,-1), 0), ("BOTTOMPADDING",(0,0), (-1,-1), 0),
+    ]))
     elements.append(bar_t)
-    s_label = ParagraphStyle("lb", fontName="Helvetica", fontSize=8, textColor=P["muted"])
-    elements.append(Paragraph(f"{pct_conformidade}% dos itens monitorados estão em dia no ciclo atual.", s_label))
-    elements.append(Spacer(1, 5 * mm))
+    s_conf_label = ParagraphStyle("cbl", fontName="Helvetica", fontSize=7.5, textColor=P["muted"], spaceAfter=4)
+    elements.append(Paragraph(f"{pct_conf}% dos equipamentos estão em dia no ciclo atual.", s_conf_label))
+    elements.append(Spacer(1, 4 * mm))
 
-    # ── Revisões realizadas no período por etapa ──────────────────────────────
+    # ── Progresso por equipamento ───────────────────────────────────────────────
     elements += _secao(
-        "Revisões realizadas no período (por etapa)",
-        "Cada linha representa uma execução registrada. Agrupada por código de equipamento.",
+        "Progresso de revisões por equipamento",
+        "Cada célula representa uma etapa do ciclo de revisão. ✓ = realizada  ◎ = próxima  ▶ = vencida  ○ = futura",
         styles, P,
     )
-    if df_rev is None or df_rev.empty:
-        s_em = ParagraphStyle("em", fontName="Helvetica", fontSize=9, textColor=P["muted"], alignment=TA_CENTER)
-        elements.append(Paragraph("Nenhuma revisão realizada no período selecionado.", s_em))
+
+    s_eqp_hdr = ParagraphStyle("eh", fontName="Helvetica-Bold", fontSize=8.5,
+        textColor=P["navy"], leading=12, spaceBefore=5, spaceAfter=1)
+    s_eqp_sub = ParagraphStyle("es", fontName="Helvetica", fontSize=7.5,
+        textColor=P["muted"], leading=10, spaceAfter=2)
+    s_etapa   = ParagraphStyle("et", fontName="Helvetica-Bold", fontSize=7,
+        textColor=P["white"], alignment=TA_CENTER, leading=9)
+    s_etapa_v = ParagraphStyle("etv", fontName="Helvetica", fontSize=6.5,
+        textColor=P["white"], alignment=TA_CENTER, leading=8)
+    s_etapa_g = ParagraphStyle("etg", fontName="Helvetica", fontSize=6.5,
+        textColor=P["muted"], alignment=TA_CENTER, leading=8)
+    s_falta   = ParagraphStyle("fl", fontName="Helvetica", fontSize=7.5,
+        textColor=P["muted"], leading=10)
+
+    from reportlab.lib import colors
+
+    if not equipamentos_progresso:
+        elements.append(Paragraph("Nenhum equipamento com template de revisão configurado.",
+            ParagraphStyle("em", fontName="Helvetica", fontSize=9, textColor=P["muted"], alignment=TA_CENTER)))
     else:
-        # Tenta extrair etapa das observações
-        import re
-        ETAPA_RE = re.compile(r"^Etapa:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
-        def _etapa(obs):
+        for eqp in equipamentos_progresso:
+            codigo   = _safe(eqp.get("codigo"))
+            nome     = _safe(eqp.get("equipamento_nome"))
+            setor_e  = _safe(eqp.get("setor_nome"))
+            tipo_ctrl = _safe(eqp.get("tipo_controle", "km")).lower()
+            unidade  = "h" if tipo_ctrl.startswith("h") else "km"
+            leit_atu = float(eqp.get("leitura_atual", 0) or 0)
+            etapas   = eqp.get("etapas", [])
+            status_g = eqp.get("status_geral", "EM_DIA")
+
+            # Próxima revisão
+            prox = next((e for e in etapas if e.get("status") in ("VENCIDO", "PROXIMO")), None)
+            if prox is None:
+                prox = next((e for e in etapas if not e.get("realizado_no_ciclo")), None)
+            prox_etapa = _safe(prox.get("etapa")) if prox else "-"
+            prox_falta = float(prox.get("falta", 0) or 0) if prox else 0
+            prox_venc  = float(prox.get("vencimento", 0) or 0) if prox else 0
+
+            if status_g == "VENCIDO":
+                cor_status = P["red"]
+                txt_status = "▶ VENCIDO"
+            elif status_g == "PROXIMO":
+                cor_status = P["amber"]
+                txt_status = "◎ PRÓXIMO"
+            else:
+                cor_status = P["green"]
+                txt_status = "✓ EM DIA"
+
+            bloco = []
+
+            # Cabeçalho do equipamento
+            hdr_data = [[
+                Paragraph(f"{codigo} — {nome}", s_eqp_hdr),
+                Paragraph(
+                    f"Setor: {setor_e}  ·  Leitura atual: {_fmt_num(leit_atu)} {unidade}  ·  "
+                    f"Próxima: {prox_etapa} em {_fmt_num(prox_venc)} {unidade}  ·  Faltam: {_fmt_num(abs(prox_falta))} {unidade}",
+                    s_eqp_sub,
+                ),
+                Paragraph(txt_status, ParagraphStyle("stl", fontName="Helvetica-Bold", fontSize=8,
+                    textColor=cor_status, alignment=TA_RIGHT, leading=12)),
+            ]]
+            hdr_t = Table(hdr_data, colWidths=[PW * 0.35, PW * 0.50, PW * 0.15])
+            hdr_t.setStyle(TableStyle([
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                ("LEFTPADDING",  (0,0), (-1,-1), 0),
+                ("RIGHTPADDING", (0,0), (-1,-1), 0),
+                ("TOPPADDING",   (0,0), (-1,-1), 0),
+                ("BOTTOMPADDING",(0,0), (-1,-1), 0),
+            ]))
+            bloco.append(hdr_t)
+            bloco.append(Spacer(1, 1.5 * mm))
+
+            # Barra de progresso de etapas
+            if etapas:
+                n_etapas = len(etapas)
+                cw_etapa = [PW / n_etapas] * n_etapas
+                # Linha 1: rótulo da etapa (gatilho_valor formatado)
+                # Linha 2: símbolo de status
+                # Linha 3: quantidade no ciclo (falta ou realizado)
+                row_nome = []
+                row_icon = []
+                row_val  = []
+                style_cmds = [
+                    ("TOPPADDING",    (0,0), (-1,-1), 3),
+                    ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+                    ("LEFTPADDING",   (0,0), (-1,-1), 2),
+                    ("RIGHTPADDING",  (0,0), (-1,-1), 2),
+                    ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+                    ("INNERGRID",     (0,0), (-1,-1), 0.3, P["white"]),
+                    ("BOX",           (0,0), (-1,-1), 0.5, P["gray_mid"]),
+                ]
+
+                for i, etapa in enumerate(etapas):
+                    st   = str(etapa.get("status", "EM_DIA")).upper()
+                    real = etapa.get("realizado_no_ciclo", False)
+                    gate = float(etapa.get("gatilho_valor", 0) or 0)
+                    nome_e = _safe(etapa.get("etapa"))
+                    falta_e = float(etapa.get("falta", 0) or 0)
+                    ult_exec = float(etapa.get("ultima_execucao", 0) or 0)
+
+                    # Cor de fundo da célula
+                    if real:
+                        bg = P["green"]
+                        icone = "✓"
+                        val_txt = f"feita em {_fmt_num(ult_exec)} {unidade}" if ult_exec > 0 else "realizada"
+                    elif st == "VENCIDO":
+                        bg = P["red"]
+                        icone = "▶"
+                        val_txt = f"{_fmt_num(abs(falta_e))} {unidade} atraso"
+                    elif st == "PROXIMO":
+                        bg = P["amber"]
+                        icone = "◎"
+                        val_txt = f"faltam {_fmt_num(abs(falta_e))} {unidade}"
+                    else:
+                        bg = P["gray_mid"]
+                        icone = "○"
+                        val_txt = f"faltam {_fmt_num(abs(falta_e))} {unidade}" if falta_e > 0 else "ótimo!"
+
+                    style_cmds.append(("BACKGROUND", (i, 0), (i, 2), bg))
+
+                    # Rótulo: nome curto da etapa ou gatilho formatado
+                    lbl = nome_e[:14] if nome_e and nome_e != "-" else f"{_fmt_num(gate)} {unidade}"
+                    row_nome.append(Paragraph(lbl, s_etapa if bg != P["gray_mid"] else s_etapa_g))
+                    row_icon.append(Paragraph(icone, ParagraphStyle("ic", fontName="Helvetica-Bold",
+                        fontSize=12, textColor=colors.white if bg != P["gray_mid"] else P["muted"],
+                        alignment=TA_CENTER, leading=14)))
+                    row_val.append(Paragraph(val_txt, ParagraphStyle("vt", fontName="Helvetica",
+                        fontSize=6, textColor=colors.white if bg != P["gray_mid"] else P["muted"],
+                        alignment=TA_CENTER, leading=7)))
+
+                prog_t = Table([row_nome, row_icon, row_val],
+                    colWidths=cw_etapa, rowHeights=[8, 10, 8])
+                prog_t.setStyle(TableStyle(style_cmds))
+                bloco.append(prog_t)
+            else:
+                bloco.append(Paragraph("Sem etapas configuradas no template deste equipamento.",
+                    ParagraphStyle("nem", fontName="Helvetica", fontSize=8, textColor=P["muted"])))
+
+            bloco.append(Spacer(1, 4 * mm))
+            elements.append(KeepTogether(bloco))
+
+    # ── Tabela de revisões realizadas no período ─────────────────────────────────
+    if df_rev is not None and not df_rev.empty:
+        elements.append(PageBreak())
+        elements += _secao(
+            f"Revisões realizadas no período ({len(df_rev)} registro(s))",
+            f"Execuções confirmadas entre {periodo}.",
+            styles, P,
+        )
+        import re as _re
+        ETAPA_RE = _re.compile(r"^Etapa:\s*(.+)$", _re.IGNORECASE | _re.MULTILINE)
+        def _etapa_obs(obs):
             if not obs: return "-"
             m = ETAPA_RE.search(str(obs))
             return m.group(1).strip() if m else "-"
 
         df_r = df_rev.copy()
-        df_r["Etapa"] = df_r.get("Observações", pd.Series([""] * len(df_r))).apply(_etapa)
+        obs_col = "Observações" if "Observações" in df_r.columns else None
+        df_r["Etapa"] = df_r[obs_col].apply(_etapa_obs) if obs_col else "-"
+
         cols_rev = ["Data", "Código", "Equipamento", "Setor", "Etapa", "KM", "Horas", "Responsável"]
-        cw_rev = [18*mm, 16*mm, 32*mm, 28*mm, 36*mm, 14*mm, 14*mm, 22*mm]
+        cw_rev   = [18*mm, 16*mm, 30*mm, 28*mm, 38*mm, 14*mm, 14*mm, 22*mm]
         linhas_rev = []
-        for _, r in df_r.sort_values(["Código", "Data"], ascending=[True, False]).head(80).iterrows():
+        for _, r in df_r.sort_values(["Código", "Data"] if "Código" in df_r.columns else ["Data"],
+                                     ascending=[True, False] if "Código" in df_r.columns else False).head(80).iterrows():
             km_v = _fmt_num(r.get("KM")) if pd.notna(r.get("KM")) and float(r.get("KM") or 0) > 0 else "-"
             h_v  = _fmt_num(r.get("Horas")) if pd.notna(r.get("Horas")) and float(r.get("Horas") or 0) > 0 else "-"
             linhas_rev.append([
@@ -529,65 +668,15 @@ def gerar_pdf_conformidade_revisoes(
                 _safe(r.get("Responsável")),
             ])
         elements.append(_tabela_simples(cols_rev, linhas_rev, P, cw_rev, cor_cabecalho=P["blue"]))
-    elements.append(Spacer(1, 4 * mm))
-
-    # ── Equipamentos vencidos ─────────────────────────────────────────────────
-    if vencidos:
-        elements.append(PageBreak())
-        elements += _secao(
-            "⚠ Equipamentos com revisão vencida (situação atual)",
-            f"{len(vencidos)} item(ns) com revisão já ultrapassada na data de geração deste relatório.",
-            styles, P,
-        )
-        linhas_v = [
-            [
-                (_safe(s.get("codigo")), True, P["red"], TA_LEFT),
-                _safe(s.get("nome")),
-                _safe(s.get("setor_nome")),
-                _safe(s.get("etapa")),
-                _fmt_num(s.get("falta")) + " " + _safe(s.get("unidade")),
-            ]
-            for s in vencidos
-        ]
-        elements.append(_tabela_simples(
-            ["Código", "Equipamento", "Setor", "Etapa", "Atraso"],
-            linhas_v, P, [18*mm, 50*mm, 38*mm, 45*mm, 24*mm],
-            cor_cabecalho=P["red"],
-        ))
-        elements.append(Spacer(1, 4 * mm))
-
-    # ── Equipamentos em dia ───────────────────────────────────────────────────
-    if em_dia:
-        elements += _secao(
-            "✓ Equipamentos em dia (situação atual)",
-            f"{len(em_dia)} item(ns) dentro do prazo de revisão na data de geração deste relatório.",
-            styles, P,
-        )
-        linhas_d = [
-            [
-                (_safe(s.get("codigo")), True, P["green"], TA_LEFT),
-                _safe(s.get("nome")),
-                _safe(s.get("setor_nome")),
-                _safe(s.get("etapa")),
-                _fmt_num(s.get("falta")) + " " + _safe(s.get("unidade")),
-            ]
-            for s in em_dia
-        ]
-        elements.append(_tabela_simples(
-            ["Código", "Equipamento", "Setor", "Etapa", "Faltam"],
-            linhas_d, P, [18*mm, 50*mm, 38*mm, 45*mm, 24*mm],
-            cor_cabecalho=P["green"],
-        ))
 
     elements.append(Spacer(1, 8 * mm))
     # Campo de assinatura
-    from reportlab.platypus import Table, TableStyle
     s_ass = ParagraphStyle("ass", fontName="Helvetica", fontSize=8, textColor=P["muted"])
     ass_t = Table([
         [Paragraph("Responsável pela conferência:", s_ass), Paragraph("Data:", s_ass)],
         [Paragraph("_" * 60, s_ass), Paragraph("___/___/______", s_ass)],
     ], colWidths=[PW * 0.72, PW * 0.28])
-    ass_t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("TOPPADDING", (0, 0), (-1, -1), 4)]))
+    ass_t.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "BOTTOM"), ("TOPPADDING", (0,0), (-1,-1), 4)]))
     elements.append(ass_t)
 
     doc.build(elements, onFirstPage=hdr, onLaterPages=hdr)
