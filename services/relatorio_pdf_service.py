@@ -997,15 +997,28 @@ def gerar_pdf_ficha_tecnica(
     if status_revisoes:
         linhas_sr = []
         for s in status_revisoes:
+            realizado = bool(s.get("realizado_no_ciclo", False))
+            ult_exec  = float(s.get("ultima_execucao", 0) or 0)
+            unidade   = _safe(s.get("unidade", "km"))
             st = str(s.get("status", "")).upper()
-            if st == "VENCIDO":
-                cor_st, txt_st = P["red"],   "VENCIDO"
+
+            if realizado:
+                # Etapa já executada no ciclo atual
+                cor_st, txt_st = P["green"], "✓ REALIZADA"
+                falta_txt = f"Realizada em {_fmt_num(ult_exec)} {unidade}" if ult_exec > 0 else "Realizada neste ciclo"
+            elif st == "VENCIDO":
+                cor_st, txt_st = P["red"], "VENCIDO"
+                falta_v   = float(s.get("diferenca") or 0)
+                falta_txt = f"{abs(falta_v):.0f} {unidade} atraso"
             elif st == "PROXIMO":
                 cor_st, txt_st = P["amber"], "PRÓXIMO"
+                falta_v   = float(s.get("diferenca") or 0)
+                falta_txt = f"Faltam {abs(falta_v):.0f} {unidade}"
             else:
                 cor_st, txt_st = P["green"], "EM DIA"
-            falta_v = float(s.get("diferenca") or s.get("falta") or 0)
-            falta_txt = f"{abs(falta_v):.0f} {_safe(s.get('unidade', 'km'))}"
+                falta_v   = float(s.get("diferenca") or 0)
+                falta_txt = f"Faltam {abs(falta_v):.0f} {unidade}"
+
             linhas_sr.append([
                 _safe(s.get("etapa") or s.get("nome_etapa")),
                 _safe(s.get("tipo_controle", "km")).upper(),
@@ -1015,8 +1028,8 @@ def gerar_pdf_ficha_tecnica(
                 falta_txt,
             ])
         elements.append(_tabela_simples(
-            ["Etapa", "Controle", "Leitura atual", "Vencimento", "Status", "Diferença"],
-            linhas_sr, P, [52*mm, 18*mm, 22*mm, 22*mm, 20*mm, 22*mm],
+            ["Etapa", "Controle", "Leitura atual", "Vencimento", "Status", "Situação"],
+            linhas_sr, P, [52*mm, 18*mm, 22*mm, 22*mm, 22*mm, 20*mm],
         ))
     else:
         elements.append(Paragraph("Sem template de revisão configurado.",
@@ -1032,15 +1045,27 @@ def gerar_pdf_ficha_tecnica(
     if status_lubrificacoes:
         linhas_sl = []
         for s in status_lubrificacoes:
+            realizado = bool(s.get("realizado_no_ciclo", False))
+            ult_exec  = float(s.get("ultima_execucao", 0) or 0)
+            unidade   = _safe(s.get("unidade", "km"))
             st = str(s.get("status", "")).upper()
-            if st == "VENCIDO":
-                cor_st, txt_st = P["red"],   "VENCIDO"
+
+            if realizado:
+                cor_st, txt_st = P["green"], "✓ REALIZADA"
+                falta_txt = f"Realizada em {_fmt_num(ult_exec)} {unidade}" if ult_exec > 0 else "Realizada neste ciclo"
+            elif st == "VENCIDO":
+                cor_st, txt_st = P["red"], "VENCIDO"
+                falta_v   = float(s.get("diferenca") or 0)
+                falta_txt = f"{abs(falta_v):.0f} {unidade} atraso"
             elif st == "PROXIMO":
                 cor_st, txt_st = P["amber"], "PRÓXIMO"
+                falta_v   = float(s.get("diferenca") or 0)
+                falta_txt = f"Faltam {abs(falta_v):.0f} {unidade}"
             else:
                 cor_st, txt_st = P["green"], "EM DIA"
-            falta_v = float(s.get("diferenca") or s.get("falta") or 0)
-            falta_txt = f"{abs(falta_v):.0f} {_safe(s.get('unidade', 'km'))}"
+                falta_v   = float(s.get("diferenca") or 0)
+                falta_txt = f"Faltam {abs(falta_v):.0f} {unidade}"
+
             linhas_sl.append([
                 _safe(s.get("item") or s.get("nome_item")),
                 _safe(s.get("tipo_produto") or s.get("produto", "-")),
@@ -1051,8 +1076,8 @@ def gerar_pdf_ficha_tecnica(
                 falta_txt,
             ])
         elements.append(_tabela_simples(
-            ["Item", "Produto", "Controle", "Atual", "Vencimento", "Status", "Diferença"],
-            linhas_sl, P, [40*mm, 28*mm, 15*mm, 17*mm, 19*mm, 19*mm, 18*mm],
+            ["Item", "Produto", "Controle", "Atual", "Vencimento", "Status", "Situação"],
+            linhas_sl, P, [38*mm, 26*mm, 15*mm, 17*mm, 19*mm, 22*mm, 19*mm],
             cor_cabecalho=P["green"],
         ))
     else:

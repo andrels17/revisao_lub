@@ -161,13 +161,15 @@ def _status_revisoes_equipamento(eqp_id) -> list[dict]:
         itens = revisoes_service.listar_controle_revisoes_por_equipamento().get(eqp_id, [])
         return [
             {
-                "etapa": i.get("etapa", "-"),
-                "tipo_controle": i.get("tipo_controle", "km"),
-                "atual": float(i.get("atual", 0) or 0),
-                "vencimento": float(i.get("vencimento", 0) or 0),
-                "diferenca": float(i.get("diferenca", 0) or 0),
-                "status": i.get("status", "EM_DIA"),
-                "unidade": "h" if str(i.get("tipo_controle", "km")).lower().startswith("h") else "km",
+                "etapa":             i.get("etapa", "-"),
+                "tipo_controle":     i.get("tipo_controle", "km"),
+                "atual":             float(i.get("atual", 0) or 0),
+                "vencimento":        float(i.get("vencimento", 0) or 0),
+                "diferenca":         float(i.get("diferenca", 0) or 0),
+                "status":            i.get("status", "EM_DIA"),
+                "realizado_no_ciclo": bool(i.get("realizado_no_ciclo", False)),
+                "ultima_execucao":   float(i.get("ultima_execucao", 0) or 0),
+                "unidade":           "h" if str(i.get("tipo_controle", "km")).lower().startswith("h") else "km",
             }
             for i in itens
         ]
@@ -182,14 +184,16 @@ def _status_lubrificacoes_equipamento(eqp_id) -> list[dict]:
         itens = lubrificacoes_service.calcular_proximas_lubrificacoes_batch([eqp_id]).get(eqp_id, [])
         return [
             {
-                "item": i.get("item", "-"),
-                "tipo_produto": i.get("tipo_produto", "-"),
-                "tipo_controle": i.get("tipo_controle", "km"),
-                "atual": float(i.get("atual", 0) or 0),
-                "vencimento": float(i.get("vencimento", 0) or 0),
-                "diferenca": float(i.get("diferenca", 0) or 0),
-                "status": i.get("status", "EM_DIA"),
-                "unidade": "h" if str(i.get("tipo_controle", "km")).lower().startswith("h") else "km",
+                "item":              i.get("item", "-"),
+                "tipo_produto":      i.get("tipo_produto", "-"),
+                "tipo_controle":     i.get("tipo_controle", "km"),
+                "atual":             float(i.get("atual", 0) or 0),
+                "vencimento":        float(i.get("vencimento", 0) or 0),
+                "diferenca":         float(i.get("diferenca", 0) or 0),
+                "status":            i.get("status", "EM_DIA"),
+                "realizado_no_ciclo": bool(i.get("realizado_no_ciclo", False)),
+                "ultima_execucao":   float(i.get("ultima_execucao", 0) or 0),
+                "unidade":           "h" if str(i.get("tipo_controle", "km")).lower().startswith("h") else "km",
             }
             for i in itens
         ]
