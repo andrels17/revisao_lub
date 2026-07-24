@@ -136,24 +136,22 @@ def _carregar_historico_equipamento(eqp_id, limite=20) -> tuple[list[dict], list
 
 
 def _ultima_leitura_equipamento(eqp_id) -> dict | None:
-    conn = get_conn()
+    """Retorna a última leitura do equipamento usando leituras_service
+    (que já detecta dinamicamente as colunas disponíveis no schema)."""
+    from services import leituras_service
     try:
-        cur = conn.cursor()
-        cur.execute(
-            """SELECT l.data_leitura, l.km_valor, l.horas_valor,
-                      COALESCE(r.nome, '-') AS responsavel
-               FROM leituras l
-               LEFT JOIN responsaveis r ON r.id = l.responsavel_id
-               WHERE l.equipamento_id = %s
-               ORDER BY l.data_leitura DESC LIMIT 1""",
-            (eqp_id,),
-        )
-        row = cur.fetchone()
-        if row:
-            return {"data_leitura": row[0], "km_valor": row[1], "horas_valor": row[2], "responsavel": row[3]}
+        rows = leituras_service.listar_por_equipamento(eqp_id, limite=1)
+        if rows:
+            r = rows[0]
+            return {
+                "data_leitura": r.get("data_leitura"),
+                "km_valor":     r.get("km_valor"),
+                "horas_valor":  r.get("horas_valor"),
+                "responsavel":  r.get("responsavel") or "-",
+            }
         return None
-    finally:
-        release_conn(conn)
+    except Exception:
+        return None
 
 
 def _status_revisoes_equipamento(eqp_id) -> list[dict]:
