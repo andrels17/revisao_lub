@@ -55,6 +55,7 @@ ROLE_PAGINAS["admin"] = {
     "🛢️ Controle de Lubrificações",
     "📱 Alertas WhatsApp",
     "📥 Importar Equipamentos", "📈 Relatório de Manutenção",
+    "📄 Relatórios PDF",
     "⚙️ Configurações",
     "🔥 Prioridades do Dia",
     "📋 Log de Auditoria",
@@ -68,6 +69,7 @@ ROLE_PAGINAS["gestor"] = {
     "🛢️ Controle de Lubrificações",
     "📱 Alertas WhatsApp",
     "📈 Relatório de Manutenção",
+    "📄 Relatórios PDF",
     "🔥 Prioridades do Dia",
 }
 ROLE_PAGINAS["operador"] = {
@@ -82,6 +84,7 @@ ROLE_PAGINAS["visualizador"] = {
     "🧭 Painel Operacional",
     "🧠 Painel Executivo",
     "📈 Relatório de Manutenção",
+    "📄 Relatórios PDF",
     "🔥 Prioridades do Dia",
 }
 

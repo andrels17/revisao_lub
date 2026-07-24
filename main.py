@@ -19,6 +19,7 @@ from ui import (
     leituras_page,
     lubrificacoes_page,
     relatorio_page,
+    relatorios_pdf_page,
     responsaveis_page,
     setores_page,
     templates_page,
@@ -100,6 +101,7 @@ SECOES = {
     },
     "Gestão": {
         "📈 Relatório de Manutenção": relatorio_page,
+        "📄 Relatórios PDF": relatorios_pdf_page,
         "📱 Alertas WhatsApp": alertas_page,
         "⚙️ Configurações": configuracoes_page,
         "👥 Usuários": usuarios_page,
