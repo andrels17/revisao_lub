@@ -509,6 +509,20 @@ def _form_registrar(item, key_suffix, integracao=None):
         salvar = st.form_submit_button("Registrar execução", use_container_width=True, type="primary")
 
         if salvar:
+            # ── Construir observações com prefixo da etapa ──────────────────
+            # O campo "Etapa: X" é OBRIGATÓRIO para que revisoes_service
+            # reconheça a execução no ciclo correto. Sem ele a etapa
+            # permanece "vencida" mesmo após registrada.
+            nome_etapa = str(item.get("etapa") or item.get("nome_etapa") or "").strip()
+            obs_usuario = obs.strip()
+            if nome_etapa:
+                if obs_usuario:
+                    observacoes_final = f"Etapa: {nome_etapa}\n{obs_usuario}"
+                else:
+                    observacoes_final = f"Etapa: {nome_etapa}"
+            else:
+                observacoes_final = obs_usuario or None
+            # ───────────────────────────────────────────────────────────────
             try:
                 execucoes_service.criar_execucao({
                     "equipamento_id":   eqp["id"],
@@ -517,7 +531,7 @@ def _form_registrar(item, key_suffix, integracao=None):
                     "data_execucao":    data_exec,
                     "km_execucao":      km_exec,
                     "horas_execucao":   horas_exec,
-                    "observacoes":      obs.strip() or None,
+                    "observacoes":      observacoes_final,
                     "itens_executados": itens_marcados,
                     "status":           "concluida",
                 })
