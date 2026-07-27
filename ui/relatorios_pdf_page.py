@@ -342,15 +342,16 @@ def _status_lubrificacoes_equipamento(eqp_id) -> list[dict]:
             if leitura_base > leitura_atual:
                 leitura_base = leitura_atual
 
-            nome_ref = str(nome_item or "").strip().lower()
-            ultima   = ultima_por_id.get(item_id)
-            if ultima is None and nome_ref:
-                ultima = ultima_por_nome.get(nome_ref)
-            ultima = float(ultima or 0)
+            nome_ref   = str(nome_item or "").strip().lower()
+            ultima_raw = ultima_por_id.get(item_id)
+            if ultima_raw is None and nome_ref:
+                ultima_raw = ultima_por_nome.get(nome_ref)
+            tem_execucao = ultima_raw is not None
+            ultima = float(ultima_raw or 0)
 
             status, _ref, prox_venc, diff = _status_item_ciclo(
                 leitura_atual, ultima, float(intervalo or 0),
-                tolerancia, leitura_base=leitura_base,
+                tolerancia, leitura_base=leitura_base, tem_execucao=tem_execucao,
             )
 
             itens.append({

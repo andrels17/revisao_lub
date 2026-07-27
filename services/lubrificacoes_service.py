@@ -11,7 +11,7 @@ from services import cache_service, configuracoes_service
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
-def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, leitura_base=0):
+def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, leitura_base=0, tem_execucao=None):
     if intervalo <= 0:
         atual = max(0.0, float(leitura_atual or 0))
         return "EM DIA", atual, atual, 0.0
@@ -21,7 +21,16 @@ def _status_item_ciclo(leitura_atual, ultima_execucao, intervalo, tolerancia, le
     intervalo = float(intervalo or 0)
     leitura_base = float(leitura_base or 0)
 
-    if ultima_execucao <= 0:
+    # `tem_execucao` indica se já existe alguma execução registrada para o item,
+    # independente do valor numérico da leitura. Sem isso, uma execução legítima
+    # registrada com km/horas = 0 (ex.: equipamento novo, horímetro zerado) era
+    # tratada como "nunca lubrificado" e o item ficava preso em SEM_BASE mesmo
+    # após a troca já ter sido feita. Quando o chamador não informa a flag,
+    # mantemos o comportamento antigo (baseado só no valor) por compatibilidade.
+    if tem_execucao is None:
+        tem_execucao = ultima_execucao > 0
+
+    if not tem_execucao:
         proximo_vencimento = leitura_base + intervalo
         diferenca = proximo_vencimento - leitura_atual
         return "SEM_BASE", leitura_base, proximo_vencimento, diferenca
@@ -314,10 +323,11 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
                 leitura_base = leitura_atual
 
             nome_ref = str(nome_item or "").strip().lower()
-            ultima = ultimas_por_item.get(eqp_id, {}).get(item_id)
-            if ultima is None and nome_ref:
-                ultima = ultimas_por_nome.get(eqp_id, {}).get(nome_ref)
-            ultima = float(ultima or 0)
+            ultima_raw = ultimas_por_item.get(eqp_id, {}).get(item_id)
+            if ultima_raw is None and nome_ref:
+                ultima_raw = ultimas_por_nome.get(eqp_id, {}).get(nome_ref)
+            tem_execucao = ultima_raw is not None
+            ultima = float(ultima_raw or 0)
 
             status, ref_ciclo, prox_venc, diff = _status_item_ciclo(
                 leitura_atual,
@@ -325,6 +335,7 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
                 float(intervalo or 0),
                 tolerancia,
                 leitura_base=leitura_base,
+                tem_execucao=tem_execucao,
             )
 
             resultado[eqp_id].append(
