@@ -178,27 +178,197 @@ def _status_revisoes_equipamento(eqp_id) -> list[dict]:
 
 
 def _status_lubrificacoes_equipamento(eqp_id) -> list[dict]:
-    """Retorna status atual de cada item de lubrificação do equipamento."""
-    from services import lubrificacoes_service
+    """Retorna status atual de cada item de lubrificação do equipamento.
+
+    Primeiro tenta usar o serviço com cache. Se retornar vazio,
+    faz uma query direta ao banco (sem cache) com detecção de schema,
+    e propaga exceções para que apareçam no st.error() da UI.
+    """
+    from services import lubrificacoes_service, configuracoes_service
+    from services.lubrificacoes_service import _status_item_ciclo, _normalizar_tipo_controle
+
+    # ── Tentativa 1: serviço com cache ───────────────────────────────────────
     try:
-        itens = lubrificacoes_service.calcular_proximas_lubrificacoes_batch([eqp_id]).get(eqp_id, [])
-        return [
-            {
-                "item":              i.get("item", "-"),
-                "tipo_produto":      i.get("tipo_produto", "-"),
-                "tipo_controle":     i.get("tipo_controle", "km"),
-                "atual":             float(i.get("atual", 0) or 0),
-                "vencimento":        float(i.get("vencimento", 0) or 0),
-                "diferenca":         float(i.get("diferenca", 0) or 0),
-                "status":            i.get("status", "EM_DIA"),
-                "realizado_no_ciclo": bool(i.get("realizado_no_ciclo", False)),
-                "ultima_execucao":   float(i.get("ultima_execucao", 0) or 0),
-                "unidade":           "h" if str(i.get("tipo_controle", "km")).lower().startswith("h") else "km",
-            }
-            for i in itens
-        ]
+        result = lubrificacoes_service.calcular_proximas_lubrificacoes_batch([eqp_id]).get(eqp_id, [])
+        if result:
+            return [
+                {
+                    "item":               i.get("item", "-"),
+                    "tipo_produto":       i.get("tipo_produto", "-"),
+                    "tipo_controle":      i.get("tipo_controle", "km"),
+                    "atual":              float(i.get("atual", 0) or 0),
+                    "vencimento":         float(i.get("vencimento", 0) or 0),
+                    "diferenca":          float(i.get("diferenca", 0) or 0),
+                    "status":             i.get("status", "EM DIA"),
+                    "realizado_no_ciclo": bool(i.get("realizado_no_ciclo", False)),
+                    "ultima_execucao":    float(i.get("ultima_execucao", 0) or 0),
+                    "unidade":            "h" if str(i.get("tipo_controle", "km")).lower().startswith("h") else "km",
+                }
+                for i in result
+            ]
     except Exception:
-        return []
+        pass  # tenta fallback abaixo
+
+    # ── Tentativa 2: query direta ao banco com detecção de schema ────────────
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+
+        def _cols(table):
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name=%s",
+                (table,),
+            )
+            return {r[0] for r in cur.fetchall()}
+
+        it_cols = _cols("itens_template_lubrificacao")
+        tl_cols = _cols("templates_lubrificacao")
+        eq_cols = _cols("equipamentos")
+        ex_cols = _cols("execucoes_lubrificacao")
+
+        def _pick(cols, *candidates):
+            for c in candidates:
+                if c in cols:
+                    return c
+            return None
+
+        item_fk_col        = _pick(it_cols, "template_id", "template_lubrificacao_id", "lubrificacao_template_id")
+        item_nome_col      = _pick(it_cols, "nome_item", "nome", "item", "descricao")
+        item_prod_col      = _pick(it_cols, "tipo_produto", "produto", "tipo", "nome_produto")
+        item_intervalo_col = _pick(it_cols, "intervalo_valor", "intervalo", "valor_intervalo")
+        item_ativo_col     = _pick(it_cols, "ativo")
+
+        if not item_fk_col or not item_nome_col or not item_intervalo_col:
+            return []
+
+        tipo_col    = "tipo_controle" if "tipo_controle" in tl_cols else None
+        km_base_col    = _pick(eq_cols, "km_inicial_plano", "km_base_plano", "km_atual")
+        horas_base_col = _pick(eq_cols, "horas_inicial_plano", "horas_base_plano", "horas_atual")
+
+        ativo_pred = f"AND coalesce(itl.{item_ativo_col}, true) = true" if item_ativo_col else ""
+        tipo_sel   = f"tl.{tipo_col}" if tipo_col else "'km'"
+        prod_sel   = f"itl.{item_prod_col}" if item_prod_col else "null::text"
+
+        cur.execute(
+            f"""
+            SELECT
+                coalesce(e.km_atual, 0)                   AS km_atual,
+                coalesce(e.horas_atual, 0)                 AS horas_atual,
+                coalesce(e.{km_base_col}, 0)               AS km_base,
+                coalesce(e.{horas_base_col}, 0)            AS horas_base,
+                {tipo_sel}                                  AS tipo_controle,
+                itl.id                                      AS item_id,
+                itl.{item_nome_col}                         AS nome_item,
+                {prod_sel}                                  AS tipo_produto,
+                coalesce(itl.{item_intervalo_col}, 0)       AS intervalo
+            FROM equipamentos e
+            JOIN templates_lubrificacao tl ON tl.id = e.template_lubrificacao_id
+            JOIN itens_template_lubrificacao itl
+                 ON itl.{item_fk_col} = tl.id {ativo_pred}
+            WHERE e.id = %s
+              AND e.template_lubrificacao_id IS NOT NULL
+            ORDER BY coalesce(itl.{item_intervalo_col}, 0), itl.{item_nome_col}
+            """,
+            (eqp_id,),
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return []
+
+        # Buscar últimas execuções
+        ex_item_col  = _pick(ex_cols, "item_id")
+        ex_nome_col  = _pick(ex_cols, "nome_item", "item", "descricao")
+        ex_km_col    = _pick(ex_cols, "km_execucao", "km", "km_atual")
+        ex_horas_col = _pick(ex_cols, "horas_execucao", "horas", "horimetro")
+
+        ultima_por_id:   dict = {}
+        ultima_por_nome: dict = {}
+
+        if ex_km_col and ex_horas_col:
+            if ex_item_col:
+                try:
+                    cur.execute(
+                        f"""
+                        SELECT el.{ex_item_col},
+                               max(CASE WHEN lower(coalesce({tipo_sel},'km')) LIKE '%hora%'
+                                        THEN coalesce(el.{ex_horas_col},0)
+                                        ELSE coalesce(el.{ex_km_col},0) END)
+                        FROM execucoes_lubrificacao el
+                        JOIN equipamentos e ON e.id = el.equipamento_id
+                        JOIN templates_lubrificacao tl ON tl.id = e.template_lubrificacao_id
+                        WHERE el.equipamento_id = %s
+                          AND el.{ex_item_col} IS NOT NULL
+                        GROUP BY el.{ex_item_col}
+                        """,
+                        (eqp_id,),
+                    )
+                    for iid, ult in cur.fetchall():
+                        ultima_por_id[iid] = float(ult or 0)
+                except Exception:
+                    conn.rollback()
+
+            if ex_nome_col:
+                try:
+                    cur.execute(
+                        f"""
+                        SELECT lower(trim(coalesce(el.{ex_nome_col},''))) AS nm,
+                               max(CASE WHEN lower(coalesce({tipo_sel},'km')) LIKE '%hora%'
+                                        THEN coalesce(el.{ex_horas_col},0)
+                                        ELSE coalesce(el.{ex_km_col},0) END)
+                        FROM execucoes_lubrificacao el
+                        JOIN equipamentos e ON e.id = el.equipamento_id
+                        JOIN templates_lubrificacao tl ON tl.id = e.template_lubrificacao_id
+                        WHERE el.equipamento_id = %s
+                          AND nullif(trim(coalesce(el.{ex_nome_col},'')), '') IS NOT NULL
+                        GROUP BY nm
+                        """,
+                        (eqp_id,),
+                    )
+                    for nm, ult in cur.fetchall():
+                        ultima_por_nome[nm] = float(ult or 0)
+                except Exception:
+                    conn.rollback()
+
+        tolerancia = configuracoes_service.get_tolerancia_padrao()
+        itens = []
+
+        for (km_atual, horas_atual, km_base, horas_base,
+             tipo_ctrl_raw, item_id, nome_item, tipo_produto, intervalo) in rows:
+
+            tipo_controle = _normalizar_tipo_controle(tipo_ctrl_raw)
+            leitura_atual = float(horas_atual if tipo_controle == "horas" else km_atual)
+            leitura_base  = float(horas_base  if tipo_controle == "horas" else km_base)
+            if leitura_base > leitura_atual:
+                leitura_base = leitura_atual
+
+            nome_ref = str(nome_item or "").strip().lower()
+            ultima   = ultima_por_id.get(item_id)
+            if ultima is None and nome_ref:
+                ultima = ultima_por_nome.get(nome_ref)
+            ultima = float(ultima or 0)
+
+            status, _ref, prox_venc, diff = _status_item_ciclo(
+                leitura_atual, ultima, float(intervalo or 0),
+                tolerancia, leitura_base=leitura_base,
+            )
+
+            itens.append({
+                "item":               str(nome_item or "-"),
+                "tipo_produto":       str(tipo_produto or "-"),
+                "tipo_controle":      tipo_controle,
+                "atual":              leitura_atual,
+                "vencimento":         float(prox_venc),
+                "diferenca":          float(diff),
+                "status":             status,
+                "realizado_no_ciclo": status == "REALIZADO",
+                "ultima_execucao":    ultima,
+                "unidade":            "h" if tipo_controle == "horas" else "km",
+            })
+
+        return itens
+    finally:
+        release_conn(conn)
 
 
 # ── estilos da página ─────────────────────────────────────────────────────────

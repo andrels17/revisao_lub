@@ -1077,21 +1077,25 @@ def gerar_pdf_ficha_tecnica(
             nome_lub   = _safe(s.get("item") or s.get("nome_item"))
 
             if realizado:
-                bg_lub   = P["green"]
+                bg_lub    = P["green"]
                 icone_lub = "✓"
-                val_lub  = f"feita em {_fmt_num(ult_exec)} {unidade}" if ult_exec > 0 else "realizada"
+                val_lub   = f"feita em {_fmt_num(ult_exec)} {unidade}" if ult_exec > 0 else "realizada"
             elif st_lub == "VENCIDO":
-                bg_lub   = P["red"]
+                bg_lub    = P["red"]
                 icone_lub = "▶"
-                val_lub  = f"{_fmt_num(abs(falta_lub))} {unidade} atraso"
+                val_lub   = f"{_fmt_num(abs(falta_lub))} {unidade} atraso"
             elif st_lub == "PROXIMO":
-                bg_lub   = P["amber"]
+                bg_lub    = P["amber"]
                 icone_lub = "◎"
-                val_lub  = f"faltam {_fmt_num(abs(falta_lub))} {unidade}"
+                val_lub   = f"faltam {_fmt_num(abs(falta_lub))} {unidade}"
+            elif st_lub in ("SEM_BASE", "SEM BASE"):
+                bg_lub    = P["purple"]
+                icone_lub = "★"
+                val_lub   = "1ª troca"
             else:
-                bg_lub   = P["gray_mid"]
+                bg_lub    = P["gray_mid"]
                 icone_lub = "○"
-                val_lub  = f"faltam {_fmt_num(abs(falta_lub))} {unidade}" if falta_lub > 0 else "em dia"
+                val_lub   = f"faltam {_fmt_num(abs(falta_lub))} {unidade}" if falta_lub > 0 else "em dia"
 
             style_cmds_lub.append(("BACKGROUND", (i, 0), (i, 2), bg_lub))
 
@@ -1130,6 +1134,10 @@ def gerar_pdf_ficha_tecnica(
                 cor_st, txt_st = P["amber"], "PRÓXIMO"
                 falta_v   = float(s.get("diferenca") or 0)
                 falta_txt = f"Faltam {abs(falta_v):.0f} {unidade}"
+            elif st in ("SEM_BASE", "SEM BASE"):
+                cor_st, txt_st = P["purple"], "SEM BASE"
+                falta_v   = float(s.get("diferenca") or 0)
+                falta_txt = f"Agendar 1ª troca — faltam {abs(falta_v):.0f} {unidade}" if falta_v > 0 else "Agendar 1ª troca"
             else:
                 cor_st, txt_st = P["green"], "EM DIA"
                 falta_v   = float(s.get("diferenca") or 0)
