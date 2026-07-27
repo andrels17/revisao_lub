@@ -1043,6 +1043,75 @@ def gerar_pdf_ficha_tecnica(
         styles, P,
     )
     if status_lubrificacoes:
+        from reportlab.lib import colors as _colors
+        from reportlab.lib.styles import ParagraphStyle as _PS
+
+        # ── Barra de progresso visual (igual à de revisões) ──────────────────
+        s_lub_nome = _PS("lubn", fontName="Helvetica-Bold", fontSize=6.5,
+            textColor=P["white"], alignment=TA_CENTER, leading=8)
+        s_lub_nome_g = _PS("lubn_g", fontName="Helvetica", fontSize=6.5,
+            textColor=P["muted"], alignment=TA_CENTER, leading=8)
+
+        n_lub = len(status_lubrificacoes)
+        cw_lub_bar = [PW / n_lub] * n_lub
+
+        row_nome_lub = []
+        row_icon_lub = []
+        row_val_lub  = []
+        style_cmds_lub = [
+            ("TOPPADDING",    (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 2),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 2),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("INNERGRID",     (0, 0), (-1, -1), 0.3, P["white"]),
+            ("BOX",           (0, 0), (-1, -1), 0.5, P["gray_mid"]),
+        ]
+
+        for i, s in enumerate(status_lubrificacoes):
+            realizado  = bool(s.get("realizado_no_ciclo", False))
+            ult_exec   = float(s.get("ultima_execucao", 0) or 0)
+            unidade    = _safe(s.get("unidade", "km"))
+            st_lub     = str(s.get("status", "")).upper()
+            falta_lub  = float(s.get("diferenca", 0) or 0)
+            nome_lub   = _safe(s.get("item") or s.get("nome_item"))
+
+            if realizado:
+                bg_lub   = P["green"]
+                icone_lub = "✓"
+                val_lub  = f"feita em {_fmt_num(ult_exec)} {unidade}" if ult_exec > 0 else "realizada"
+            elif st_lub == "VENCIDO":
+                bg_lub   = P["red"]
+                icone_lub = "▶"
+                val_lub  = f"{_fmt_num(abs(falta_lub))} {unidade} atraso"
+            elif st_lub == "PROXIMO":
+                bg_lub   = P["amber"]
+                icone_lub = "◎"
+                val_lub  = f"faltam {_fmt_num(abs(falta_lub))} {unidade}"
+            else:
+                bg_lub   = P["gray_mid"]
+                icone_lub = "○"
+                val_lub  = f"faltam {_fmt_num(abs(falta_lub))} {unidade}" if falta_lub > 0 else "em dia"
+
+            style_cmds_lub.append(("BACKGROUND", (i, 0), (i, 2), bg_lub))
+
+            lbl_lub = nome_lub[:14] if nome_lub and nome_lub != "-" else f"{i+1}º item"
+            row_nome_lub.append(Paragraph(lbl_lub, s_lub_nome if bg_lub != P["gray_mid"] else s_lub_nome_g))
+            row_icon_lub.append(Paragraph(icone_lub, _PS("iclb", fontName="Helvetica-Bold",
+                fontSize=12, textColor=_colors.white if bg_lub != P["gray_mid"] else P["muted"],
+                alignment=TA_CENTER, leading=14)))
+            row_val_lub.append(Paragraph(val_lub, _PS("vtlb", fontName="Helvetica",
+                fontSize=6, textColor=_colors.white if bg_lub != P["gray_mid"] else P["muted"],
+                alignment=TA_CENTER, leading=7)))
+
+        from reportlab.platypus import Table as _Table, TableStyle as _TS
+        prog_lub_t = _Table([row_nome_lub, row_icon_lub, row_val_lub],
+            colWidths=cw_lub_bar, rowHeights=[8, 10, 8])
+        prog_lub_t.setStyle(_TS(style_cmds_lub))
+        elements.append(prog_lub_t)
+        elements.append(Spacer(1, 3 * mm))
+
+        # ── Tabela detalhada de status ────────────────────────────────────────
         linhas_sl = []
         for s in status_lubrificacoes:
             realizado = bool(s.get("realizado_no_ciclo", False))
