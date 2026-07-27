@@ -353,6 +353,7 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
                     "horas_base_plano": float(horas_inicial_plano or 0),
                     "ultima_execucao": ultima,
                     "status": status,
+                    "realizado_no_ciclo": status == "REALIZADO",
                     "diferenca": diff,
                     "tipo_controle": tipo_controle,
                     "intervalo": float(intervalo or 0),
