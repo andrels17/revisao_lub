@@ -151,7 +151,12 @@ def _carregar_ultimas_execucoes_batch(cur, equipamento_ids, schema):
             list(equipamento_ids),
         )
         for eqp_id, item_ref, _tipo, ultima in cur.fetchall():
-            item_map[eqp_id][item_ref] = float(ultima or 0)
+            # Normaliza a chave para string: se `item_id` em execucoes_lubrificacao
+            # e `id` em itens_template_lubrificacao não forem exatamente do mesmo
+            # tipo de coluna no Postgres (ex.: uuid vs text/varchar), o psycopg2
+            # devolve tipos Python diferentes (uuid.UUID vs str) e o lookup abaixo
+            # nunca casa, mesmo com o mesmo valor — o item fica preso em SEM_BASE.
+            item_map[eqp_id][str(item_ref)] = float(ultima or 0)
 
     if ex_nome_col:
         cur.execute(
@@ -323,7 +328,7 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
                 leitura_base = leitura_atual
 
             nome_ref = str(nome_item or "").strip().lower()
-            ultima_raw = ultimas_por_item.get(eqp_id, {}).get(item_id)
+            ultima_raw = ultimas_por_item.get(eqp_id, {}).get(str(item_id))
             if ultima_raw is None and nome_ref:
                 ultima_raw = ultimas_por_nome.get(eqp_id, {}).get(nome_ref)
             tem_execucao = ultima_raw is not None
@@ -366,11 +371,13 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
             )
 
         return dict(resultado)
-    except Exception:
+    except Exception as _debug_exc:
         try:
             conn.rollback()
         except Exception:
             pass
+        import streamlit as st
+        st.write("DEBUG erro calcular_proximas_lubrificacoes_batch:", repr(_debug_exc))
         return {}
     finally:
         release_conn(conn)
