@@ -377,7 +377,9 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
         except Exception:
             pass
         import streamlit as st
+        import traceback
         st.write("DEBUG erro calcular_proximas_lubrificacoes_batch:", repr(_debug_exc))
+        st.code(traceback.format_exc())
         return {}
     finally:
         release_conn(conn)
