@@ -198,6 +198,8 @@ def _status_lubrificacoes_equipamento(eqp_id) -> list[dict]:
         # zero para garantir que o status bata com o que aparece ao vivo.
         lubrificacoes_service.calcular_proximas_lubrificacoes_batch.clear()
         result = lubrificacoes_service.calcular_proximas_lubrificacoes_batch([eqp_id]).get(eqp_id, [])
+        import streamlit as st
+        st.write("DEBUG status Graxa:", [i for i in result if "graxa" in str(i.get("item","")).lower()])
         if result:
             return [
                 {
