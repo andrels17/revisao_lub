@@ -189,6 +189,14 @@ def _status_lubrificacoes_equipamento(eqp_id) -> list[dict]:
 
     # ── Tentativa 1: serviço com cache ───────────────────────────────────────
     try:
+        # A tela "Controle de Lubrificações" chama esta mesma função, mas
+        # passando a lista com TODOS os equipamentos (chave de cache diferente
+        # de [eqp_id]). Isso pode fazer o relatório usar uma entrada de cache
+        # own (por eqp_id) que ainda não foi recalculada, mesmo já tendo sido
+        # invalidada a entrada usada pela tela. Como o PDF é gerado sob
+        # demanda (não é uma tela de alto tráfego), vale sempre recalcular do
+        # zero para garantir que o status bata com o que aparece ao vivo.
+        lubrificacoes_service.calcular_proximas_lubrificacoes_batch.clear()
         result = lubrificacoes_service.calcular_proximas_lubrificacoes_batch([eqp_id]).get(eqp_id, [])
         if result:
             return [
