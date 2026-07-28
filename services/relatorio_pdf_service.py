@@ -26,24 +26,29 @@ SUBTITULO_SISTEMA = "Sistema de Revisão e Lubrificação"
 def _paleta():
     from reportlab.lib import colors
     return {
-        "navy":     colors.HexColor("#0f2744"),
-        "blue":     colors.HexColor("#1a56a0"),
-        "blue_lt":  colors.HexColor("#dbeafe"),
-        "green":    colors.HexColor("#166534"),
-        "green_lt": colors.HexColor("#dcfce7"),
-        "red":      colors.HexColor("#991b1b"),
-        "red_lt":   colors.HexColor("#fee2e2"),
-        "amber":    colors.HexColor("#92400e"),
-        "amber_lt": colors.HexColor("#fef3c7"),
-        "gray":     colors.HexColor("#374151"),
-        "gray_lt":  colors.HexColor("#f9fafb"),
-        "gray_mid": colors.HexColor("#e5e7eb"),
-        "muted":    colors.HexColor("#6b7280"),
-        "stripe":   colors.HexColor("#f1f5f9"),
+        "navy":     colors.HexColor("#0b1e3d"),
+        "blue":     colors.HexColor("#2563eb"),
+        "blue_lt":  colors.HexColor("#eff6ff"),
+        "green":    colors.HexColor("#15803d"),
+        "green_lt": colors.HexColor("#f0fdf4"),
+        "red":      colors.HexColor("#b91c1c"),
+        "red_lt":   colors.HexColor("#fef2f2"),
+        "amber":    colors.HexColor("#b45309"),
+        "amber_lt": colors.HexColor("#fffbeb"),
+        "gray":     colors.HexColor("#1f2937"),
+        "gray_lt":  colors.HexColor("#f8fafc"),
+        "gray_mid": colors.HexColor("#e2e8f0"),
+        "muted":    colors.HexColor("#64748b"),
+        "stripe":   colors.HexColor("#f8fafc"),
         "white":    colors.white,
-        "purple":   colors.HexColor("#4c1d95"),
-        "purple_lt":colors.HexColor("#ede9fe"),
+        "purple":   colors.HexColor("#6d28d9"),
+        "purple_lt":colors.HexColor("#f5f3ff"),
     }
+
+
+def _hexstr(color) -> str:
+    """Converte uma reportlab.lib.colors.Color em string '#rrggbb' para uso em markup de Paragraph."""
+    return "#%02x%02x%02x" % (round(color.red * 255), round(color.green * 255), round(color.blue * 255))
 
 
 def _safe(v, default="-") -> str:
@@ -81,35 +86,56 @@ def _cabeçalho_padrao(canvas_obj, doc, titulo_relatorio: str, subtitulo: str, f
     canvas_obj.setFillColor(P["navy"])
     canvas_obj.rect(0, h - 30 * mm, w, 30 * mm, fill=1, stroke=0)
 
-    # Linha decorativa azul
+    # Fina linha de destaque logo abaixo da faixa (cor de acento do relatório)
     canvas_obj.setFillColor(P["blue"])
-    canvas_obj.rect(0, h - 31.5 * mm, w, 1.5 * mm, fill=1, stroke=0)
+    canvas_obj.rect(0, h - 30.9 * mm, w, 0.9 * mm, fill=1, stroke=0)
 
-    # Empresa (pequeno, canto superior esquerdo)
+    # Empresa (kicker, canto superior esquerdo)
     canvas_obj.setFillColor(colors.HexColor("#93c5fd"))
-    canvas_obj.setFont("Helvetica", 7.5)
-    canvas_obj.drawString(12 * mm, h - 8 * mm, f"{NOME_EMPRESA}  ·  {SUBTITULO_SISTEMA}")
+    canvas_obj.setFont("Helvetica-Bold", 7)
+    canvas_obj.drawString(12 * mm, h - 8.3 * mm, NOME_EMPRESA.upper())
+    canvas_obj.setFont("Helvetica", 7)
+    canvas_obj.setFillColor(colors.HexColor("#60a5fa"))
+    empresa_w = canvas_obj.stringWidth(NOME_EMPRESA.upper(), "Helvetica-Bold", 7)
+    canvas_obj.drawString(12 * mm + empresa_w + 4, h - 8.3 * mm, f"·  {SUBTITULO_SISTEMA}")
 
     # Título
     canvas_obj.setFillColor(colors.white)
-    canvas_obj.setFont("Helvetica-Bold", 15)
-    canvas_obj.drawString(12 * mm, h - 17 * mm, titulo_relatorio)
+    canvas_obj.setFont("Helvetica-Bold", 16)
+    canvas_obj.drawString(12 * mm, h - 18 * mm, titulo_relatorio)
 
     # Subtítulo / filtros
-    canvas_obj.setFont("Helvetica", 8)
+    canvas_obj.setFont("Helvetica", 8.5)
     canvas_obj.setFillColor(colors.HexColor("#bfdbfe"))
-    canvas_obj.drawString(12 * mm, h - 23 * mm, subtitulo)
+    canvas_obj.drawString(12 * mm, h - 24 * mm, subtitulo)
     if filtros_txt:
-        canvas_obj.drawString(12 * mm, h - 27.5 * mm, filtros_txt)
+        canvas_obj.setFont("Helvetica-Oblique", 7.5)
+        canvas_obj.setFillColor(colors.HexColor("#93c5fd"))
+        canvas_obj.drawString(12 * mm, h - 28.2 * mm, filtros_txt)
+
+    # Selo "Gerado em" (canto superior direito, estilo pill)
+    canvas_obj.setFont("Helvetica", 7)
+    data_txt = f"Emitido em {gerado_em}"
+    tw = canvas_obj.stringWidth(data_txt, "Helvetica", 7)
+    pill_w = tw + 10
+    canvas_obj.setFillColor(colors.HexColor("#13294f"))
+    canvas_obj.roundRect(w - 12 * mm - pill_w, h - 12 * mm, pill_w, 5.6 * mm, 2.8 * mm, fill=1, stroke=0)
+    canvas_obj.setFillColor(colors.HexColor("#dbeafe"))
+    canvas_obj.drawString(w - 12 * mm - pill_w + 5, h - 12 * mm + 1.8 * mm, data_txt)
 
     # Rodapé
+    canvas_obj.setStrokeColor(P["gray_mid"])
+    canvas_obj.setLineWidth(0.6)
+    canvas_obj.line(12 * mm, 11.5 * mm, w - 12 * mm, 11.5 * mm)
+    canvas_obj.setFillColor(P["blue"])
+    canvas_obj.rect(12 * mm, 11.5 * mm, 14 * mm, 0.6, fill=1, stroke=0)
+
     canvas_obj.setFillColor(P["muted"])
     canvas_obj.setFont("Helvetica", 7)
     canvas_obj.drawString(12 * mm, 8 * mm, f"{NOME_EMPRESA}  ·  Gerado em {gerado_em}  ·  Confidencial")
+    canvas_obj.setFont("Helvetica-Bold", 7)
+    canvas_obj.setFillColor(P["navy"])
     canvas_obj.drawRightString(w - 12 * mm, 8 * mm, f"Página {doc.page}")
-    canvas_obj.setStrokeColor(P["gray_mid"])
-    canvas_obj.setLineWidth(0.4)
-    canvas_obj.line(12 * mm, 11.5 * mm, w - 12 * mm, 11.5 * mm)
 
     canvas_obj.restoreState()
 
@@ -139,17 +165,21 @@ def _hr(P, thickness=0.5):
 
 
 def _secao(titulo, desc, styles, P):
-    from reportlab.platypus import Paragraph
+    from reportlab.platypus import Paragraph, Spacer
     from reportlab.lib.styles import ParagraphStyle
+    accent = _hexstr(P["blue"])
     s_sec = ParagraphStyle("sec", parent=styles["Normal"],
-        fontName="Helvetica-Bold", fontSize=10, textColor=P["navy"],
-        leading=13, spaceBefore=6, spaceAfter=2)
+        fontName="Helvetica-Bold", fontSize=10.5, textColor=P["navy"],
+        leading=13, spaceBefore=10, spaceAfter=1)
     s_desc = ParagraphStyle("desc", parent=styles["Normal"],
         fontName="Helvetica", fontSize=8, textColor=P["muted"],
-        leading=11, spaceAfter=4)
-    elems = [_hr(P, 1), Paragraph(titulo, s_sec)]
+        leading=11, spaceAfter=5, leftIndent=8)
+    titulo_marcado = f'<font color="{accent}">▎</font> {titulo}'
+    elems = [Paragraph(titulo_marcado, s_sec)]
     if desc:
         elems.append(Paragraph(desc, s_desc))
+    else:
+        elems.append(Spacer(1, 2))
     return elems
 
 
@@ -168,7 +198,12 @@ def _tabela_simples(colunas, linhas, P, col_widths, cor_cabecalho=None):
             fontSize=7.5, textColor=c, alignment=align, leading=10)
         return Paragraph(_safe(txt), style)
 
-    hdr_row = [_cell(c, bold=True, color=P["white"]) for c in colunas]
+    def _hcell(txt, align=TA_LEFT):
+        style = ParagraphStyle("_th", fontName="Helvetica-Bold",
+            fontSize=7.3, textColor=P["white"], alignment=align, leading=9)
+        return Paragraph(_safe(txt).upper(), style)
+
+    hdr_row = [_hcell(c) for c in colunas]
     rows = [hdr_row]
     for i, linha in enumerate(linhas):
         row = []
@@ -188,46 +223,79 @@ def _tabela_simples(colunas, linhas, P, col_widths, cor_cabecalho=None):
     t = Table(rows, colWidths=col_widths, repeatRows=1)
     t.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (-1, 0), cor_cabecalho),
-        ("LINEBELOW",     (0, 0), (-1, 0), 1, P["navy"]),
+        ("TOPPADDING",    (0, 0), (-1, 0), 5.5),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 5.5),
+        ("LINEBELOW",     (0, 0), (-1, 0), 1.2, P["navy"]),
         *stripe_cmds,
         ("INNERGRID",     (0, 1), (-1, -1), 0.25, P["gray_mid"]),
-        ("BOX",           (0, 0), (-1, -1), 0.5,  P["gray_mid"]),
+        ("BOX",           (0, 0), (-1, -1), 0.6,  P["gray_mid"]),
         ("LEFTPADDING",   (0, 0), (-1, -1), 5),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING",    (0, 1), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
     ]))
     return t
 
 
 def _kpi_bar(items, P, PW):
-    """Linha de KPI cards em tabela."""
+    """Linha de KPI cards (fundo suave + borda na cor do indicador)."""
     from reportlab.platypus import Table, TableStyle, Paragraph
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
 
+    # mapa aproximado cor "forte" -> versão clara, para o fundo do card
+    tons_claros = {
+        _hexstr(P["blue"]):   P["blue_lt"],
+        _hexstr(P["green"]):  P["green_lt"],
+        _hexstr(P["red"]):    P["red_lt"],
+        _hexstr(P["amber"]):  P["amber_lt"],
+        _hexstr(P["purple"]): P["purple_lt"],
+        _hexstr(P["navy"]):   P["blue_lt"],
+        _hexstr(P["muted"]):  P["gray_lt"],
+    }
+
     n = len(items)
-    w = PW / n
+    gap = 2.5
+    w = (PW - gap * (n - 1)) / n
     hdr = [
-        Paragraph(_safe(label), ParagraphStyle("kh", fontName="Helvetica",
-            fontSize=7, textColor=P["muted"], alignment=TA_CENTER))
+        Paragraph(_safe(label).upper(), ParagraphStyle("kh", fontName="Helvetica-Bold",
+            fontSize=6.6, textColor=P["muted"], alignment=TA_CENTER, leading=8))
         for label, value, cor in items
     ]
     vals = [
         Paragraph(str(value), ParagraphStyle("kv", fontName="Helvetica-Bold",
-            fontSize=18, textColor=cor, alignment=TA_CENTER))
+            fontSize=19, textColor=cor, alignment=TA_CENTER, leading=22))
         for label, value, cor in items
     ]
-    t = Table([hdr, vals], colWidths=[w] * n, rowHeights=[9, 14])
+
+    rows_flat = []
+    col_widths = []
+    for idx, (label, value, cor) in enumerate(items):
+        col_widths.append(w)
+        if idx < n - 1:
+            col_widths.append(gap)
+
+    hdr_row, val_row = [], []
+    for idx in range(n):
+        hdr_row.append(hdr[idx])
+        val_row.append(vals[idx])
+        if idx < n - 1:
+            hdr_row.append("")
+            val_row.append("")
+
+    t = Table([hdr_row, val_row], colWidths=col_widths, rowHeights=[10, 16])
     cmds = [
-        ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LINEBELOW",  (0, 1), (-1, 1), 0.5, P["gray_mid"]),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]
-    for i in range(1, n):
-        cmds.append(("LINEAFTER", (i-1, 0), (i-1, 1), 0.5, P["gray_mid"]))
+    for idx, (label, value, cor) in enumerate(items):
+        col = idx * 2
+        cor_hex = _hexstr(cor)
+        fundo = tons_claros.get(cor_hex, P["gray_lt"])
+        cmds.append(("BACKGROUND", (col, 0), (col, 1), fundo))
+        cmds.append(("BOX", (col, 0), (col, 1), 0.8, cor))
     t.setStyle(TableStyle(cmds))
     return t
 
