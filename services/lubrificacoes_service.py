@@ -136,7 +136,7 @@ def _carregar_ultimas_execucoes_batch(cur, equipamento_ids, schema):
                 tl.{template_tipo_col} as tipo_controle,
                 max(
                     case
-                        when lower(coalesce(tl.{template_tipo_col}, 'km')) like '%hora%'
+                        when lower(coalesce(tl.{template_tipo_col}, 'km')) like '%%hora%%'
                             then coalesce(el.{ex_horas_col}, 0)
                         else coalesce(el.{ex_km_col}, 0)
                     end
@@ -167,7 +167,7 @@ def _carregar_ultimas_execucoes_batch(cur, equipamento_ids, schema):
                 tl.{template_tipo_col} as tipo_controle,
                 max(
                     case
-                        when lower(coalesce(tl.{template_tipo_col}, 'km')) like '%hora%'
+                        when lower(coalesce(tl.{template_tipo_col}, 'km')) like '%%hora%%'
                             then coalesce(el.{ex_horas_col}, 0)
                         else coalesce(el.{ex_km_col}, 0)
                     end
@@ -371,15 +371,11 @@ def calcular_proximas_lubrificacoes_batch(equipamento_ids):
             )
 
         return dict(resultado)
-    except Exception as _debug_exc:
+    except Exception:
         try:
             conn.rollback()
         except Exception:
             pass
-        import streamlit as st
-        import traceback
-        st.write("DEBUG erro calcular_proximas_lubrificacoes_batch:", repr(_debug_exc))
-        st.code(traceback.format_exc())
         return {}
     finally:
         release_conn(conn)
