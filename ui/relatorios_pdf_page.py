@@ -198,8 +198,6 @@ def _status_lubrificacoes_equipamento(eqp_id) -> list[dict]:
         # zero para garantir que o status bata com o que aparece ao vivo.
         lubrificacoes_service.calcular_proximas_lubrificacoes_batch.clear()
         result = lubrificacoes_service.calcular_proximas_lubrificacoes_batch([eqp_id]).get(eqp_id, [])
-        import streamlit as st
-        st.write("DEBUG status Graxa:", [i for i in result if "graxa" in str(i.get("item","")).lower()])
         if result:
             return [
                 {
@@ -301,7 +299,7 @@ def _status_lubrificacoes_equipamento(eqp_id) -> list[dict]:
                     cur.execute(
                         f"""
                         SELECT el.{ex_item_col},
-                               max(CASE WHEN lower(coalesce({tipo_sel},'km')) LIKE '%hora%'
+                               max(CASE WHEN lower(coalesce({tipo_sel},'km')) LIKE '%%hora%%'
                                         THEN coalesce(el.{ex_horas_col},0)
                                         ELSE coalesce(el.{ex_km_col},0) END)
                         FROM execucoes_lubrificacao el
@@ -314,7 +312,9 @@ def _status_lubrificacoes_equipamento(eqp_id) -> list[dict]:
                         (eqp_id,),
                     )
                     for iid, ult in cur.fetchall():
-                        ultima_por_id[iid] = float(ult or 0)
+                        # Normaliza a chave: uuid.UUID vs str causaria lookup
+                        # falso-negativo abaixo se os tipos das colunas divergirem.
+                        ultima_por_id[str(iid)] = float(ult or 0)
                 except Exception:
                     conn.rollback()
 
@@ -323,7 +323,7 @@ def _status_lubrificacoes_equipamento(eqp_id) -> list[dict]:
                     cur.execute(
                         f"""
                         SELECT lower(trim(coalesce(el.{ex_nome_col},''))) AS nm,
-                               max(CASE WHEN lower(coalesce({tipo_sel},'km')) LIKE '%hora%'
+                               max(CASE WHEN lower(coalesce({tipo_sel},'km')) LIKE '%%hora%%'
                                         THEN coalesce(el.{ex_horas_col},0)
                                         ELSE coalesce(el.{ex_km_col},0) END)
                         FROM execucoes_lubrificacao el
@@ -353,7 +353,7 @@ def _status_lubrificacoes_equipamento(eqp_id) -> list[dict]:
                 leitura_base = leitura_atual
 
             nome_ref   = str(nome_item or "").strip().lower()
-            ultima_raw = ultima_por_id.get(item_id)
+            ultima_raw = ultima_por_id.get(str(item_id))
             if ultima_raw is None and nome_ref:
                 ultima_raw = ultima_por_nome.get(nome_ref)
             tem_execucao = ultima_raw is not None
