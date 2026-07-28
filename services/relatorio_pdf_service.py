@@ -300,6 +300,72 @@ def _kpi_bar(items, P, PW):
     return t
 
 
+def _fit_text(txt, font, size, max_width):
+    """Corta o texto (com reticências) para caber em uma única linha na largura dada."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    if stringWidth(txt, font, size) <= max_width:
+        return txt
+    while txt and stringWidth(txt + "…", font, size) > max_width:
+        txt = txt[:-1]
+    return (txt + "…") if txt else txt
+
+
+def _status_card(nome, icone, texto, bg, fg, w, P):
+    """Card de status arredondado (nome + ícone grande + texto), usado nas barras
+    de progresso de lubrificação e de revisão."""
+    from reportlab.platypus import Table, TableStyle, Paragraph
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+
+    nome_fit = _fit_text(nome, "Helvetica-Bold", 7.2, w - 4)
+    s_nome = ParagraphStyle("bcn", fontName="Helvetica-Bold", fontSize=7.2,
+        textColor=fg, alignment=TA_CENTER, leading=8.6)
+    s_ic = ParagraphStyle("bci", fontName="Helvetica-Bold", fontSize=13,
+        textColor=fg, alignment=TA_CENTER, leading=15)
+    s_tx = ParagraphStyle("bct", fontName="Helvetica", fontSize=6.4,
+        textColor=fg, alignment=TA_CENTER, leading=7.8)
+    card = Table(
+        [[Paragraph(nome_fit, s_nome)], [Paragraph(icone, s_ic)], [Paragraph(texto, s_tx)]],
+        colWidths=[w], rowHeights=[13, 16, 11],
+    )
+    card.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), bg),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 2),
+        ("ROUNDEDCORNERS", [5, 5, 5, 5]),
+    ]))
+    return card
+
+
+def _cards_row(cards, PW):
+    """Organiza uma lista de cards em uma única linha, com espaçamento entre eles."""
+    from reportlab.platypus import Table, TableStyle
+    n = len(cards)
+    if n == 0:
+        return None
+    gap = 2.2
+    w_card = (PW - gap * (n - 1)) / n if n > 1 else PW
+    col_widths, linha = [], []
+    for i, card in enumerate(cards):
+        linha.append(card)
+        col_widths.append(w_card)
+        if i < n - 1:
+            linha.append("")
+            col_widths.append(gap)
+    t = Table([linha], colWidths=col_widths)
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return t
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # RELATÓRIO 1 — Histórico de Lubrificações por Equipamento
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -560,16 +626,10 @@ def gerar_pdf_conformidade_revisoes(
         styles, P,
     )
 
-    s_eqp_hdr = ParagraphStyle("eh", fontName="Helvetica-Bold", fontSize=8.5,
-        textColor=P["navy"], leading=12, spaceBefore=5, spaceAfter=1)
-    s_eqp_sub = ParagraphStyle("es", fontName="Helvetica", fontSize=7.5,
-        textColor=P["muted"], leading=10, spaceAfter=2)
-    s_etapa   = ParagraphStyle("et", fontName="Helvetica-Bold", fontSize=7,
-        textColor=P["white"], alignment=TA_CENTER, leading=9)
-    s_etapa_v = ParagraphStyle("etv", fontName="Helvetica", fontSize=6.5,
-        textColor=P["white"], alignment=TA_CENTER, leading=8)
-    s_etapa_g = ParagraphStyle("etg", fontName="Helvetica", fontSize=6.5,
-        textColor=P["muted"], alignment=TA_CENTER, leading=8)
+    s_eqp_hdr = ParagraphStyle("eh", fontName="Helvetica-Bold", fontSize=9,
+        textColor=P["navy"], leading=12)
+    s_eqp_sub = ParagraphStyle("es", fontName="Helvetica", fontSize=7.3,
+        textColor=P["muted"], leading=10, spaceBefore=1)
     s_falta   = ParagraphStyle("fl", fontName="Helvetica", fontSize=7.5,
         textColor=P["muted"], leading=10)
 
@@ -598,60 +658,56 @@ def gerar_pdf_conformidade_revisoes(
             prox_venc  = float(prox.get("vencimento", 0) or 0) if prox else 0
 
             if status_g == "VENCIDO":
-                cor_status = P["red"]
-                txt_status = "▶ VENCIDO"
+                cor_status, txt_status = P["red"], "▶ VENCIDO"
             elif status_g == "PROXIMO":
-                cor_status = P["amber"]
-                txt_status = "◎ PRÓXIMO"
+                cor_status, txt_status = P["amber"], "◎ PRÓXIMO"
             else:
-                cor_status = P["green"]
-                txt_status = "✓ EM DIA"
+                cor_status, txt_status = P["green"], "✓ EM DIA"
 
             bloco = []
 
-            # Cabeçalho do equipamento
-            hdr_data = [[
-                Paragraph(f"{codigo} — {nome}", s_eqp_hdr),
+            # Cabeçalho do equipamento: nome à esquerda, selo de status (pill) à direita
+            pill_style = ParagraphStyle("pill", fontName="Helvetica-Bold", fontSize=7.5,
+                textColor=colors.white, alignment=TA_CENTER, leading=9)
+            pill = Table([[Paragraph(txt_status, pill_style)]], colWidths=[26 * mm], rowHeights=[6.5 * mm])
+            pill.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), cor_status),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ROUNDEDCORNERS", [8, 8, 8, 8]),
+            ]))
+
+            hdr_txt = Table([[
+                Paragraph(f"{codigo} — {nome}", s_eqp_hdr)
+            ], [
                 Paragraph(
                     f"Setor: {setor_e}  ·  Leitura atual: {_fmt_num(leit_atu)} {unidade}  ·  "
                     f"Próxima: {prox_etapa} em {_fmt_num(prox_venc)} {unidade}  ·  Faltam: {_fmt_num(abs(prox_falta))} {unidade}",
                     s_eqp_sub,
-                ),
-                Paragraph(txt_status, ParagraphStyle("stl", fontName="Helvetica-Bold", fontSize=8,
-                    textColor=cor_status, alignment=TA_RIGHT, leading=12)),
-            ]]
-            hdr_t = Table(hdr_data, colWidths=[PW * 0.35, PW * 0.50, PW * 0.15])
+                )
+            ]], colWidths=[PW * 0.82])
+            hdr_txt.setStyle(TableStyle([
+                ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]))
+
+            hdr_t = Table([[hdr_txt, pill]], colWidths=[PW * 0.82, PW * 0.18])
             hdr_t.setStyle(TableStyle([
-                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-                ("LEFTPADDING",  (0,0), (-1,-1), 0),
-                ("RIGHTPADDING", (0,0), (-1,-1), 0),
-                ("TOPPADDING",   (0,0), (-1,-1), 0),
-                ("BOTTOMPADDING",(0,0), (-1,-1), 0),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING",   (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
             ]))
             bloco.append(hdr_t)
-            bloco.append(Spacer(1, 1.5 * mm))
+            bloco.append(Spacer(1, 2 * mm))
 
-            # Barra de progresso de etapas
+            # Barra de progresso de etapas — cards arredondados com espaçamento
             if etapas:
                 n_etapas = len(etapas)
-                cw_etapa = [PW / n_etapas] * n_etapas
-                # Linha 1: rótulo da etapa (gatilho_valor formatado)
-                # Linha 2: símbolo de status
-                # Linha 3: quantidade no ciclo (falta ou realizado)
-                row_nome = []
-                row_icon = []
-                row_val  = []
-                style_cmds = [
-                    ("TOPPADDING",    (0,0), (-1,-1), 3),
-                    ("BOTTOMPADDING", (0,0), (-1,-1), 3),
-                    ("LEFTPADDING",   (0,0), (-1,-1), 2),
-                    ("RIGHTPADDING",  (0,0), (-1,-1), 2),
-                    ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
-                    ("INNERGRID",     (0,0), (-1,-1), 0.3, P["white"]),
-                    ("BOX",           (0,0), (-1,-1), 0.5, P["gray_mid"]),
-                ]
-
-                for i, etapa in enumerate(etapas):
+                w_etapa = (PW - 2.2 * (n_etapas - 1)) / n_etapas if n_etapas > 1 else PW
+                cards_etapa = []
+                for etapa in etapas:
                     st   = str(etapa.get("status", "EM_DIA")).upper()
                     real = etapa.get("realizado_no_ciclo", False)
                     gate = float(etapa.get("gatilho_valor", 0) or 0)
@@ -659,45 +715,29 @@ def gerar_pdf_conformidade_revisoes(
                     falta_e = float(etapa.get("falta", 0) or 0)
                     ult_exec = float(etapa.get("ultima_execucao", 0) or 0)
 
-                    # Cor de fundo da célula
                     if real:
-                        bg = P["green"]
-                        icone = "✓"
+                        bg, fg, icone = P["green"], colors.white, "✓"
                         val_txt = f"feita em {_fmt_num(ult_exec)} {unidade}" if ult_exec > 0 else "realizada"
                     elif st == "VENCIDO":
-                        bg = P["red"]
-                        icone = "▶"
+                        bg, fg, icone = P["red"], colors.white, "▶"
                         val_txt = f"{_fmt_num(abs(falta_e))} {unidade} atraso"
                     elif st == "PROXIMO":
-                        bg = P["amber"]
-                        icone = "◎"
+                        bg, fg, icone = P["amber"], colors.white, "◎"
                         val_txt = f"faltam {_fmt_num(abs(falta_e))} {unidade}"
                     else:
-                        bg = P["gray_mid"]
-                        icone = "○"
+                        bg, fg, icone = P["gray_lt"], P["muted"], "○"
                         val_txt = f"faltam {_fmt_num(abs(falta_e))} {unidade}" if falta_e > 0 else "ótimo!"
 
-                    style_cmds.append(("BACKGROUND", (i, 0), (i, 2), bg))
+                    lbl = nome_e if nome_e and nome_e != "-" else f"{_fmt_num(gate)} {unidade}"
+                    cards_etapa.append(_status_card(lbl, icone, val_txt, bg, fg, w_etapa, P))
 
-                    # Rótulo: nome curto da etapa ou gatilho formatado
-                    lbl = nome_e[:14] if nome_e and nome_e != "-" else f"{_fmt_num(gate)} {unidade}"
-                    row_nome.append(Paragraph(lbl, s_etapa if bg != P["gray_mid"] else s_etapa_g))
-                    row_icon.append(Paragraph(icone, ParagraphStyle("ic", fontName="Helvetica-Bold",
-                        fontSize=12, textColor=colors.white if bg != P["gray_mid"] else P["muted"],
-                        alignment=TA_CENTER, leading=14)))
-                    row_val.append(Paragraph(val_txt, ParagraphStyle("vt", fontName="Helvetica",
-                        fontSize=6, textColor=colors.white if bg != P["gray_mid"] else P["muted"],
-                        alignment=TA_CENTER, leading=7)))
-
-                prog_t = Table([row_nome, row_icon, row_val],
-                    colWidths=cw_etapa, rowHeights=[8, 10, 8])
-                prog_t.setStyle(TableStyle(style_cmds))
-                bloco.append(prog_t)
+                bloco.append(_cards_row(cards_etapa, PW))
             else:
                 bloco.append(Paragraph("Sem etapas configuradas no template deste equipamento.",
                     ParagraphStyle("nem", fontName="Helvetica", fontSize=8, textColor=P["muted"])))
 
-            bloco.append(Spacer(1, 4 * mm))
+            bloco.append(Spacer(1, 2.5 * mm))
+            bloco.append(_hr(P, 0.5))
             elements.append(KeepTogether(bloco))
 
     # ── Tabela de revisões realizadas no período ─────────────────────────────────
@@ -1112,44 +1152,11 @@ def gerar_pdf_ficha_tecnica(
     )
     if status_lubrificacoes:
         from reportlab.lib import colors as _colors
-        from reportlab.lib.styles import ParagraphStyle as _PS
-        from reportlab.platypus import Table as _Table, TableStyle as _TS
-        from reportlab.pdfbase.pdfmetrics import stringWidth
-
-        def _fit_text(txt, font, size, max_width):
-            if stringWidth(txt, font, size) <= max_width:
-                return txt
-            while txt and stringWidth(txt + "…", font, size) > max_width:
-                txt = txt[:-1]
-            return (txt + "…") if txt else txt
-
-        def _lub_card(nome, icone, texto, bg, fg, w):
-            s_nome = _PS("bcn", fontName="Helvetica-Bold", fontSize=7.2,
-                textColor=fg, alignment=TA_CENTER, leading=8.6)
-            s_ic = _PS("bci", fontName="Helvetica-Bold", fontSize=13,
-                textColor=fg, alignment=TA_CENTER, leading=15)
-            s_tx = _PS("bct", fontName="Helvetica", fontSize=6.4,
-                textColor=fg, alignment=TA_CENTER, leading=7.8)
-            card = _Table(
-                [[Paragraph(nome, s_nome)], [Paragraph(icone, s_ic)], [Paragraph(texto, s_tx)]],
-                colWidths=[w], rowHeights=[13, 16, 11],
-            )
-            card.setStyle(_TS([
-                ("BACKGROUND",    (0, 0), (-1, -1), bg),
-                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING",    (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                ("LEFTPADDING",   (0, 0), (-1, -1), 2),
-                ("RIGHTPADDING",  (0, 0), (-1, -1), 2),
-                ("ROUNDEDCORNERS", [5, 5, 5, 5]),
-            ]))
-            return card
 
         n_lub = len(status_lubrificacoes)
-        gap_lub = 2.2
-        w_lub = (PW - gap_lub * (n_lub - 1)) / n_lub if n_lub > 1 else PW
+        w_lub = (PW - 2.2 * (n_lub - 1)) / n_lub if n_lub > 1 else PW
 
-        cards_row = []
+        cards_lub = []
         for i, s in enumerate(status_lubrificacoes):
             realizado  = bool(s.get("realizado_no_ciclo", False))
             ult_exec   = float(s.get("ultima_execucao", 0) or 0)
@@ -1175,26 +1182,9 @@ def gerar_pdf_ficha_tecnica(
                 val_lub = f"faltam {_fmt_num(abs(falta_lub))} {unidade}" if falta_lub > 0 else "em dia"
 
             nome_exib = nome_lub if nome_lub and nome_lub != "-" else f"{i+1}º item"
-            nome_exib = _fit_text(nome_exib, "Helvetica-Bold", 7.2, w_lub - 4)
-            cards_row.append(_lub_card(nome_exib, icone_lub, val_lub, bg_lub, fg_lub, w_lub))
+            cards_lub.append(_status_card(nome_exib, icone_lub, val_lub, bg_lub, fg_lub, w_lub, P))
 
-        col_widths, linha = [], []
-        for i, card in enumerate(cards_row):
-            linha.append(card)
-            col_widths.append(w_lub)
-            if i < n_lub - 1:
-                linha.append("")
-                col_widths.append(gap_lub)
-
-        prog_lub_t = _Table([linha], colWidths=col_widths)
-        prog_lub_t.setStyle(_TS([
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("TOPPADDING", (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ]))
-        elements.append(prog_lub_t)
+        elements.append(_cards_row(cards_lub, PW))
         elements.append(Spacer(1, 3.5 * mm))
 
         # ── Tabela detalhada de status ────────────────────────────────────────
