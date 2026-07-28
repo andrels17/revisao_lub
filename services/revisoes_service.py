@@ -261,7 +261,12 @@ def _construir_controles(modo="dashboard"):
         tipo_por_equipamento = {}
         ciclo_por_template = defaultdict(float)
         for row in base_rows:
-            if not row[11]:
+            # `row[13]` é o `et.id` (etapa) vindo do LEFT JOIN — se não houver
+            # etapa ativa configurada para o template, não há o que calcular.
+            # ATENÇÃO: este check já usou `row[11]` (km_inicial_plano) por engano,
+            # o que descartava todo equipamento controlado por horas (km sempre
+            # 0/nulo nesses casos), mesmo com template e etapas configurados.
+            if row[13] is None:
                 continue
             base = {
                 "equipamento_id": row[0],
