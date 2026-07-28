@@ -1113,29 +1113,43 @@ def gerar_pdf_ficha_tecnica(
     if status_lubrificacoes:
         from reportlab.lib import colors as _colors
         from reportlab.lib.styles import ParagraphStyle as _PS
+        from reportlab.platypus import Table as _Table, TableStyle as _TS
+        from reportlab.pdfbase.pdfmetrics import stringWidth
 
-        # ── Barra de progresso visual (igual à de revisões) ──────────────────
-        s_lub_nome = _PS("lubn", fontName="Helvetica-Bold", fontSize=6.5,
-            textColor=P["white"], alignment=TA_CENTER, leading=8)
-        s_lub_nome_g = _PS("lubn_g", fontName="Helvetica", fontSize=6.5,
-            textColor=P["muted"], alignment=TA_CENTER, leading=8)
+        def _fit_text(txt, font, size, max_width):
+            if stringWidth(txt, font, size) <= max_width:
+                return txt
+            while txt and stringWidth(txt + "…", font, size) > max_width:
+                txt = txt[:-1]
+            return (txt + "…") if txt else txt
+
+        def _lub_card(nome, icone, texto, bg, fg, w):
+            s_nome = _PS("bcn", fontName="Helvetica-Bold", fontSize=7.2,
+                textColor=fg, alignment=TA_CENTER, leading=8.6)
+            s_ic = _PS("bci", fontName="Helvetica-Bold", fontSize=13,
+                textColor=fg, alignment=TA_CENTER, leading=15)
+            s_tx = _PS("bct", fontName="Helvetica", fontSize=6.4,
+                textColor=fg, alignment=TA_CENTER, leading=7.8)
+            card = _Table(
+                [[Paragraph(nome, s_nome)], [Paragraph(icone, s_ic)], [Paragraph(texto, s_tx)]],
+                colWidths=[w], rowHeights=[13, 16, 11],
+            )
+            card.setStyle(_TS([
+                ("BACKGROUND",    (0, 0), (-1, -1), bg),
+                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING",    (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 2),
+                ("ROUNDEDCORNERS", [5, 5, 5, 5]),
+            ]))
+            return card
 
         n_lub = len(status_lubrificacoes)
-        cw_lub_bar = [PW / n_lub] * n_lub
+        gap_lub = 2.2
+        w_lub = (PW - gap_lub * (n_lub - 1)) / n_lub if n_lub > 1 else PW
 
-        row_nome_lub = []
-        row_icon_lub = []
-        row_val_lub  = []
-        style_cmds_lub = [
-            ("TOPPADDING",    (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 2),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 2),
-            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-            ("INNERGRID",     (0, 0), (-1, -1), 0.3, P["white"]),
-            ("BOX",           (0, 0), (-1, -1), 0.5, P["gray_mid"]),
-        ]
-
+        cards_row = []
         for i, s in enumerate(status_lubrificacoes):
             realizado  = bool(s.get("realizado_no_ciclo", False))
             ult_exec   = float(s.get("ultima_execucao", 0) or 0)
@@ -1145,43 +1159,43 @@ def gerar_pdf_ficha_tecnica(
             nome_lub   = _safe(s.get("item") or s.get("nome_item"))
 
             if realizado:
-                bg_lub    = P["green"]
-                icone_lub = "✓"
-                val_lub   = f"feita em {_fmt_num(ult_exec)} {unidade}" if ult_exec > 0 else "realizada"
+                bg_lub, fg_lub, icone_lub = P["green"], _colors.white, "✓"
+                val_lub = f"feita em {_fmt_num(ult_exec)} {unidade}" if ult_exec > 0 else "realizada"
             elif st_lub == "VENCIDO":
-                bg_lub    = P["red"]
-                icone_lub = "▶"
-                val_lub   = f"{_fmt_num(abs(falta_lub))} {unidade} atraso"
+                bg_lub, fg_lub, icone_lub = P["red"], _colors.white, "▶"
+                val_lub = f"{_fmt_num(abs(falta_lub))} {unidade} atraso"
             elif st_lub == "PROXIMO":
-                bg_lub    = P["amber"]
-                icone_lub = "◎"
-                val_lub   = f"faltam {_fmt_num(abs(falta_lub))} {unidade}"
+                bg_lub, fg_lub, icone_lub = P["amber"], _colors.white, "◎"
+                val_lub = f"faltam {_fmt_num(abs(falta_lub))} {unidade}"
             elif st_lub in ("SEM_BASE", "SEM BASE"):
-                bg_lub    = P["purple"]
-                icone_lub = "★"
-                val_lub   = "1ª troca"
+                bg_lub, fg_lub, icone_lub = P["purple"], _colors.white, "★"
+                val_lub = "1ª troca"
             else:
-                bg_lub    = P["gray_mid"]
-                icone_lub = "○"
-                val_lub   = f"faltam {_fmt_num(abs(falta_lub))} {unidade}" if falta_lub > 0 else "em dia"
+                bg_lub, fg_lub, icone_lub = P["gray_lt"], P["muted"], "○"
+                val_lub = f"faltam {_fmt_num(abs(falta_lub))} {unidade}" if falta_lub > 0 else "em dia"
 
-            style_cmds_lub.append(("BACKGROUND", (i, 0), (i, 2), bg_lub))
+            nome_exib = nome_lub if nome_lub and nome_lub != "-" else f"{i+1}º item"
+            nome_exib = _fit_text(nome_exib, "Helvetica-Bold", 7.2, w_lub - 4)
+            cards_row.append(_lub_card(nome_exib, icone_lub, val_lub, bg_lub, fg_lub, w_lub))
 
-            lbl_lub = nome_lub[:14] if nome_lub and nome_lub != "-" else f"{i+1}º item"
-            row_nome_lub.append(Paragraph(lbl_lub, s_lub_nome if bg_lub != P["gray_mid"] else s_lub_nome_g))
-            row_icon_lub.append(Paragraph(icone_lub, _PS("iclb", fontName="Helvetica-Bold",
-                fontSize=12, textColor=_colors.white if bg_lub != P["gray_mid"] else P["muted"],
-                alignment=TA_CENTER, leading=14)))
-            row_val_lub.append(Paragraph(val_lub, _PS("vtlb", fontName="Helvetica",
-                fontSize=6, textColor=_colors.white if bg_lub != P["gray_mid"] else P["muted"],
-                alignment=TA_CENTER, leading=7)))
+        col_widths, linha = [], []
+        for i, card in enumerate(cards_row):
+            linha.append(card)
+            col_widths.append(w_lub)
+            if i < n_lub - 1:
+                linha.append("")
+                col_widths.append(gap_lub)
 
-        from reportlab.platypus import Table as _Table, TableStyle as _TS
-        prog_lub_t = _Table([row_nome_lub, row_icon_lub, row_val_lub],
-            colWidths=cw_lub_bar, rowHeights=[8, 10, 8])
-        prog_lub_t.setStyle(_TS(style_cmds_lub))
+        prog_lub_t = _Table([linha], colWidths=col_widths)
+        prog_lub_t.setStyle(_TS([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ]))
         elements.append(prog_lub_t)
-        elements.append(Spacer(1, 3 * mm))
+        elements.append(Spacer(1, 3.5 * mm))
 
         # ── Tabela detalhada de status ────────────────────────────────────────
         linhas_sl = []
