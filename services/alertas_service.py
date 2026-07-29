@@ -288,7 +288,9 @@ def enviar_resumos_semanais_pendentes(dias: int = 7) -> dict:
 
         html, texto = email_service.montar_html_resumo_responsavel(responsavel["nome"], blocos)
         assunto = f"Resumo semanal de manutenção — {len(blocos)} equipamento(s)"
-        ok, _msg = email_service.enviar_email(responsavel["email"], assunto, html, texto)
+        pdf_anexo = montar_pdf_responsavel([b["equipamento"]["id"] for b in blocos], equipamentos)
+        anexos = [(pdf_anexo, "resumo_semanal.pdf")] if pdf_anexo else None
+        ok, _msg = email_service.enviar_email(responsavel["email"], assunto, html, texto, anexos=anexos)
         if ok:
             registrar_alerta_lote(
                 [{"equipamento_id": eqp_id, "responsavel_id": responsavel_id, "tipo_alerta": "resumo_semanal"}
@@ -301,6 +303,54 @@ def enviar_resumos_semanais_pendentes(dias: int = 7) -> dict:
             resultado["erros"] += 1
 
     return resultado
+
+
+def montar_pdf_responsavel(equipamento_ids, equipamentos_map: dict | None = None) -> bytes | None:
+    """Gera um único PDF (ficha técnica de cada equipamento, uma atrás da outra)
+    para anexar no e-mail — mesmo relatório detalhado que já existe em
+    Relatórios PDF, só que já pronto e mesclado por responsável."""
+    import io
+    from pypdf import PdfWriter
+    from services import equipamentos_service, revisoes_service, lubrificacoes_service, relatorio_pdf_service
+
+    equipamento_ids = list(equipamento_ids)
+    if not equipamento_ids:
+        return None
+
+    if equipamentos_map is None:
+        equipamentos_map = {e["id"]: e for e in equipamentos_service.listar()}
+
+    try:
+        rev_idx = revisoes_service.listar_controle_revisoes_por_equipamento()
+    except Exception:
+        rev_idx = {}
+    try:
+        lub_idx = lubrificacoes_service.calcular_proximas_lubrificacoes_batch(equipamento_ids)
+    except Exception:
+        lub_idx = {}
+
+    writer = PdfWriter()
+    algum = False
+    for eqp_id in equipamento_ids:
+        eqp = equipamentos_map.get(eqp_id)
+        if not eqp:
+            continue
+        status_rev = rev_idx.get(eqp_id, [])
+        status_lub = lub_idx.get(eqp_id, [])
+        try:
+            pdf_bytes = relatorio_pdf_service.gerar_pdf_ficha_tecnica(
+                eqp, status_rev, status_lub, [], [], None,
+            )
+        except Exception:
+            continue
+        writer.append(io.BytesIO(pdf_bytes))
+        algum = True
+
+    if not algum:
+        return None
+    saida = io.BytesIO()
+    writer.write(saida)
+    return saida.getvalue()
 
 
 def montar_fila_semanal_whatsapp(dias: int = 7) -> list[dict]:

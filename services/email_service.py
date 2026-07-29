@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import smtplib
 import ssl
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
@@ -41,9 +42,16 @@ def email_configurado() -> bool:
     return _get_smtp_config() is not None
 
 
-def enviar_email(destinatario: str, assunto: str, corpo_html: str, corpo_texto: str = "") -> tuple[bool, str]:
+def enviar_email(
+    destinatario: str,
+    assunto: str,
+    corpo_html: str,
+    corpo_texto: str = "",
+    anexos: list[tuple[bytes, str]] | None = None,
+) -> tuple[bool, str]:
     """
-    Envia um e-mail via SMTP.
+    Envia um e-mail via SMTP, opcionalmente com anexos.
+    `anexos`: lista de tuplas (bytes_do_arquivo, nome_do_arquivo.pdf).
     Retorna (sucesso: bool, mensagem: str).
     """
     config = _get_smtp_config()
@@ -51,14 +59,21 @@ def enviar_email(destinatario: str, assunto: str, corpo_html: str, corpo_texto: 
         return False, "Envio de e-mail não configurado. Adicione SMTP_HOST ao secrets.toml."
 
     try:
-        msg = MIMEMultipart("alternative")
+        msg = MIMEMultipart("mixed")
         msg["Subject"] = assunto
         msg["From"] = config["from_addr"]
         msg["To"] = destinatario
 
+        corpo = MIMEMultipart("alternative")
         if corpo_texto:
-            msg.attach(MIMEText(corpo_texto, "plain", "utf-8"))
-        msg.attach(MIMEText(corpo_html, "html", "utf-8"))
+            corpo.attach(MIMEText(corpo_texto, "plain", "utf-8"))
+        corpo.attach(MIMEText(corpo_html, "html", "utf-8"))
+        msg.attach(corpo)
+
+        for conteudo, nome_arquivo in (anexos or []):
+            parte = MIMEApplication(conteudo, _subtype="pdf")
+            parte.add_header("Content-Disposition", "attachment", filename=nome_arquivo)
+            msg.attach(parte)
 
         context = ssl.create_default_context()
         with smtplib.SMTP(config["host"], config["port"]) as server:
@@ -68,8 +83,13 @@ def enviar_email(destinatario: str, assunto: str, corpo_html: str, corpo_texto: 
             server.sendmail(config["from_addr"], destinatario, msg.as_string())
 
         return True, "E-mail enviado com sucesso."
-    except smtplib.SMTPAuthenticationError:
-        return False, "Falha na autenticação SMTP. Verifique SMTP_USER e SMTP_PASS."
+    except smtplib.SMTPAuthenticationError as e:
+        detalhe = ""
+        try:
+            detalhe = e.smtp_error.decode("utf-8", errors="ignore")
+        except Exception:
+            detalhe = str(e)
+        return False, f"Falha na autenticação SMTP. Verifique SMTP_USER e SMTP_PASS. Detalhe do servidor: {detalhe}"
     except smtplib.SMTPException as e:
         return False, f"Erro SMTP: {e}"
     except Exception as e:
