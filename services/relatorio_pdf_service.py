@@ -1009,6 +1009,91 @@ def gerar_pdf_executivo_frota(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# RELATÓRIO — Resumo de serviços próximos por responsável (usado nos alertas)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def gerar_pdf_resumo_responsavel(
+    responsavel_nome: str,
+    itens_criticos: list[dict],
+    sem_pendencia: int,
+    total_equipamentos: int,
+    gerado_em: str | None = None,
+) -> bytes:
+    """PDF compacto com os serviços mais próximos/vencidos de TODOS os
+    equipamentos de um responsável — anexo do resumo semanal (e do envio sob
+    demanda), no lugar de mandar a ficha técnica inteira de cada máquina."""
+    import io
+    import datetime as _dt
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER
+    from reportlab.lib import colors
+
+    buf = io.BytesIO()
+    doc = _novo_doc(buf)
+    styles = getSampleStyleSheet()
+    P = _paleta()
+    PW = doc.width
+    gerado_em = gerado_em or _dt.datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    vencidos = sum(1 for i in itens_criticos if str(i.get("status", "")).upper() == "VENCIDO")
+    proximos = sum(1 for i in itens_criticos if str(i.get("status", "")).upper() == "PROXIMO")
+    sem_base = len(itens_criticos) - vencidos - proximos
+
+    elements = []
+    elements += _secao(
+        f"Serviços prioritários — {responsavel_nome}",
+        "Itens vencidos e próximos de todos os equipamentos sob sua responsabilidade, ordenados por urgência.",
+        styles, P,
+    )
+    elements.append(_kpi_bar([
+        ("Equipamentos", total_equipamentos, P["blue"]),
+        ("Vencidos", vencidos, P["red"]),
+        ("Próximos", proximos, P["amber"]),
+        ("Sem base", sem_base, P["purple"]),
+        ("Em dia", sem_pendencia, P["green"]),
+    ], P, PW))
+    elements.append(Spacer(1, 5 * mm))
+
+    if not itens_criticos:
+        elements.append(Paragraph(
+            "✅ Nenhuma pendência — todos os itens de todos os equipamentos estão em dia.",
+            ParagraphStyle("ok", fontName="Helvetica-Bold", fontSize=10, textColor=P["green"], alignment=TA_CENTER),
+        ))
+    else:
+        linhas = []
+        for item in itens_criticos:
+            status = str(item.get("status", "")).upper()
+            unidade = item.get("unidade", "km")
+            falta = float(item.get("falta", 0) or 0)
+            if status == "VENCIDO":
+                cor, txt = P["red"], f"{abs(falta):.0f} {unidade} atraso"
+            elif status == "PROXIMO":
+                cor, txt = P["amber"], f"faltam {falta:.0f} {unidade}"
+            else:
+                cor, txt = P["purple"], "1ª execução"
+            linhas.append([
+                item.get("equipamento", "-"),
+                item.get("nome", "-"),
+                (status.replace("_", " "), True, cor, TA_LEFT),
+                (txt, True, cor, TA_LEFT),
+            ])
+        elements.append(_tabela_simples(
+            ["Equipamento", "Item", "Status", "Situação"],
+            linhas, P,
+            [PW * 0.28, PW * 0.30, PW * 0.18, PW * 0.24],
+        ))
+
+    hdr = lambda c, d: _cabeçalho_padrao(
+        c, d, "Resumo de Manutenção — Serviços Prioritários",
+        f"{responsavel_nome}", f"{total_equipamentos} equipamento(s) sob responsabilidade", gerado_em,
+    )
+    doc.build(elements, onFirstPage=hdr, onLaterPages=hdr)
+    return buf.getvalue()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # RELATÓRIO 4 — Ficha Técnica do Equipamento
 # ═══════════════════════════════════════════════════════════════════════════════
 

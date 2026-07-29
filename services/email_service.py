@@ -129,11 +129,23 @@ def _linha_badge_html(item: dict) -> str:
 
 
 def montar_html_resumo_equipamento(equipamento: dict, itens: list[dict], responsavel_nome: str) -> tuple[str, str]:
-    """HTML de e-mail com o status de TODOS os itens (revisão + lubrificação)
-    de um único equipamento — versão "sob demanda" a partir da tela de Alertas."""
+    """HTML de e-mail com os itens que precisam de atenção de um equipamento —
+    versão "sob demanda" a partir da tela de Alertas. Itens em dia/realizados
+    entram só na contagem, não poluem a lista."""
+    from services.alertas_service import priorizar_itens
+
     eqp_label = f"{equipamento.get('codigo', '')} - {equipamento.get('nome', '')}"
-    linhas_html = "".join(_linha_badge_html(i) for i in itens) or \
-        "<tr><td style='color:#9db0c7;padding:8px 0;font-size:13px;'>Nenhum item configurado.</td></tr>"
+    criticos, sem_pendencia = priorizar_itens(itens)
+
+    if criticos:
+        linhas_html = "".join(_linha_badge_html(i) for i in criticos)
+    else:
+        linhas_html = "<tr><td style='color:#86efac;padding:8px 0;font-size:13px;'>✅ Nenhuma pendência — todos os itens estão em dia.</td></tr>"
+
+    rodape_contagem = (
+        f'<p style="color:#7fa8cc;font-size:12px;margin:10px 0 0;">+ {sem_pendencia} item(ns) em dia, sem necessidade de ação agora.</p>'
+        if sem_pendencia else ""
+    )
 
     html = f"""
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0d1929;color:#e8f1ff;border-radius:12px;overflow:hidden;">
@@ -143,14 +155,66 @@ def montar_html_resumo_equipamento(equipamento: dict, itens: list[dict], respons
       </div>
       <div style="padding:24px 28px;">
         <p style="color:#c8dcf4;">Olá, <strong style="color:#fff;">{responsavel_nome}</strong>.</p>
-        <p style="color:#9db0c7;font-size:13px;">Situação atual de todos os itens de revisão e lubrificação:</p>
+        <p style="color:#9db0c7;font-size:13px;">Itens que precisam de atenção:</p>
         <table style="width:100%;border-collapse:collapse;margin-top:6px;">{linhas_html}</table>
+        {rodape_contagem}
       </div>
     </div>
     """
-    texto = f"Resumo de manutenção - {eqp_label}\n\n" + "\n".join(
-        f"{i.get('nome', '-')}: {_cor_emoji_texto_item(i)[2]}" for i in itens
+    texto = f"Resumo de manutenção - {eqp_label}\n\n" + (
+        "\n".join(f"{i.get('nome', '-')}: {_cor_emoji_texto_item(i)[2]}" for i in criticos)
+        if criticos else "Nenhuma pendência — todos os itens estão em dia."
     )
+    return html, texto
+
+
+def montar_html_resumo_proximos_servicos(responsavel_nome: str, itens_criticos: list[dict], sem_pendencia: int, total_equipamentos: int) -> tuple[str, str]:
+    """HTML consolidado com os serviços mais próximos/urgentes de TODOS os
+    equipamentos de um responsável — usado no resumo semanal automático.
+    Substitui a listagem exaustiva de cada item de cada equipamento por um
+    resumo focado no que realmente precisa de ação."""
+    if itens_criticos:
+        linhas_html = "".join(f"""
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);">
+            <span style="display:inline-block;width:18px;height:18px;line-height:18px;text-align:center;
+                border-radius:50%;background:{_cor_emoji_texto_item(i)[0]};color:#fff;font-size:10px;font-weight:bold;margin-right:8px;">{_cor_emoji_texto_item(i)[1]}</span>
+            <span style="color:#e8f1ff;font-weight:600;font-size:13px;">{i.get('nome', '-')}</span><br>
+            <span style="color:#7fa8cc;font-size:11px;margin-left:26px;">{i.get('equipamento', '-')}</span>
+          </td>
+          <td style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);text-align:right;
+              color:{_cor_emoji_texto_item(i)[0]};font-size:12px;font-weight:600;white-space:nowrap;vertical-align:top;">{_cor_emoji_texto_item(i)[2]}</td>
+        </tr>""" for i in itens_criticos)
+    else:
+        linhas_html = "<tr><td style='color:#86efac;padding:10px 0;font-size:13px;'>✅ Nenhuma pendência em nenhum dos seus equipamentos.</td></tr>"
+
+    vencidos = sum(1 for i in itens_criticos if str(i.get("status", "")).upper() == "VENCIDO")
+    alerta_top = (
+        f'<p style="color:#fca5a5;font-size:13px;margin:0 0 14px;">⚠️ {vencidos} item(ns) vencido(s) — priorize esses.</p>'
+        if vencidos else
+        '<p style="color:#86efac;font-size:13px;margin:0 0 14px;">✅ Nenhum item vencido esta semana.</p>'
+    )
+
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0d1929;color:#e8f1ff;border-radius:12px;overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#1e3a5f,#0d1929);padding:24px 28px;">
+        <h2 style="margin:0;color:#fff;font-size:20px;">📋 Resumo semanal de manutenção</h2>
+        <p style="margin:8px 0 0;color:#9db0c7;font-size:14px;">{total_equipamentos} equipamento(s) sob sua responsabilidade</p>
+      </div>
+      <div style="padding:24px 28px;">
+        <p style="color:#c8dcf4;">Olá, <strong style="color:#fff;">{responsavel_nome}</strong>.</p>
+        <p style="color:#9db0c7;font-size:13px;margin-bottom:2px;">Serviços mais próximos e vencidos:</p>
+        {alerta_top}
+        <table style="width:100%;border-collapse:collapse;">{linhas_html}</table>
+        <p style="color:#7fa8cc;font-size:12px;margin-top:10px;">+ {sem_pendencia} item(ns) em dia entre todos os seus equipamentos — sem necessidade de ação agora.</p>
+        <p style="color:#6b8bb0;font-size:11px;margin-top:8px;">O PDF em anexo traz o mesmo resumo em formato pra impressão/arquivo. Registre as execuções no sistema para atualizar o status.</p>
+      </div>
+    </div>
+    """
+    texto = f"Resumo semanal de manutenção — {total_equipamentos} equipamento(s)\n\n" + (
+        "\n".join(f"[{i.get('equipamento','-')}] {i.get('nome','-')}: {_cor_emoji_texto_item(i)[2]}" for i in itens_criticos)
+        if itens_criticos else "Nenhuma pendência."
+    ) + f"\n\n+ {sem_pendencia} item(ns) em dia."
     return html, texto
 
 

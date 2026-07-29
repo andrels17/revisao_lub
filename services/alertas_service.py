@@ -104,9 +104,11 @@ def _emoji_status(status: str, realizado: bool = False) -> str:
 emoji_status = _emoji_status
 
 
-def coletar_itens_equipamento(equipamento_id) -> list[dict]:
+def coletar_itens_equipamento(equipamento_id, equipamento_label: str | None = None) -> list[dict]:
     """Junta etapas de revisão + itens de lubrificação de um equipamento num
-    formato único, para montar o resumo consolidado (WhatsApp/e-mail)."""
+    formato único, para montar o resumo consolidado (WhatsApp/e-mail/PDF).
+    Se `equipamento_label` for passado, cada item já sai marcado com ele —
+    necessário para juntar itens de vários equipamentos numa lista só."""
     from services import revisoes_service, lubrificacoes_service
 
     itens = []
@@ -115,6 +117,7 @@ def coletar_itens_equipamento(equipamento_id) -> list[dict]:
         for etapa in rev_idx.get(equipamento_id, []):
             itens.append({
                 "tipo": "revisao",
+                "equipamento": equipamento_label,
                 "nome": etapa.get("etapa") or etapa.get("nome_etapa") or "-",
                 "status": str(etapa.get("status") or "-").upper(),
                 "realizado": bool(etapa.get("realizado_no_ciclo")),
@@ -128,6 +131,7 @@ def coletar_itens_equipamento(equipamento_id) -> list[dict]:
         for item in lub_idx.get(equipamento_id, []):
             itens.append({
                 "tipo": "lubrificacao",
+                "equipamento": equipamento_label,
                 "nome": item.get("item") or "-",
                 "status": str(item.get("status") or "-").upper(),
                 "realizado": bool(item.get("realizado_no_ciclo")),
@@ -158,32 +162,31 @@ texto_situacao_item = _texto_situacao_item
 
 
 def montar_mensagem_resumo_equipamento(equipamento: dict, itens: list[dict], responsavel_nome: str) -> str:
-    """Mensagem única de WhatsApp com o status de TODOS os itens do equipamento
-    (revisão + lubrificação), no estilo do resumo visual do PDF."""
+    """Mensagem única de WhatsApp com os itens que precisam de atenção do
+    equipamento — itens em dia/realizados entram só na contagem final."""
     eqp_label = f"{equipamento.get('codigo', '')} - {equipamento.get('nome', '')}"
+    criticos, sem_pendencia = priorizar_itens(itens)
+
     linhas = [
         "*Resumo de manutenção*",
         "",
         f"Olá, *{responsavel_nome}*.",
-        f"Situação atual do equipamento *{eqp_label}*:",
+        f"Situação do equipamento *{eqp_label}*:",
         "",
     ]
-    if not itens:
-        linhas.append("Nenhum item de revisão ou lubrificação configurado para este equipamento.")
+    if not criticos:
+        linhas.append("✅ Nenhuma pendência — todos os itens estão em dia.")
     else:
-        for item in itens:
+        for item in criticos:
             emoji = _emoji_status(item["status"], item["realizado"])
             linhas.append(f"{emoji} {item['nome']} — {_texto_situacao_item(item)}")
+        if sem_pendencia:
+            linhas.append(f"\n_+ {sem_pendencia} item(ns) em dia, sem necessidade de ação agora._")
 
     linhas.append("")
-    vencidos = sum(1 for i in itens if i["status"] == "VENCIDO" and not i["realizado"])
-    proximos = sum(1 for i in itens if i["status"] == "PROXIMO" and not i["realizado"])
+    vencidos = sum(1 for i in criticos if i["status"] == "VENCIDO")
     if vencidos:
         linhas.append(f"⚠️ {vencidos} item(ns) vencido(s) — recomendamos priorizar.")
-    elif proximos:
-        linhas.append(f"ℹ️ {proximos} item(ns) próximo(s) do vencimento.")
-    else:
-        linhas.append("✅ Tudo certo por aqui — nenhuma pendência crítica no momento.")
     return "\n".join(linhas)
 
 
@@ -273,22 +276,36 @@ def enviar_resumos_semanais_pendentes(dias: int = 7) -> dict:
             resultado["pulados"] += 1
             continue
 
-        blocos = []
+        itens_flat = []
+        equipamentos_bloco = []
         for eqp_id in sorted(eqp_ids, key=lambda i: str(i)):
             eqp = equipamentos.get(eqp_id)
             if not eqp:
                 continue
-            itens = coletar_itens_equipamento(eqp_id)
+            eqp_label = f"{eqp.get('codigo')} - {eqp.get('nome')}"
+            itens = coletar_itens_equipamento(eqp_id, equipamento_label=eqp_label)
             if itens:
-                blocos.append({"equipamento": eqp, "itens": itens})
+                itens_flat.extend(itens)
+                equipamentos_bloco.append(eqp)
 
-        if not blocos:
+        if not itens_flat:
             resultado["pulados"] += 1
             continue
 
-        html, texto = email_service.montar_html_resumo_responsavel(responsavel["nome"], blocos)
-        assunto = f"Resumo semanal de manutenção — {len(blocos)} equipamento(s)"
-        pdf_anexo = montar_pdf_responsavel([b["equipamento"]["id"] for b in blocos], equipamentos)
+        criticos, sem_pendencia = priorizar_itens(itens_flat)
+        total_eqp = len(equipamentos_bloco)
+
+        html, texto = email_service.montar_html_resumo_proximos_servicos(
+            responsavel["nome"], criticos, sem_pendencia, total_eqp,
+        )
+        assunto = f"Resumo semanal de manutenção — {total_eqp} equipamento(s)"
+        try:
+            from services import relatorio_pdf_service
+            pdf_anexo = relatorio_pdf_service.gerar_pdf_resumo_responsavel(
+                responsavel["nome"], criticos, sem_pendencia, total_eqp,
+            )
+        except Exception:
+            pdf_anexo = None
         anexos = [(pdf_anexo, "resumo_semanal.pdf")] if pdf_anexo else None
         ok, _msg = email_service.enviar_email(responsavel["email"], assunto, html, texto, anexos=anexos)
         if ok:
@@ -351,6 +368,38 @@ def montar_pdf_responsavel(equipamento_ids, equipamentos_map: dict | None = None
     saida = io.BytesIO()
     writer.write(saida)
     return saida.getvalue()
+
+
+def priorizar_itens(itens_com_equipamento: list[dict], limite: int | None = None) -> tuple[list[dict], int]:
+    """Recebe itens já com 'equipamento' anexado (rótulo do equipamento) e devolve
+    (itens_criticos_ordenados_por_urgência, quantidade_sem_pendência).
+
+    Ordem: vencidos (mais atrasado primeiro) → próximos (mais perto primeiro) →
+    aguardando 1ª execução. Itens realizados/em dia não aparecem na lista — só
+    entram na contagem "sem pendência", pra não afogar quem está vendo o resumo.
+    """
+    def _peso(item):
+        if item.get("realizado"):
+            return (3, 0.0)
+        status = str(item.get("status") or "").upper()
+        falta = float(item.get("falta", 0) or 0)
+        if status == "VENCIDO":
+            return (0, falta)
+        if status == "PROXIMO":
+            return (1, falta)
+        if status in ("SEM_BASE", "SEM BASE"):
+            return (2, 0.0)
+        return (3, 0.0)
+
+    criticos = [
+        i for i in itens_com_equipamento
+        if not i.get("realizado") and str(i.get("status") or "").upper() in ("VENCIDO", "PROXIMO", "SEM_BASE", "SEM BASE")
+    ]
+    sem_pendencia = len(itens_com_equipamento) - len(criticos)
+    criticos.sort(key=_peso)
+    if limite:
+        criticos = criticos[:limite]
+    return criticos, sem_pendencia
 
 
 def montar_fila_semanal_whatsapp(dias: int = 7) -> list[dict]:
