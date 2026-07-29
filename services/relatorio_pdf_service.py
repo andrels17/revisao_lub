@@ -1062,27 +1062,36 @@ def gerar_pdf_resumo_responsavel(
             ParagraphStyle("ok", fontName="Helvetica-Bold", fontSize=10, textColor=P["green"], alignment=TA_CENTER),
         ))
     else:
+        TIPO_LABEL = {"revisao": "Revisão", "lubrificacao": "Lubrificação"}
         linhas = []
         for item in itens_criticos:
             status = str(item.get("status", "")).upper()
             unidade = item.get("unidade", "km")
             falta = float(item.get("falta", 0) or 0)
+            atual = float(item.get("atual", 0) or 0)
+            vencimento = float(item.get("vencimento", 0) or 0)
+            tipo_txt = TIPO_LABEL.get(item.get("tipo"), "-")
             if status == "VENCIDO":
                 cor, txt = P["red"], f"{abs(falta):.0f} {unidade} atraso"
             elif status == "PROXIMO":
                 cor, txt = P["amber"], f"faltam {falta:.0f} {unidade}"
             else:
                 cor, txt = P["purple"], "1ª execução"
+            venc_txt = f"{vencimento:.0f} {unidade}" if vencimento > 0 else "-"
+            atual_txt = f"{atual:.0f} {unidade}" if atual > 0 else "-"
             linhas.append([
                 item.get("equipamento", "-"),
                 item.get("nome", "-"),
-                (status.replace("_", " "), True, cor, TA_LEFT),
+                tipo_txt,
+                atual_txt,
+                venc_txt,
                 (txt, True, cor, TA_LEFT),
+                (status.replace("_", " "), True, cor, TA_LEFT),
             ])
         elements.append(_tabela_simples(
-            ["Equipamento", "Item", "Status", "Situação"],
+            ["Equipamento", "Item", "Tipo", "Atual", "Próxima", "Faltam", "Status"],
             linhas, P,
-            [PW * 0.28, PW * 0.30, PW * 0.18, PW * 0.24],
+            [PW * 0.18, PW * 0.20, PW * 0.12, PW * 0.13, PW * 0.13, PW * 0.14, PW * 0.10],
         ))
 
     hdr = lambda c, d: _cabeçalho_padrao(

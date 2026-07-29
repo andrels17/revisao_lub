@@ -122,6 +122,8 @@ def coletar_itens_equipamento(equipamento_id, equipamento_label: str | None = No
                 "status": str(etapa.get("status") or "-").upper(),
                 "realizado": bool(etapa.get("realizado_no_ciclo")),
                 "falta": float(etapa.get("diferenca", etapa.get("falta", 0)) or 0),
+                "atual": float(etapa.get("atual", 0) or 0),
+                "vencimento": float(etapa.get("vencimento", 0) or 0),
                 "unidade": "h" if (etapa.get("tipo_controle") == "horas") else "km",
             })
     except Exception:
@@ -136,6 +138,8 @@ def coletar_itens_equipamento(equipamento_id, equipamento_label: str | None = No
                 "status": str(item.get("status") or "-").upper(),
                 "realizado": bool(item.get("realizado_no_ciclo")),
                 "falta": float(item.get("diferenca", 0) or 0),
+                "atual": float(item.get("atual", 0) or 0),
+                "vencimento": float(item.get("vencimento", 0) or 0),
                 "unidade": "h" if (item.get("tipo_controle") == "horas") else "km",
             })
     except Exception:
