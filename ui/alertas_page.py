@@ -793,6 +793,108 @@ def _render_historico():
 
 
 
+def _render_resumo_equipamento(mapa_operacionais: dict):
+    st.markdown(
+        "<div class='section-caption'>Resumo único por equipamento — junta revisões e lubrificações num só envio, "
+        "para o responsável acompanhar o progresso geral em vez de receber um alerta por item.</div>",
+        unsafe_allow_html=True,
+    )
+
+    equipamentos = equipamentos_service.listar()
+    if not equipamentos:
+        st.info("Nenhum equipamento cadastrado.")
+        return
+
+    opcoes = {f"{e.get('codigo')} — {e.get('nome')}": e for e in equipamentos}
+    escolha = st.selectbox("Equipamento", list(opcoes.keys()), key="resumo_eqp_select")
+    eqp = opcoes[escolha]
+
+    itens = alertas_service.coletar_itens_equipamento(eqp["id"])
+    if not itens:
+        st.info("Este equipamento não tem itens de revisão ou lubrificação configurados.")
+        return
+
+    vencidos = sum(1 for i in itens if i["status"] == "VENCIDO" and not i["realizado"])
+    proximos = sum(1 for i in itens if i["status"] == "PROXIMO" and not i["realizado"])
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Itens no total", len(itens))
+    c2.metric("Vencidos", vencidos)
+    c3.metric("Próximos", proximos)
+
+    with st.expander("Ver itens do resumo", expanded=False):
+        for i in itens:
+            emoji = alertas_service.emoji_status(i["status"], i["realizado"])
+            st.markdown(f"{emoji} **{i['nome']}** — {alertas_service.texto_situacao_item(i)}")
+
+    responsaveis = mapa_operacionais.get(eqp["id"], [])
+    if not responsaveis:
+        st.warning("Nenhum responsável vinculado a este equipamento. Cadastre um vínculo em **Vínculos**.")
+        return
+
+    st.markdown("##### Enviar para")
+    from services import email_service, responsaveis_service
+    emails_por_id = {r["id"]: r.get("email") for r in responsaveis_service.listar()}
+
+    for resp in responsaveis:
+        nome_resp = resp["responsavel_nome"]
+        telefone = resp.get("responsavel_telefone") or ""
+        email_dest = emails_por_id.get(resp["responsavel_id"]) or ""
+        mensagem = alertas_service.montar_mensagem_resumo_equipamento(eqp, itens, nome_resp)
+
+        st.markdown(f"**{nome_resp}**")
+        colw, cole = st.columns(2)
+        with colw:
+            if telefone:
+                link = alertas_service.gerar_link_whatsapp(telefone, mensagem)
+                st.link_button(f"Abrir WhatsApp — {nome_resp}", link, use_container_width=True,
+                    key=f"wa_resumo_{eqp['id']}_{resp['responsavel_id']}")
+            else:
+                st.button("Sem telefone", disabled=True, use_container_width=True,
+                    key=f"wa_resumo_disabled_{eqp['id']}_{resp['responsavel_id']}")
+        with cole:
+            if email_service.email_configurado() and email_dest:
+                if st.button(f"📧 Enviar e-mail — {nome_resp}", use_container_width=True,
+                        key=f"email_resumo_{eqp['id']}_{resp['responsavel_id']}"):
+                    html_corpo, texto_corpo = email_service.montar_html_resumo_equipamento(eqp, itens, nome_resp)
+                    assunto = f"Resumo de manutenção — {eqp.get('codigo')} {eqp.get('nome')}"
+                    ok, msg_email = email_service.enviar_email(email_dest, assunto, html_corpo, texto_corpo)
+                    if ok:
+                        st.success("📧 E-mail enviado com sucesso!")
+                    else:
+                        st.error(f"Falha ao enviar e-mail: {msg_email}")
+            elif not email_dest:
+                st.caption("📧 Sem e-mail cadastrado.")
+            else:
+                st.caption("📧 E-mail não configurado no sistema.")
+
+    st.divider()
+    st.markdown("##### Resumos semanais")
+    st.caption(
+        "E-mail: enviado automaticamente 1x por semana pra cada responsável (sem precisar clicar em nada). "
+        "WhatsApp: o link sempre exige um clique seu — aqui embaixo fica a fila da semana já pronta."
+    )
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("Disparar resumos semanais por e-mail agora", use_container_width=True, key="btn_resumo_semanal_email"):
+            resultado = alertas_service.enviar_resumos_semanais_pendentes()
+            if resultado.get("sem_email_configurado"):
+                st.error("E-mail não está configurado no sistema.")
+            else:
+                st.success(f"Enviados: {resultado['enviados']}  ·  Pulados (já recebidos ou sem e-mail): {resultado['pulados']}  ·  Erros: {resultado['erros']}")
+
+    with col_b:
+        with st.popover("Ver fila semanal do WhatsApp", use_container_width=True):
+            fila_wa = alertas_service.montar_fila_semanal_whatsapp()
+            if not fila_wa:
+                st.caption("Nenhum resumo pendente esta semana (ou todos já foram enviados nos últimos 7 dias).")
+            else:
+                for item_fila in fila_wa:
+                    st.markdown(f"**{item_fila['responsavel_nome']}** — {item_fila['equipamento']}")
+                    st.link_button("Abrir WhatsApp", item_fila["link"], use_container_width=True,
+                        key=f"wa_fila_{item_fila['equipamento_id']}_{item_fila['responsavel_id']}")
+
+
 def render():
     _inject_styles()
 
@@ -826,11 +928,12 @@ def render():
         else:
             st.success("Nenhum equipamento acima da janela configurada sem leitura no momento.")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "Fila sugerida",
         f"Revisões ({len(pendencias_rev)})",
         f"Lubrificações ({len(pendencias_lub)})",
         "Histórico",
+        "Resumo por equipamento",
     ])
 
     with tab1:
@@ -845,3 +948,6 @@ def render():
 
     with tab4:
         _render_historico()
+
+    with tab5:
+        _render_resumo_equipamento(mapa_operacionais)
