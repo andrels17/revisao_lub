@@ -857,12 +857,21 @@ def _render_resumo_equipamento(mapa_operacionais: dict):
                         key=f"email_resumo_{eqp['id']}_{resp['responsavel_id']}"):
                     html_corpo, texto_corpo = email_service.montar_html_resumo_equipamento(eqp, itens, nome_resp)
                     assunto = f"Resumo de manutenção — {eqp.get('codigo')} {eqp.get('nome')}"
-                    with st.spinner("Gerando PDF detalhado e enviando…"):
-                        pdf_anexo = alertas_service.montar_pdf_responsavel([eqp["id"]], {eqp["id"]: eqp})
-                        anexos = [(pdf_anexo, f"ficha_{eqp.get('codigo')}.pdf")] if pdf_anexo else None
+                    with st.spinner("Gerando resumo em PDF e enviando…"):
+                        from services import relatorio_pdf_service
+                        eqp_label = f"{eqp.get('codigo')} - {eqp.get('nome')}"
+                        itens_rotulados = alertas_service.coletar_itens_equipamento(eqp["id"], equipamento_label=eqp_label)
+                        criticos, sem_pend = alertas_service.priorizar_itens(itens_rotulados)
+                        try:
+                            pdf_anexo = relatorio_pdf_service.gerar_pdf_resumo_responsavel(
+                                nome_resp, criticos, sem_pend, 1,
+                            )
+                        except Exception:
+                            pdf_anexo = None
+                        anexos = [(pdf_anexo, f"resumo_{eqp.get('codigo')}.pdf")] if pdf_anexo else None
                         ok, msg_email = email_service.enviar_email(email_dest, assunto, html_corpo, texto_corpo, anexos=anexos)
                     if ok:
-                        st.success("📧 E-mail enviado com sucesso!" + (" (com PDF detalhado em anexo)" if anexos else " (sem anexo — falha ao gerar o PDF)"))
+                        st.success("📧 E-mail enviado com sucesso!" + (" (com PDF resumo em anexo)" if anexos else " (sem anexo — falha ao gerar o PDF)"))
                     else:
                         st.error(f"Falha ao enviar e-mail: {msg_email}")
             elif not email_dest:
