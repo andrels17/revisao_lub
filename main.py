@@ -1,6 +1,7 @@
 import traceback
 import unicodedata
 import re
+import datetime
 import streamlit as st
 import os
 
@@ -86,6 +87,19 @@ try:
     configuracoes_service.aplicar_no_session_state()
 except Exception:
     pass
+
+# ── Resumo semanal automático por e-mail ──────────────────────────────
+# Roda no máximo 1x por dia (por processo do Streamlit) e, internamente, cada
+# responsável só recebe de fato quando já passou uma semana desde o último
+# envio (checado no banco). Falhas aqui nunca devem derrubar o app.
+_hoje_str = datetime.date.today().isoformat()
+if st.session_state.get("_resumo_semanal_checado_em") != _hoje_str:
+    st.session_state["_resumo_semanal_checado_em"] = _hoje_str
+    try:
+        from services import alertas_service
+        alertas_service.enviar_resumos_semanais_pendentes()
+    except Exception:
+        pass
 
 # Estrutura de navegação: seção -> {"nome exibido" (com emoji): módulo da página}
 SECOES = {
