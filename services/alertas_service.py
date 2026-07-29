@@ -84,6 +84,109 @@ def montar_mensagem_lubrificacao(equipamento: dict, item: dict, responsavel_nome
     )
 
 
+STATUS_EMOJI = {
+    "VENCIDO": "🔴",
+    "PROXIMO": "🟡",
+    "SEM_BASE": "⭐",
+    "SEM BASE": "⭐",
+    "EM_DIA": "⚪",
+    "EM DIA": "⚪",
+}
+
+
+def _emoji_status(status: str, realizado: bool = False) -> str:
+    if realizado:
+        return "✅"
+    return STATUS_EMOJI.get(str(status or "").upper(), "⚪")
+
+
+# Aliases públicos (usados pela UI) — mantêm os nomes internos por compatibilidade.
+emoji_status = _emoji_status
+
+
+def coletar_itens_equipamento(equipamento_id) -> list[dict]:
+    """Junta etapas de revisão + itens de lubrificação de um equipamento num
+    formato único, para montar o resumo consolidado (WhatsApp/e-mail)."""
+    from services import revisoes_service, lubrificacoes_service
+
+    itens = []
+    try:
+        rev_idx = revisoes_service.listar_controle_revisoes_por_equipamento()
+        for etapa in rev_idx.get(equipamento_id, []):
+            itens.append({
+                "tipo": "revisao",
+                "nome": etapa.get("etapa") or etapa.get("nome_etapa") or "-",
+                "status": str(etapa.get("status") or "-").upper(),
+                "realizado": bool(etapa.get("realizado_no_ciclo")),
+                "falta": float(etapa.get("diferenca", etapa.get("falta", 0)) or 0),
+                "unidade": "h" if (etapa.get("tipo_controle") == "horas") else "km",
+            })
+    except Exception:
+        pass
+    try:
+        lub_idx = lubrificacoes_service.calcular_proximas_lubrificacoes_batch([equipamento_id])
+        for item in lub_idx.get(equipamento_id, []):
+            itens.append({
+                "tipo": "lubrificacao",
+                "nome": item.get("item") or "-",
+                "status": str(item.get("status") or "-").upper(),
+                "realizado": bool(item.get("realizado_no_ciclo")),
+                "falta": float(item.get("diferenca", 0) or 0),
+                "unidade": "h" if (item.get("tipo_controle") == "horas") else "km",
+            })
+    except Exception:
+        pass
+    return itens
+
+
+def _texto_situacao_item(item: dict) -> str:
+    unidade = item.get("unidade", "km")
+    falta = float(item.get("falta", 0) or 0)
+    status = item.get("status")
+    if item.get("realizado"):
+        return "realizado neste ciclo"
+    if status == "VENCIDO":
+        return f"vencido há {abs(falta):.0f} {unidade}"
+    if status == "PROXIMO":
+        return f"faltam {falta:.0f} {unidade}"
+    if status in ("SEM_BASE", "SEM BASE"):
+        return "aguardando 1ª execução"
+    return f"faltam {falta:.0f} {unidade}" if falta > 0 else "em dia"
+
+
+texto_situacao_item = _texto_situacao_item
+
+
+def montar_mensagem_resumo_equipamento(equipamento: dict, itens: list[dict], responsavel_nome: str) -> str:
+    """Mensagem única de WhatsApp com o status de TODOS os itens do equipamento
+    (revisão + lubrificação), no estilo do resumo visual do PDF."""
+    eqp_label = f"{equipamento.get('codigo', '')} - {equipamento.get('nome', '')}"
+    linhas = [
+        "*Resumo de manutenção*",
+        "",
+        f"Olá, *{responsavel_nome}*.",
+        f"Situação atual do equipamento *{eqp_label}*:",
+        "",
+    ]
+    if not itens:
+        linhas.append("Nenhum item de revisão ou lubrificação configurado para este equipamento.")
+    else:
+        for item in itens:
+            emoji = _emoji_status(item["status"], item["realizado"])
+            linhas.append(f"{emoji} {item['nome']} — {_texto_situacao_item(item)}")
+
+    linhas.append("")
+    vencidos = sum(1 for i in itens if i["status"] == "VENCIDO" and not i["realizado"])
+    proximos = sum(1 for i in itens if i["status"] == "PROXIMO" and not i["realizado"])
+    if vencidos:
+        linhas.append(f"⚠️ {vencidos} item(ns) vencido(s) — recomendamos priorizar.")
+    elif proximos:
+        linhas.append(f"ℹ️ {proximos} item(ns) próximo(s) do vencimento.")
+    else:
+        linhas.append("✅ Tudo certo por aqui — nenhuma pendência crítica no momento.")
+    return "\n".join(linhas)
+
+
 def ja_enviado_hoje(equipamento_id, tipo_alerta: str) -> bool:
     conn = get_conn()
     cur = conn.cursor()
@@ -102,6 +205,148 @@ def ja_enviado_hoje(equipamento_id, tipo_alerta: str) -> bool:
         return cur.fetchone() is not None
     finally:
         release_conn(conn)
+
+
+def responsavel_recebeu_recentemente(responsavel_id, tipo_alerta: str, dias: int = 7) -> bool:
+    """Verifica se um responsável já recebeu esse tipo de alerta nos últimos N dias
+    (usado para o resumo semanal, que não deve repetir todo dia)."""
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            select 1
+            from alertas_enviados
+            where responsavel_id = %s
+              and tipo_alerta = %s
+              and enviado_em >= now() - (%s || ' days')::interval
+            limit 1
+            """,
+            (responsavel_id, tipo_alerta, dias),
+        )
+        return cur.fetchone() is not None
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        release_conn(conn)
+
+
+def enviar_resumos_semanais_pendentes(dias: int = 7) -> dict:
+    """Envia (por e-mail) o resumo consolidado de todos os equipamentos vinculados
+    a cada responsável, uma vez a cada `dias` dias. Chamado automaticamente uma
+    vez por dia (ver main.py) — cada responsável só recebe de fato quando já
+    passou o período configurado, graças ao `responsavel_recebeu_recentemente`.
+
+    OBS: cobre apenas e-mail. Não existe envio automático de WhatsApp sem uma
+    integração paga com a API oficial (Twilio/Meta) — ver `montar_fila_semanal_whatsapp`
+    para o equivalente "pronto para clicar" usado na tela de Alertas.
+    """
+    from services import email_service, equipamentos_service, responsaveis_service, vinculos_service
+
+    resultado = {"enviados": 0, "pulados": 0, "erros": 0, "sem_email_configurado": False}
+
+    if not email_service.email_configurado():
+        resultado["sem_email_configurado"] = True
+        return resultado
+
+    try:
+        equipamentos = {e["id"]: e for e in equipamentos_service.listar()}
+        mapa_por_eqp = vinculos_service.mapa_responsaveis_operacionais()
+        responsaveis_por_id = {r["id"]: r for r in responsaveis_service.listar() if r.get("ativo", True)}
+    except Exception:
+        resultado["erros"] += 1
+        return resultado
+
+    # Inverte o mapa: responsavel_id -> lista de equipamento_ids
+    eqps_por_responsavel: dict = {}
+    for eqp_id, vinculos in mapa_por_eqp.items():
+        for v in vinculos:
+            eqps_por_responsavel.setdefault(v["responsavel_id"], set()).add(eqp_id)
+
+    for responsavel_id, eqp_ids in eqps_por_responsavel.items():
+        responsavel = responsaveis_por_id.get(responsavel_id)
+        if not responsavel or not responsavel.get("email"):
+            resultado["pulados"] += 1
+            continue
+        if responsavel_recebeu_recentemente(responsavel_id, "resumo_semanal", dias):
+            resultado["pulados"] += 1
+            continue
+
+        blocos = []
+        for eqp_id in sorted(eqp_ids, key=lambda i: str(i)):
+            eqp = equipamentos.get(eqp_id)
+            if not eqp:
+                continue
+            itens = coletar_itens_equipamento(eqp_id)
+            if itens:
+                blocos.append({"equipamento": eqp, "itens": itens})
+
+        if not blocos:
+            resultado["pulados"] += 1
+            continue
+
+        html, texto = email_service.montar_html_resumo_responsavel(responsavel["nome"], blocos)
+        assunto = f"Resumo semanal de manutenção — {len(blocos)} equipamento(s)"
+        ok, _msg = email_service.enviar_email(responsavel["email"], assunto, html, texto)
+        if ok:
+            registrar_alerta_lote(
+                [{"equipamento_id": eqp_id, "responsavel_id": responsavel_id, "tipo_alerta": "resumo_semanal"}
+                 for eqp_id in eqp_ids],
+                perfil="resumo_semanal",
+                observacao="resumo_semanal_automatico",
+            )
+            resultado["enviados"] += 1
+        else:
+            resultado["erros"] += 1
+
+    return resultado
+
+
+def montar_fila_semanal_whatsapp(dias: int = 7) -> list[dict]:
+    """Monta a fila de resumos da semana prontos para envio manual por WhatsApp
+    (um link por responsável, já com a mensagem pronta). Não envia nada sozinho —
+    WhatsApp sempre exige que alguém clique em "Enviar" na conversa."""
+    from services import equipamentos_service, responsaveis_service, vinculos_service
+
+    fila = []
+    try:
+        equipamentos = {e["id"]: e for e in equipamentos_service.listar()}
+        mapa_por_eqp = vinculos_service.mapa_responsaveis_operacionais()
+        responsaveis_por_id = {r["id"]: r for r in responsaveis_service.listar() if r.get("ativo", True)}
+    except Exception:
+        return fila
+
+    eqps_por_responsavel: dict = {}
+    for eqp_id, vinculos in mapa_por_eqp.items():
+        for v in vinculos:
+            eqps_por_responsavel.setdefault(v["responsavel_id"], set()).add(eqp_id)
+
+    for responsavel_id, eqp_ids in eqps_por_responsavel.items():
+        responsavel = responsaveis_por_id.get(responsavel_id)
+        if not responsavel or not responsavel.get("telefone"):
+            continue
+        if responsavel_recebeu_recentemente(responsavel_id, "resumo_semanal_whatsapp", dias):
+            continue
+
+        for eqp_id in sorted(eqp_ids, key=lambda i: str(i)):
+            eqp = equipamentos.get(eqp_id)
+            if not eqp:
+                continue
+            itens = coletar_itens_equipamento(eqp_id)
+            if not itens:
+                continue
+            mensagem = montar_mensagem_resumo_equipamento(eqp, itens, responsavel["nome"])
+            fila.append({
+                "responsavel_id": responsavel_id,
+                "responsavel_nome": responsavel["nome"],
+                "telefone": responsavel["telefone"],
+                "equipamento_id": eqp_id,
+                "equipamento": f"{eqp.get('codigo')} - {eqp.get('nome')}",
+                "mensagem": mensagem,
+                "link": gerar_link_whatsapp(responsavel["telefone"], mensagem),
+            })
+    return fila
 
 
 def alertas_enviados_hoje_batch(equipamento_ids: list) -> dict:

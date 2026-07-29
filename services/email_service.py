@@ -76,6 +76,111 @@ def enviar_email(destinatario: str, assunto: str, corpo_html: str, corpo_texto: 
         return False, f"Erro ao enviar e-mail: {e}"
 
 
+def _cor_emoji_texto_item(item: dict) -> tuple[str, str, str]:
+    """Retorna (cor_hex, emoji, texto_situação) para um item do resumo consolidado."""
+    status = str(item.get("status") or "-").upper()
+    realizado = bool(item.get("realizado"))
+    unidade = item.get("unidade", "km")
+    falta = float(item.get("falta", 0) or 0)
+    if realizado:
+        return "#22c55e", "✓", "realizado neste ciclo"
+    if status == "VENCIDO":
+        return "#ef4444", "▶", f"vencido há {abs(falta):.0f} {unidade}"
+    if status == "PROXIMO":
+        return "#f59e0b", "◎", f"faltam {falta:.0f} {unidade}"
+    if status in ("SEM_BASE", "SEM BASE"):
+        return "#8b5cf6", "★", "aguardando 1ª execução"
+    return "#64748b", "○", (f"faltam {falta:.0f} {unidade}" if falta > 0 else "em dia")
+
+
+def _linha_badge_html(item: dict) -> str:
+    cor, emoji, txt = _cor_emoji_texto_item(item)
+    nome = item.get("nome", "-")
+    return f"""
+    <tr>
+      <td style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08);">
+        <span style="display:inline-block;width:18px;height:18px;line-height:18px;text-align:center;
+            border-radius:50%;background:{cor};color:#fff;font-size:10px;font-weight:bold;margin-right:8px;">{emoji}</span>
+        <span style="color:#e8f1ff;font-weight:600;font-size:13px;">{nome}</span>
+      </td>
+      <td style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08);text-align:right;
+          color:{cor};font-size:12px;font-weight:600;white-space:nowrap;">{txt}</td>
+    </tr>"""
+
+
+def montar_html_resumo_equipamento(equipamento: dict, itens: list[dict], responsavel_nome: str) -> tuple[str, str]:
+    """HTML de e-mail com o status de TODOS os itens (revisão + lubrificação)
+    de um único equipamento — versão "sob demanda" a partir da tela de Alertas."""
+    eqp_label = f"{equipamento.get('codigo', '')} - {equipamento.get('nome', '')}"
+    linhas_html = "".join(_linha_badge_html(i) for i in itens) or \
+        "<tr><td style='color:#9db0c7;padding:8px 0;font-size:13px;'>Nenhum item configurado.</td></tr>"
+
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0d1929;color:#e8f1ff;border-radius:12px;overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#1e3a5f,#0d1929);padding:24px 28px;">
+        <h2 style="margin:0;color:#fff;font-size:20px;">📋 Resumo de Manutenção</h2>
+        <p style="margin:8px 0 0;color:#9db0c7;font-size:14px;">{eqp_label}</p>
+      </div>
+      <div style="padding:24px 28px;">
+        <p style="color:#c8dcf4;">Olá, <strong style="color:#fff;">{responsavel_nome}</strong>.</p>
+        <p style="color:#9db0c7;font-size:13px;">Situação atual de todos os itens de revisão e lubrificação:</p>
+        <table style="width:100%;border-collapse:collapse;margin-top:6px;">{linhas_html}</table>
+      </div>
+    </div>
+    """
+    texto = f"Resumo de manutenção - {eqp_label}\n\n" + "\n".join(
+        f"{i.get('nome', '-')}: {_cor_emoji_texto_item(i)[2]}" for i in itens
+    )
+    return html, texto
+
+
+def montar_html_resumo_responsavel(responsavel_nome: str, blocos: list[dict]) -> tuple[str, str]:
+    """HTML consolidado com TODOS os equipamentos de um responsável — usado no
+    resumo semanal automático. `blocos` = [{"equipamento": {...}, "itens": [...]}, ...]"""
+    secoes_html = []
+    secoes_texto = []
+    total_vencidos = 0
+    for bloco in blocos:
+        eqp = bloco["equipamento"]
+        itens = bloco["itens"]
+        eqp_label = f"{eqp.get('codigo', '')} - {eqp.get('nome', '')}"
+        total_vencidos += sum(1 for i in itens if str(i.get("status", "")).upper() == "VENCIDO" and not i.get("realizado"))
+        linhas_html = "".join(_linha_badge_html(i) for i in itens) or \
+            "<tr><td style='color:#9db0c7;padding:8px 0;font-size:13px;'>Nenhum item configurado.</td></tr>"
+        secoes_html.append(f"""
+        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+            border-radius:10px;padding:14px 16px;margin:0 0 14px;">
+          <p style="margin:0 0 6px;color:#fff;font-weight:bold;font-size:14px;">{eqp_label}</p>
+          <table style="width:100%;border-collapse:collapse;">{linhas_html}</table>
+        </div>""")
+        secoes_texto.append(f"{eqp_label}\n" + "\n".join(
+            f"  {i.get('nome', '-')}: {_cor_emoji_texto_item(i)[2]}" for i in itens
+        ))
+
+    alerta_top = (
+        f'<p style="color:#fca5a5;font-size:13px;margin:0 0 14px;">⚠️ {total_vencidos} item(ns) vencido(s) no total — priorize esses equipamentos.</p>'
+        if total_vencidos else
+        '<p style="color:#86efac;font-size:13px;margin:0 0 14px;">✅ Nenhum item vencido nos seus equipamentos esta semana.</p>'
+    )
+
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0d1929;color:#e8f1ff;border-radius:12px;overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#1e3a5f,#0d1929);padding:24px 28px;">
+        <h2 style="margin:0;color:#fff;font-size:20px;">📋 Resumo semanal de manutenção</h2>
+        <p style="margin:8px 0 0;color:#9db0c7;font-size:14px;">{len(blocos)} equipamento(s) sob sua responsabilidade</p>
+      </div>
+      <div style="padding:24px 28px;">
+        <p style="color:#c8dcf4;">Olá, <strong style="color:#fff;">{responsavel_nome}</strong>.</p>
+        {alerta_top}
+        {"".join(secoes_html)}
+        <p style="color:#6b8bb0;font-size:11px;margin-top:8px;">Você recebe este resumo semanalmente enquanto tiver equipamentos vinculados. Registre as execuções no sistema para atualizar o status.</p>
+      </div>
+    </div>
+    """
+    texto = f"Resumo semanal de manutenção — {len(blocos)} equipamento(s)\n\n" + "\n\n".join(secoes_texto)
+    return html, texto
+
+
 def montar_html_revisao(equipamento: dict, etapa: dict, responsavel_nome: str) -> tuple[str, str]:
     """Monta o HTML e texto plano para alerta de revisão."""
     tipo = etapa.get("tipo_controle", "")
