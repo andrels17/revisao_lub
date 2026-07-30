@@ -865,6 +865,7 @@ def _render_resumo_equipamento(mapa_operacionais: dict):
                         try:
                             pdf_anexo = relatorio_pdf_service.gerar_pdf_resumo_responsavel(
                                 nome_resp, criticos, sem_pend, 1,
+                                itens_por_equipamento=alertas_service.agrupar_itens_por_equipamento(itens_rotulados),
                             )
                         except Exception:
                             pdf_anexo = None
@@ -1003,6 +1004,7 @@ def _render_resumo_responsavel(mapa_operacionais: dict):
                     try:
                         pdf_anexo = relatorio_pdf_service.gerar_pdf_resumo_responsavel(
                             nome_resp, criticos, sem_pendencia, total_eqp,
+                            itens_por_equipamento=alertas_service.agrupar_itens_por_equipamento(itens_flat),
                         )
                     except Exception:
                         pdf_anexo = None
