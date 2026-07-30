@@ -199,6 +199,48 @@ def montar_mensagem_resumo_equipamento(equipamento: dict, itens: list[dict], res
     return "\n".join(linhas)
 
 
+def mapa_equipamentos_por_responsavel(mapa_operacionais: dict) -> dict:
+    """Inverte o mapa equipamento->responsáveis operacionais (o que a tela de
+    Vínculos já expõe) em responsável->equipamentos, para montar um resumo
+    único com TODOS os equipamentos de uma pessoa — uma lista de acompanhamento
+    em vez de um envio por equipamento."""
+    invertido: dict = {}
+    for eqp_id, vinculos in mapa_operacionais.items():
+        for v in vinculos:
+            resp_id = v["responsavel_id"]
+            bloco = invertido.setdefault(resp_id, {"nome": v["responsavel_nome"], "equipamento_ids": set()})
+            bloco["equipamento_ids"].add(eqp_id)
+    return invertido
+
+
+def montar_mensagem_resumo_responsavel(responsavel_nome: str, criticos: list[dict], sem_pendencia: int, total_equipamentos: int) -> str:
+    """Mensagem única de WhatsApp com os itens mais urgentes de TODOS os
+    equipamentos sob responsabilidade da pessoa — cada linha já identifica
+    o equipamento de origem, servindo como lista de acompanhamento geral."""
+    linhas = [
+        "*Resumo de manutenção*",
+        "",
+        f"Olá, *{responsavel_nome}*.",
+        f"Situação de {total_equipamentos} equipamento(s) sob sua responsabilidade:",
+        "",
+    ]
+    if not criticos:
+        linhas.append("✅ Nenhuma pendência — todos os itens estão em dia.")
+    else:
+        for item in criticos:
+            emoji = _emoji_status(item["status"], item["realizado"])
+            eqp_label = item.get("equipamento", "-")
+            linhas.append(f"{emoji} [{eqp_label}] {item['nome']} — {_texto_situacao_item(item)}")
+        if sem_pendencia:
+            linhas.append(f"\n_+ {sem_pendencia} item(ns) em dia, sem necessidade de ação agora._")
+
+    linhas.append("")
+    vencidos = sum(1 for i in criticos if i["status"] == "VENCIDO" and not i.get("realizado"))
+    if vencidos:
+        linhas.append(f"⚠️ {vencidos} item(ns) vencido(s) — recomendamos priorizar.")
+    return "\n".join(linhas)
+
+
 def ja_enviado_hoje(equipamento_id, tipo_alerta: str) -> bool:
     conn = get_conn()
     cur = conn.cursor()
