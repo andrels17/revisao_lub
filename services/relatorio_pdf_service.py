@@ -72,6 +72,66 @@ def _fmt_data(v) -> str:
         return "-"
 
 
+def _linha_tempo_etapas(itens_ordenados, P, largura):
+    """Desenha uma linha do tempo horizontal com uma bolinha numerada por etapa
+    de revisão (na ordem de acionamento dentro do ciclo), destacando quais já
+    foram concluídas neste ciclo (verde) e quais ainda faltam (vencido/próximo/
+    pendente) — mesma ideia de uma linha do tempo de períodos, só que aplicada
+    ao progresso do ciclo atual de revisão."""
+    from reportlab.graphics.shapes import Drawing, Circle, Line, String
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors as _colors
+
+    n = len(itens_ordenados)
+    if n == 0:
+        return None
+
+    altura = 26 * mm
+    d = Drawing(largura, altura)
+    y_linha = altura / 2 + 2
+    margem = 10 * mm
+    passo = (largura - 2 * margem) / max(1, n - 1) if n > 1 else 0
+    raio = 4.0 * mm
+
+    def _cor_no(item):
+        if item.get("realizado_no_ciclo"):
+            return P["green"], _colors.white
+        status = str(item.get("status") or "").upper()
+        if status == "VENCIDO":
+            return P["red"], _colors.white
+        if status == "PROXIMO":
+            return P["amber"], _colors.white
+        if status in ("SEM_BASE", "SEM BASE"):
+            return P["purple"], _colors.white
+        return _colors.white, P["muted"]  # pendente — ainda não chegou a vez neste ciclo
+
+    xs = [margem + i * passo for i in range(n)] if n > 1 else [largura / 2]
+
+    d.add(Line(xs[0], y_linha, xs[-1], y_linha, strokeColor=P["gray_mid"], strokeWidth=2.2))
+    for i in range(n - 1):
+        if itens_ordenados[i].get("realizado_no_ciclo"):
+            d.add(Line(xs[i], y_linha, xs[i + 1], y_linha, strokeColor=P["green"], strokeWidth=2.2))
+
+    for i, item in enumerate(itens_ordenados):
+        cx = xs[i]
+        bg, fg = _cor_no(item)
+        borda = P["muted"] if bg == _colors.white else bg
+        d.add(Circle(cx, y_linha, raio, fillColor=bg, strokeColor=borda, strokeWidth=1.2))
+        d.add(String(cx, y_linha - 3.1, str(i + 1), fontName="Helvetica-Bold", fontSize=9,
+                      fillColor=fg, textAnchor="middle"))
+
+        largura_rotulo = passo + 16 if n > 1 else largura - 8
+        nome = _fit_text(_safe(item.get("etapa") or item.get("nome_etapa")), "Helvetica-Bold", 6.6, largura_rotulo)
+        if i % 2 == 0:
+            ly = y_linha + raio + 8
+        else:
+            ly = y_linha - raio - 12
+        d.add(String(cx, ly, nome, fontName="Helvetica-Bold", fontSize=6.6,
+                      fillColor=P["navy"], textAnchor="middle"))
+
+    return d
+
+
 def _cabeçalho_padrao(canvas_obj, doc, titulo_relatorio: str, subtitulo: str, filtros_txt: str, gerado_em: str):
     """Função de cabeçalho/rodapé padrão para todos os relatórios."""
     from reportlab.lib import colors
@@ -1194,6 +1254,23 @@ def gerar_pdf_ficha_tecnica(
     ]))
     elements.append(cad_t)
     elements.append(Spacer(1, 5 * mm))
+
+    # ── Linha do tempo das etapas de revisão ──────────────────────────────────
+    if status_revisoes:
+        concluidas = sum(1 for s in status_revisoes if s.get("realizado_no_ciclo"))
+        elements += _secao(
+            "Linha do tempo das etapas",
+            f"{concluidas} de {len(status_revisoes)} etapa(s) já concluída(s) neste ciclo — as demais aparecem na ordem em que vencem.",
+            styles, P,
+        )
+        itens_tl = sorted(
+            status_revisoes,
+            key=lambda s: float(s.get("vencimento_ciclo") or s.get("gatilho_valor") or s.get("vencimento") or 0),
+        )
+        tl_drawing = _linha_tempo_etapas(itens_tl, P, PW)
+        if tl_drawing:
+            elements.append(tl_drawing)
+        elements.append(Spacer(1, 2 * mm))
 
     # ── Status atual das revisões ─────────────────────────────────────────────
     elements += _secao(
