@@ -165,6 +165,8 @@ def _status_revisoes_equipamento(eqp_id) -> list[dict]:
                 "tipo_controle":     i.get("tipo_controle", "km"),
                 "atual":             float(i.get("atual", 0) or 0),
                 "vencimento":        float(i.get("vencimento", 0) or 0),
+                "vencimento_ciclo":  float(i.get("vencimento_ciclo", i.get("vencimento", 0)) or 0),
+                "gatilho_valor":     float(i.get("gatilho_valor", 0) or 0),
                 "diferenca":         float(i.get("diferenca", 0) or 0),
                 "status":            i.get("status", "EM_DIA"),
                 "realizado_no_ciclo": bool(i.get("realizado_no_ciclo", False)),

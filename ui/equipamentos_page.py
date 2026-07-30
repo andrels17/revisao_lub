@@ -138,6 +138,24 @@ def _inject_css():
         @media (max-width: 900px) {
             .eq-modal-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
         }
+        .eq-rtl-wrap {
+            background: rgba(255,255,255,.02); border:1px solid rgba(148,163,184,.1);
+            border-radius:12px; padding:.75rem .85rem .55rem; margin:.4rem 0 .9rem;
+        }
+        .eq-rtl-track { display:flex; align-items:stretch; overflow-x:auto; padding:.15rem .1rem .3rem; }
+        .eq-rtl-step { display:flex; flex-direction:column; align-items:center; flex:0 0 auto; }
+        .eq-rtl-label {
+            height:2rem; width:5.4rem; font-size:.68rem; font-weight:700; color:#b9cae0;
+            text-align:center; line-height:1.15; display:flex; justify-content:center; padding:0 .1rem;
+        }
+        .eq-rtl-label.top { align-items:flex-end; }
+        .eq-rtl-label.bottom { align-items:flex-start; }
+        .eq-rtl-dot {
+            width:2.1rem; height:2.1rem; border-radius:999px; display:flex; align-items:center;
+            justify-content:center; font-weight:800; font-size:.82rem; flex-shrink:0;
+        }
+        .eq-rtl-conn { flex:1 1 auto; height:3px; align-self:center; min-width:14px; }
+        .eq-rtl-caption { color:#9db0c7; font-size:.78rem; margin:.35rem .1rem 0; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -493,10 +511,60 @@ def _render_resumo_section(eq_id: str, equipamento: dict, snap: dict, responsave
         st.caption(f"Referência do próximo marco: {ref} {unidade} · Origem: {raw.get('origem')} · Item: {raw.get('item')}")
 
 
+def _render_timeline_revisoes(rev: list[dict]):
+    """Linha do tempo horizontal das etapas de revisão do ciclo atual (uma
+    bolinha numerada por etapa, na ordem de acionamento) — verde para o que já
+    foi concluído neste ciclo, vermelho/amarelo para vencido/próximo e contorno
+    neutro para o que ainda não chegou a vez."""
+    if not rev:
+        return
+    itens = sorted(
+        rev,
+        key=lambda s: float(s.get("vencimento_ciclo") or s.get("gatilho_valor") or s.get("vencimento") or 0),
+    )
+    n = len(itens)
+    concluidas = sum(1 for i in itens if i.get("realizado_no_ciclo"))
+
+    def _cor(item):
+        if item.get("realizado_no_ciclo"):
+            return "#16a34a", "#ffffff", "#16a34a"
+        status = str(item.get("status") or "").upper()
+        if status == "VENCIDO":
+            return "#dc2626", "#ffffff", "#dc2626"
+        if status == "PROXIMO":
+            return "#d97706", "#ffffff", "#d97706"
+        return "rgba(255,255,255,.03)", "#94a3b8", "#475569"  # pendente — ainda não chegou a vez
+
+    partes = []
+    for i, item in enumerate(itens):
+        bg, fg, borda = _cor(item)
+        nome = item.get("etapa") or item.get("nome_etapa") or "-"
+        rotulo_top = nome if i % 2 == 0 else "&nbsp;"
+        rotulo_bottom = nome if i % 2 == 1 else "&nbsp;"
+        partes.append(f"""
+        <div class="eq-rtl-step">
+          <div class="eq-rtl-label top">{rotulo_top}</div>
+          <div class="eq-rtl-dot" style="background:{bg};border:2px solid {borda};color:{fg};">{i + 1}</div>
+          <div class="eq-rtl-label bottom">{rotulo_bottom}</div>
+        </div>""")
+        if i < n - 1:
+            cor_linha = "#16a34a" if item.get("realizado_no_ciclo") else "rgba(148,163,184,.25)"
+            partes.append(f'<div class="eq-rtl-conn" style="background:{cor_linha};"></div>')
+
+    html = f"""
+    <div class="eq-rtl-wrap">
+      <div class="eq-rtl-track">{"".join(partes)}</div>
+      <p class="eq-rtl-caption">✅ <strong style="color:#e2e8f0;">{concluidas} de {n}</strong> etapa(s) concluída(s) neste ciclo.</p>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def _render_revisoes_section(eq_id: str):
     with st.spinner("Carregando revisões..."):
         rev = _revisoes_eq(eq_id)
     if rev:
+        _render_timeline_revisoes(rev)
         df = pd.DataFrame(rev)[["etapa", "tipo_controle", "atual", "proximo_vencimento", "diferenca", "status"]].rename(
             columns={
                 "etapa": "Etapa",
