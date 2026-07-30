@@ -907,6 +907,117 @@ def _render_resumo_equipamento(mapa_operacionais: dict):
                         key=f"wa_fila_{item_fila['equipamento_id']}_{item_fila['responsavel_id']}")
 
 
+def _render_resumo_responsavel(mapa_operacionais: dict):
+    st.markdown(
+        "<div class='section-caption'>Resumo único por responsável — junta TODOS os equipamentos vinculados "
+        "a essa pessoa num só envio, como uma lista de acompanhamento geral em vez de escolher equipamento por equipamento.</div>",
+        unsafe_allow_html=True,
+    )
+
+    from services import email_service, relatorio_pdf_service, responsaveis_service
+
+    equipamentos = equipamentos_service.listar()
+    if not equipamentos:
+        st.info("Nenhum equipamento cadastrado.")
+        return
+    eqp_map = {e["id"]: e for e in equipamentos}
+
+    invertido = alertas_service.mapa_equipamentos_por_responsavel(mapa_operacionais)
+    if not invertido:
+        st.info("Nenhum responsável operacional vinculado a equipamentos ainda. Cadastre vínculos em **Vínculos**.")
+        return
+
+    responsaveis_ativos = {r["id"]: r for r in responsaveis_service.listar() if r.get("ativo", True)}
+    opcoes = {
+        dados["nome"]: resp_id
+        for resp_id, dados in invertido.items()
+        if resp_id in responsaveis_ativos
+    }
+    if not opcoes:
+        st.info("Nenhum responsável ativo com equipamentos vinculados.")
+        return
+
+    escolha = st.selectbox("Responsável", sorted(opcoes.keys()), key="resumo_resp_select")
+    resp_id = opcoes[escolha]
+    resp = responsaveis_ativos[resp_id]
+    eqp_ids = sorted(invertido[resp_id]["equipamento_ids"], key=lambda i: str(i))
+    equipamentos_bloco = [eqp_map[i] for i in eqp_ids if i in eqp_map]
+
+    itens_flat = []
+    for eqp in equipamentos_bloco:
+        eqp_label = f"{eqp.get('codigo')} - {eqp.get('nome')}"
+        itens_flat.extend(alertas_service.coletar_itens_equipamento(eqp["id"], equipamento_label=eqp_label))
+
+    if not itens_flat:
+        st.info("Nenhum dos equipamentos deste responsável tem itens de revisão ou lubrificação configurados.")
+        return
+
+    criticos, sem_pendencia = alertas_service.priorizar_itens(itens_flat)
+    total_eqp = len(equipamentos_bloco)
+
+    vencidos = sum(1 for i in criticos if i["status"] == "VENCIDO" and not i["realizado"])
+    proximos = sum(1 for i in criticos if i["status"] == "PROXIMO" and not i["realizado"])
+    realizados = sum(1 for i in criticos if i["realizado"])
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Equipamentos", total_eqp)
+    c2.metric("Vencidos", vencidos)
+    c3.metric("Próximos", proximos)
+    c4.metric("Realizados", realizados)
+
+    with st.expander("Ver itens do resumo", expanded=False):
+        for i in criticos:
+            emoji = alertas_service.emoji_status(i["status"], i["realizado"])
+            st.markdown(f"{emoji} **[{i.get('equipamento', '-')}] {i['nome']}** — {alertas_service.texto_situacao_item(i)}")
+        if sem_pendencia:
+            st.caption(f"+ {sem_pendencia} item(ns) em dia, sem necessidade de ação agora.")
+
+    nome_resp = resp["nome"]
+    telefone = resp.get("telefone") or ""
+    email_dest = resp.get("email") or ""
+
+    if not telefone and not email_dest:
+        st.warning("Este responsável não tem telefone nem e-mail cadastrado. Atualize o cadastro em **Responsáveis**.")
+        return
+
+    st.markdown("##### Enviar para")
+    mensagem = alertas_service.montar_mensagem_resumo_responsavel(nome_resp, criticos, sem_pendencia, total_eqp)
+
+    colw, cole = st.columns(2)
+    with colw:
+        if telefone:
+            link = alertas_service.gerar_link_whatsapp(telefone, mensagem)
+            st.link_button(f"Abrir WhatsApp — {nome_resp}", link, use_container_width=True,
+                key=f"wa_resumo_resp_{resp_id}")
+        else:
+            st.button("Sem telefone", disabled=True, use_container_width=True,
+                key=f"wa_resumo_resp_disabled_{resp_id}")
+    with cole:
+        if email_service.email_configurado() and email_dest:
+            if st.button(f"📧 Enviar e-mail — {nome_resp}", use_container_width=True,
+                    key=f"email_resumo_resp_{resp_id}"):
+                html_corpo, texto_corpo = email_service.montar_html_resumo_proximos_servicos(
+                    nome_resp, criticos, sem_pendencia, total_eqp,
+                )
+                assunto = f"Resumo de manutenção — {total_eqp} equipamento(s)"
+                with st.spinner("Gerando resumo em PDF e enviando…"):
+                    try:
+                        pdf_anexo = relatorio_pdf_service.gerar_pdf_resumo_responsavel(
+                            nome_resp, criticos, sem_pendencia, total_eqp,
+                        )
+                    except Exception:
+                        pdf_anexo = None
+                    anexos = [(pdf_anexo, "resumo_responsavel.pdf")] if pdf_anexo else None
+                    ok, msg_email = email_service.enviar_email(email_dest, assunto, html_corpo, texto_corpo, anexos=anexos)
+                if ok:
+                    st.success("📧 E-mail enviado com sucesso!" + (" (com PDF resumo em anexo)" if anexos else " (sem anexo — falha ao gerar o PDF)"))
+                else:
+                    st.error(f"Falha ao enviar e-mail: {msg_email}")
+        elif not email_dest:
+            st.caption("📧 Sem e-mail cadastrado.")
+        else:
+            st.caption("📧 E-mail não configurado no sistema.")
+
+
 def render():
     _inject_styles()
 
@@ -962,4 +1073,11 @@ def render():
         _render_historico()
 
     with tab5:
-        _render_resumo_equipamento(mapa_operacionais)
+        modo_resumo = st.radio(
+            "Ver resumo por", ["Equipamento", "Responsável (todos os equipamentos)"],
+            horizontal=True, key="resumo_modo",
+        )
+        if modo_resumo == "Equipamento":
+            _render_resumo_equipamento(mapa_operacionais)
+        else:
+            _render_resumo_responsavel(mapa_operacionais)
