@@ -487,37 +487,49 @@ def render():
         c_u.metric("Última coleta", ultima_data)
 
         tipo_leitura = _tipo_oficial(eqp)
-        with st.form("form_leitura", clear_on_submit=True):
-            c1, c2 = st.columns(2)
-            with c1:
-                km_valor = st.number_input(
-                    "Novo KM",
-                    min_value=0.0,
-                    value=km_atual,
-                    step=1.0,
-                    disabled=(tipo_leitura == "horas"),
-                )
-                data_leitura = st.date_input("Data da leitura", value=datetime.date.today())
-            with c2:
-                horas_valor = st.number_input(
-                    "Novas Horas",
-                    min_value=0.0,
-                    value=horas_atual,
-                    step=1.0,
-                    disabled=(tipo_leitura == "km"),
-                )
-                resp = (
-                    st.selectbox(
-                        "Responsável (opcional)",
-                        [None] + responsaveis,
-                        format_func=lambda r: r["nome"] if r else "— nenhum —",
-                    )
-                    if responsaveis
-                    else None
-                )
 
-            obs = st.text_input("Observações (opcional)")
-            salvar = st.form_submit_button("Salvar leitura", use_container_width=True, type="primary")
+        # Chaves por equipamento: evita que o valor digitado para um equipamento
+        # "vaze" para outro ao trocar a seleção, e permite limpar os campos após
+        # salvar sem depender de st.form(clear_on_submit=True).
+        key_km = f"leit_km_{eqp['id']}"
+        key_horas = f"leit_horas_{eqp['id']}"
+        key_data = f"leit_data_{eqp['id']}"
+        key_resp = f"leit_resp_{eqp['id']}"
+        key_obs = f"leit_obs_{eqp['id']}"
+
+        c1, c2 = st.columns(2)
+        with c1:
+            km_valor = st.number_input(
+                "Novo KM",
+                min_value=0.0,
+                value=km_atual,
+                step=1.0,
+                disabled=(tipo_leitura == "horas"),
+                key=key_km,
+            )
+            data_leitura = st.date_input("Data da leitura", value=datetime.date.today(), key=key_data)
+        with c2:
+            horas_valor = st.number_input(
+                "Novas Horas",
+                min_value=0.0,
+                value=horas_atual,
+                step=1.0,
+                disabled=(tipo_leitura == "km"),
+                key=key_horas,
+            )
+            resp = (
+                st.selectbox(
+                    "Responsável (opcional)",
+                    [None] + responsaveis,
+                    format_func=lambda r: r["nome"] if r else "— nenhum —",
+                    key=key_resp,
+                )
+                if responsaveis
+                else None
+            )
+
+        obs = st.text_input("Observações (opcional)", key=key_obs)
+        salvar = st.button("Salvar leitura", use_container_width=True, type="primary")
 
         if salvar:
             avisos = []
@@ -548,10 +560,16 @@ def render():
                         st.info("Leitura cancelada.")
 
                 if st.session_state.get(confirmar_key):
-                    _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs, permitir_regressao=True)
+                    _salvar_leitura(
+                        eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs,
+                        permitir_regressao=True, campos_para_limpar=[key_obs],
+                    )
                     st.session_state.pop(confirmar_key, None)
             else:
-                _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs)
+                _salvar_leitura(
+                    eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs,
+                    campos_para_limpar=[key_obs],
+                )
 
     with tab2:
         st.markdown("<div class='filters-shell'><div class='filters-title'>Importação assistida</div>", unsafe_allow_html=True)
@@ -718,7 +736,7 @@ def render():
         _render_grafico_historico(dados, tipo_controle_eqp)
 
 
-def _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs, permitir_regressao=False):
+def _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp, obs, permitir_regressao=False, campos_para_limpar=None):
     try:
         leituras_service.registrar(
             equipamento_id=eqp["id"],
@@ -732,6 +750,8 @@ def _salvar_leitura(eqp, tipo_leitura, km_valor, horas_valor, data_leitura, resp
         )
         _carregar_base.clear()
         _carregar_historico.clear()
+        for chave in campos_para_limpar or []:
+            st.session_state.pop(chave, None)
         st.success(f"✅ Leitura registrada com sucesso para **{eqp['codigo']} — {eqp['nome']}**.")
         st.rerun()
     except Exception as e:
