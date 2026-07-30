@@ -89,11 +89,13 @@ def salvar_itens_execucao_no_conn(cur, execucao_id, itens_executados):
     if "marcado" in colunas:
         insert_cols.append("marcado")
 
-    placeholders = ", ".join(["%s"] * len(insert_cols))
     cols_sql = ", ".join(insert_cols)
-    sql = f"insert into execucao_manutencao_itens ({cols_sql}) values ({placeholders})"
 
     if _execute_values is not None and itens_executados:
+        # execute_values exige um único placeholder "%s" na query (ele mesmo
+        # expande para várias linhas); passar vários "%s" causa o erro
+        # "the query contains more than one '%s' placeholder".
+        sql = f"insert into execucao_manutencao_itens ({cols_sql}) values %s"
         rows = []
         for item in itens_executados:
             values = [execucao_id]
@@ -110,6 +112,8 @@ def salvar_itens_execucao_no_conn(cur, execucao_id, itens_executados):
             rows.append(tuple(values))
         _execute_values(cur, sql, rows)
     else:
+        placeholders = ", ".join(["%s"] * len(insert_cols))
+        sql = f"insert into execucao_manutencao_itens ({cols_sql}) values ({placeholders})"
         for item in itens_executados:
             values = [execucao_id]
             if "item_id_referencia" in colunas:
