@@ -124,6 +124,8 @@ def coletar_itens_equipamento(equipamento_id, equipamento_label: str | None = No
                 "falta": float(etapa.get("diferenca", etapa.get("falta", 0)) or 0),
                 "atual": float(etapa.get("atual", 0) or 0),
                 "vencimento": float(etapa.get("vencimento", 0) or 0),
+                "vencimento_ciclo": float(etapa.get("vencimento_ciclo", etapa.get("vencimento", 0)) or 0),
+                "gatilho_valor": float(etapa.get("gatilho_valor", 0) or 0),
                 "ultima_execucao": float(etapa.get("ultima_execucao", 0) or 0),
                 "unidade": "h" if (etapa.get("tipo_controle") == "horas") else "km",
             })
@@ -197,6 +199,18 @@ def montar_mensagem_resumo_equipamento(equipamento: dict, itens: list[dict], res
     if vencidos:
         linhas.append(f"⚠️ {vencidos} item(ns) vencido(s) — recomendamos priorizar.")
     return "\n".join(linhas)
+
+
+def agrupar_itens_por_equipamento(itens_flat: list[dict]) -> dict[str, list[dict]]:
+    """Agrupa uma lista plana de itens (já rotulados com 'equipamento') de volta
+    por equipamento — usado para desenhar a linha do tempo de revisão de cada
+    máquina no PDF de resumo consolidado, que precisa de TODOS os itens (não só
+    os críticos que sobram depois do `priorizar_itens`)."""
+    agrupado: dict = {}
+    for item in itens_flat:
+        chave = item.get("equipamento") or "-"
+        agrupado.setdefault(chave, []).append(item)
+    return agrupado
 
 
 def mapa_equipamentos_por_responsavel(mapa_operacionais: dict) -> dict:
@@ -354,6 +368,7 @@ def enviar_resumos_semanais_pendentes(dias: int = 7) -> dict:
             from services import relatorio_pdf_service
             pdf_anexo = relatorio_pdf_service.gerar_pdf_resumo_responsavel(
                 responsavel["nome"], criticos, sem_pendencia, total_eqp,
+                itens_por_equipamento=agrupar_itens_por_equipamento(itens_flat),
             )
         except Exception:
             pdf_anexo = None

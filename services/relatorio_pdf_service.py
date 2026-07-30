@@ -93,8 +93,14 @@ def _linha_tempo_etapas(itens_ordenados, P, largura):
     passo = (largura - 2 * margem) / max(1, n - 1) if n > 1 else 0
     raio = 4.0 * mm
 
+    def _realizado(item):
+        return bool(item.get("realizado_no_ciclo", item.get("realizado", False)))
+
+    def _nome(item):
+        return item.get("etapa") or item.get("nome_etapa") or item.get("nome") or "-"
+
     def _cor_no(item):
-        if item.get("realizado_no_ciclo"):
+        if _realizado(item):
             return P["green"], _colors.white
         status = str(item.get("status") or "").upper()
         if status == "VENCIDO":
@@ -109,7 +115,7 @@ def _linha_tempo_etapas(itens_ordenados, P, largura):
 
     d.add(Line(xs[0], y_linha, xs[-1], y_linha, strokeColor=P["gray_mid"], strokeWidth=2.2))
     for i in range(n - 1):
-        if itens_ordenados[i].get("realizado_no_ciclo"):
+        if _realizado(itens_ordenados[i]):
             d.add(Line(xs[i], y_linha, xs[i + 1], y_linha, strokeColor=P["green"], strokeWidth=2.2))
 
     for i, item in enumerate(itens_ordenados):
@@ -121,7 +127,7 @@ def _linha_tempo_etapas(itens_ordenados, P, largura):
                       fillColor=fg, textAnchor="middle"))
 
         largura_rotulo = passo + 16 if n > 1 else largura - 8
-        nome = _fit_text(_safe(item.get("etapa") or item.get("nome_etapa")), "Helvetica-Bold", 6.6, largura_rotulo)
+        nome = _fit_text(_safe(_nome(item)), "Helvetica-Bold", 6.6, largura_rotulo)
         if i % 2 == 0:
             ly = y_linha + raio + 8
         else:
@@ -1078,14 +1084,21 @@ def gerar_pdf_resumo_responsavel(
     sem_pendencia: int,
     total_equipamentos: int,
     gerado_em: str | None = None,
+    itens_por_equipamento: dict[str, list[dict]] | None = None,
 ) -> bytes:
     """PDF compacto com os serviços mais próximos/vencidos de TODOS os
     equipamentos de um responsável — anexo do resumo semanal (e do envio sob
-    demanda), no lugar de mandar a ficha técnica inteira de cada máquina."""
+    demanda), no lugar de mandar a ficha técnica inteira de cada máquina.
+
+    `itens_por_equipamento`, se informado, é o dicionário {equipamento: [itens]}
+    com TODOS os itens do equipamento (sem o filtro de urgência aplicado à
+    tabela principal) — usado para desenhar, ao final, uma linha do tempo das
+    etapas de revisão de cada equipamento (a mesma da ficha técnica individual),
+    já que esse resumo cobre vários equipamentos de uma vez."""
     import io
     import datetime as _dt
     from reportlab.lib.units import mm
-    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, KeepTogether
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.enums import TA_LEFT, TA_CENTER
     from reportlab.lib import colors
@@ -1158,6 +1171,47 @@ def gerar_pdf_resumo_responsavel(
             linhas, P,
             [PW * 0.18, PW * 0.20, PW * 0.12, PW * 0.13, PW * 0.13, PW * 0.14, PW * 0.10],
         ))
+
+    # ── Linha do tempo das etapas de revisão, por equipamento ─────────────────
+    if itens_por_equipamento:
+        blocos_tl = []
+        for eqp_label in sorted(itens_por_equipamento.keys(), key=str):
+            itens_eqp = [i for i in itens_por_equipamento[eqp_label] if i.get("tipo") == "revisao"]
+            if not itens_eqp:
+                continue
+            itens_tl = sorted(
+                itens_eqp,
+                key=lambda s: float(s.get("vencimento_ciclo") or s.get("gatilho_valor") or s.get("vencimento") or 0),
+            )
+            tl_drawing = _linha_tempo_etapas(itens_tl, P, PW)
+            if not tl_drawing:
+                continue
+            concluidas_eqp = sum(1 for i in itens_tl if i.get("realizado"))
+            bloco = [
+                Paragraph(
+                    f'<font color="{_hexstr(P["blue"])}">▎</font> {eqp_label}',
+                    ParagraphStyle("tl_eqp", fontName="Helvetica-Bold", fontSize=9.5,
+                        textColor=P["navy"], leading=12, spaceBefore=6, spaceAfter=1),
+                ),
+                Paragraph(
+                    f"{concluidas_eqp} de {len(itens_tl)} etapa(s) já concluída(s) neste ciclo.",
+                    ParagraphStyle("tl_desc", fontName="Helvetica", fontSize=7.6,
+                        textColor=P["muted"], leading=9.5, spaceAfter=2),
+                ),
+                tl_drawing,
+            ]
+            blocos_tl.append(KeepTogether(bloco))
+
+        if blocos_tl:
+            elements.append(Spacer(1, 4 * mm))
+            elements += _secao(
+                "Linha do tempo das revisões por equipamento",
+                "Progresso das etapas de revisão de cada máquina dentro do ciclo atual.",
+                styles, P,
+            )
+            for bloco in blocos_tl:
+                elements.append(bloco)
+                elements.append(Spacer(1, 2 * mm))
 
     hdr = lambda c, d: _cabeçalho_padrao(
         c, d, "Resumo de Manutenção — Serviços Prioritários",
