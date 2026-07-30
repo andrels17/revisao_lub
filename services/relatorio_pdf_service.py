@@ -1037,14 +1037,15 @@ def gerar_pdf_resumo_responsavel(
     PW = doc.width
     gerado_em = gerado_em or _dt.datetime.now().strftime("%d/%m/%Y %H:%M")
 
-    vencidos = sum(1 for i in itens_criticos if str(i.get("status", "")).upper() == "VENCIDO")
-    proximos = sum(1 for i in itens_criticos if str(i.get("status", "")).upper() == "PROXIMO")
-    sem_base = len(itens_criticos) - vencidos - proximos
+    vencidos = sum(1 for i in itens_criticos if not i.get("realizado") and str(i.get("status", "")).upper() == "VENCIDO")
+    proximos = sum(1 for i in itens_criticos if not i.get("realizado") and str(i.get("status", "")).upper() == "PROXIMO")
+    realizados = sum(1 for i in itens_criticos if i.get("realizado"))
+    sem_base = len(itens_criticos) - vencidos - proximos - realizados
 
     elements = []
     elements += _secao(
         f"Serviços prioritários — {responsavel_nome}",
-        "Itens vencidos e próximos de todos os equipamentos sob sua responsabilidade, ordenados por urgência.",
+        "Itens vencidos, próximos e já realizados (com a próxima execução prevista) de todos os equipamentos sob sua responsabilidade, ordenados por urgência.",
         styles, P,
     )
     elements.append(_kpi_bar([
@@ -1052,7 +1053,8 @@ def gerar_pdf_resumo_responsavel(
         ("Vencidos", vencidos, P["red"]),
         ("Próximos", proximos, P["amber"]),
         ("Sem base", sem_base, P["purple"]),
-        ("Em dia", sem_pendencia, P["green"]),
+        ("Realizados", realizados, P["green"]),
+        ("Em dia", sem_pendencia, P["muted"]),
     ], P, PW))
     elements.append(Spacer(1, 5 * mm))
 
@@ -1066,17 +1068,20 @@ def gerar_pdf_resumo_responsavel(
         linhas = []
         for item in itens_criticos:
             status = str(item.get("status", "")).upper()
+            realizado = bool(item.get("realizado"))
             unidade = item.get("unidade", "km")
             falta = float(item.get("falta", 0) or 0)
             atual = float(item.get("atual", 0) or 0)
             vencimento = float(item.get("vencimento", 0) or 0)
             tipo_txt = TIPO_LABEL.get(item.get("tipo"), "-")
-            if status == "VENCIDO":
-                cor, txt = P["red"], f"{abs(falta):.0f} {unidade} atraso"
+            if realizado:
+                cor, txt, status_txt = P["green"], f"próxima em {vencimento:.0f} {unidade}", "REALIZADA"
+            elif status == "VENCIDO":
+                cor, txt, status_txt = P["red"], f"{abs(falta):.0f} {unidade} atraso", status
             elif status == "PROXIMO":
-                cor, txt = P["amber"], f"faltam {falta:.0f} {unidade}"
+                cor, txt, status_txt = P["amber"], f"faltam {falta:.0f} {unidade}", status
             else:
-                cor, txt = P["purple"], "1ª execução"
+                cor, txt, status_txt = P["purple"], "1ª execução", status.replace("_", " ")
             venc_txt = f"{vencimento:.0f} {unidade}" if vencimento > 0 else "-"
             atual_txt = f"{atual:.0f} {unidade}" if atual > 0 else "-"
             linhas.append([
@@ -1086,7 +1091,7 @@ def gerar_pdf_resumo_responsavel(
                 atual_txt,
                 venc_txt,
                 (txt, True, cor, TA_LEFT),
-                (status.replace("_", " "), True, cor, TA_LEFT),
+                (status_txt, True, cor, TA_LEFT),
             ])
         elements.append(_tabela_simples(
             ["Equipamento", "Item", "Tipo", "Atual", "Próxima", "Faltam", "Status"],

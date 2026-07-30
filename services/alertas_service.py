@@ -124,6 +124,7 @@ def coletar_itens_equipamento(equipamento_id, equipamento_label: str | None = No
                 "falta": float(etapa.get("diferenca", etapa.get("falta", 0)) or 0),
                 "atual": float(etapa.get("atual", 0) or 0),
                 "vencimento": float(etapa.get("vencimento", 0) or 0),
+                "ultima_execucao": float(etapa.get("ultima_execucao", 0) or 0),
                 "unidade": "h" if (etapa.get("tipo_controle") == "horas") else "km",
             })
     except Exception:
@@ -140,6 +141,7 @@ def coletar_itens_equipamento(equipamento_id, equipamento_label: str | None = No
                 "falta": float(item.get("diferenca", 0) or 0),
                 "atual": float(item.get("atual", 0) or 0),
                 "vencimento": float(item.get("vencimento", 0) or 0),
+                "ultima_execucao": float(item.get("ultima_execucao", 0) or 0),
                 "unidade": "h" if (item.get("tipo_controle") == "horas") else "km",
             })
     except Exception:
@@ -152,6 +154,9 @@ def _texto_situacao_item(item: dict) -> str:
     falta = float(item.get("falta", 0) or 0)
     status = item.get("status")
     if item.get("realizado"):
+        vencimento = float(item.get("vencimento", 0) or 0)
+        if vencimento > 0:
+            return f"realizado neste ciclo — próxima em {vencimento:.0f} {unidade}"
         return "realizado neste ciclo"
     if status == "VENCIDO":
         return f"vencido há {abs(falta):.0f} {unidade}"
@@ -376,11 +381,15 @@ def montar_pdf_responsavel(equipamento_ids, equipamentos_map: dict | None = None
 
 def priorizar_itens(itens_com_equipamento: list[dict], limite: int | None = None) -> tuple[list[dict], int]:
     """Recebe itens já com 'equipamento' anexado (rótulo do equipamento) e devolve
-    (itens_criticos_ordenados_por_urgência, quantidade_sem_pendência).
+    (itens_ordenados_por_urgência, quantidade_sem_pendência).
 
     Ordem: vencidos (mais atrasado primeiro) → próximos (mais perto primeiro) →
-    aguardando 1ª execução. Itens realizados/em dia não aparecem na lista — só
-    entram na contagem "sem pendência", pra não afogar quem está vendo o resumo.
+    aguardando 1ª execução → já realizados neste ciclo (aparecem por último,
+    já que revisões e trocas de lubrificante se repetem: mostrar o item
+    realizado, com a data/leitura da próxima execução, funciona como uma linha
+    do tempo em vez de simplesmente sumir da lista). Só os itens genuinamente
+    em dia (nunca vencidos, próximos ou executados neste ciclo) ficam de fora,
+    entrando apenas na contagem "sem pendência".
     """
     def _peso(item):
         if item.get("realizado"):
@@ -397,7 +406,7 @@ def priorizar_itens(itens_com_equipamento: list[dict], limite: int | None = None
 
     criticos = [
         i for i in itens_com_equipamento
-        if not i.get("realizado") and str(i.get("status") or "").upper() in ("VENCIDO", "PROXIMO", "SEM_BASE", "SEM BASE")
+        if i.get("realizado") or str(i.get("status") or "").upper() in ("VENCIDO", "PROXIMO", "SEM_BASE", "SEM BASE")
     ]
     sem_pendencia = len(itens_com_equipamento) - len(criticos)
     criticos.sort(key=_peso)

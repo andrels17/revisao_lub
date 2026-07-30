@@ -103,7 +103,9 @@ def _cor_emoji_texto_item(item: dict) -> tuple[str, str, str]:
     unidade = item.get("unidade", "km")
     falta = float(item.get("falta", 0) or 0)
     if realizado:
-        return "#22c55e", "✓", "realizado neste ciclo"
+        vencimento = float(item.get("vencimento", 0) or 0)
+        txt = f"realizado — próxima em {vencimento:.0f} {unidade}" if vencimento > 0 else "realizado neste ciclo"
+        return "#22c55e", "✓", txt
     if status == "VENCIDO":
         return "#ef4444", "▶", f"vencido há {abs(falta):.0f} {unidade}"
     if status == "PROXIMO":
