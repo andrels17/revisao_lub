@@ -1138,9 +1138,13 @@ def gerar_pdf_resumo_responsavel(
         ))
     else:
         TIPO_LABEL = {"revisao": "Revisão", "lubrificacao": "Lubrificação"}
-        linhas = []
-        for item in itens_criticos:
-            status = str(item.get("status", "")).upper()
+
+        def _status_norm(item):
+            s = str(item.get("status") or "").upper()
+            return "SEM_BASE" if s in ("SEM_BASE", "SEM BASE") else s
+
+        def _linha(item):
+            status = _status_norm(item)
             realizado = bool(item.get("realizado"))
             unidade = item.get("unidade", "km")
             falta = float(item.get("falta", 0) or 0)
@@ -1148,29 +1152,62 @@ def gerar_pdf_resumo_responsavel(
             vencimento = float(item.get("vencimento", 0) or 0)
             tipo_txt = TIPO_LABEL.get(item.get("tipo"), "-")
             if realizado:
-                cor, txt, status_txt = P["green"], f"próxima em {vencimento:.0f} {unidade}", "REALIZADA"
+                cor, txt = P["green"], f"próxima em {vencimento:.0f} {unidade}"
             elif status == "VENCIDO":
-                cor, txt, status_txt = P["red"], f"{abs(falta):.0f} {unidade} atraso", status
+                cor, txt = P["red"], f"{abs(falta):.0f} {unidade} atraso"
             elif status == "PROXIMO":
-                cor, txt, status_txt = P["amber"], f"faltam {falta:.0f} {unidade}", status
+                cor, txt = P["amber"], f"faltam {falta:.0f} {unidade}"
             else:
-                cor, txt, status_txt = P["purple"], "1ª execução", status.replace("_", " ")
+                cor, txt = P["purple"], "1ª execução"
             venc_txt = f"{vencimento:.0f} {unidade}" if vencimento > 0 else "-"
             atual_txt = f"{atual:.0f} {unidade}" if atual > 0 else "-"
-            linhas.append([
+            return [
                 item.get("equipamento", "-"),
                 item.get("nome", "-"),
                 tipo_txt,
                 atual_txt,
                 venc_txt,
                 (txt, True, cor, TA_LEFT),
-                (status_txt, True, cor, TA_LEFT),
-            ])
-        elements.append(_tabela_simples(
-            ["Equipamento", "Item", "Tipo", "Atual", "Próxima", "Faltam", "Status"],
-            linhas, P,
-            [PW * 0.18, PW * 0.20, PW * 0.12, PW * 0.13, PW * 0.13, PW * 0.14, PW * 0.10],
-        ))
+            ]
+
+        def _sub_tabela(titulo, cor, itens_grupo):
+            elements.append(Paragraph(
+                f'<font color="{_hexstr(cor)}">▎</font> {titulo} ({len(itens_grupo)})',
+                ParagraphStyle(f"sub_{titulo}", fontName="Helvetica-Bold", fontSize=9,
+                    textColor=P["navy"], leading=11, spaceBefore=8, spaceAfter=3),
+            ))
+            elements.append(_tabela_simples(
+                ["Equipamento", "Item", "Tipo", "Atual", "Próxima", "Faltam"],
+                [_linha(i) for i in itens_grupo], P,
+                [PW * 0.20, PW * 0.24, PW * 0.13, PW * 0.15, PW * 0.15, PW * 0.13],
+                cor_cabecalho=cor,
+            ))
+
+        # As revisões já realizadas neste ciclo aparecem na linha do tempo logo
+        # abaixo (uma por equipamento) — repeti-las aqui na tabela seria
+        # redundante. Lubrificações realizadas não têm linha do tempo própria
+        # no relatório, então continuam aparecendo (bloco "Realizadas").
+        pendentes = [i for i in itens_criticos if not i.get("realizado")]
+        realizadas_tabela = [i for i in itens_criticos if i.get("realizado") and i.get("tipo") != "revisao"]
+
+        vencidos_g = [i for i in pendentes if _status_norm(i) == "VENCIDO"]
+        proximos_g = [i for i in pendentes if _status_norm(i) == "PROXIMO"]
+        sem_base_g = [i for i in pendentes if _status_norm(i) == "SEM_BASE"]
+
+        if vencidos_g:
+            _sub_tabela("Vencidos", P["red"], vencidos_g)
+        if proximos_g:
+            _sub_tabela("Próximos do vencimento", P["amber"], proximos_g)
+        if sem_base_g:
+            _sub_tabela("Aguardando 1ª execução", P["purple"], sem_base_g)
+        if realizadas_tabela:
+            _sub_tabela("Lubrificações realizadas neste ciclo", P["green"], realizadas_tabela)
+
+        if not (vencidos_g or proximos_g or sem_base_g or realizadas_tabela):
+            elements.append(Paragraph(
+                "Nenhuma pendência em tabela — apenas revisões já concluídas neste ciclo, exibidas na linha do tempo abaixo.",
+                ParagraphStyle("ok3", fontName="Helvetica", fontSize=8.5, textColor=P["muted"], alignment=TA_CENTER),
+            ))
 
     # ── Linha do tempo das etapas de revisão, por equipamento ─────────────────
     if itens_por_equipamento:
