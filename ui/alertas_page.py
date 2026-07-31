@@ -841,8 +841,20 @@ def _render_resumo_equipamento(mapa_operacionais: dict):
         email_dest = emails_por_id.get(resp["responsavel_id"]) or ""
         mensagem = alertas_service.montar_mensagem_resumo_equipamento(eqp, itens, nome_resp)
 
+        pdf_cache_key = f"pdf_resumo_eqp_{eqp['id']}_{resp['responsavel_id']}"
+
+        def _gerar_pdf_resumo_eqp():
+            from services import relatorio_pdf_service
+            eqp_label = f"{eqp.get('codigo')} - {eqp.get('nome')}"
+            itens_rotulados = alertas_service.coletar_itens_equipamento(eqp["id"], equipamento_label=eqp_label)
+            criticos, sem_pend = alertas_service.priorizar_itens(itens_rotulados)
+            return relatorio_pdf_service.gerar_pdf_resumo_responsavel(
+                nome_resp, criticos, sem_pend, 1,
+                itens_por_equipamento=alertas_service.agrupar_itens_por_equipamento(itens_rotulados),
+            )
+
         st.markdown(f"**{nome_resp}**")
-        colw, cole = st.columns(2)
+        colw, cole, colp = st.columns(3)
         with colw:
             if telefone:
                 link = alertas_service.gerar_link_whatsapp(telefone, mensagem)
@@ -858,15 +870,9 @@ def _render_resumo_equipamento(mapa_operacionais: dict):
                     html_corpo, texto_corpo = email_service.montar_html_resumo_equipamento(eqp, itens, nome_resp)
                     assunto = f"Resumo de manutenção — {eqp.get('codigo')} {eqp.get('nome')}"
                     with st.spinner("Gerando resumo em PDF e enviando…"):
-                        from services import relatorio_pdf_service
-                        eqp_label = f"{eqp.get('codigo')} - {eqp.get('nome')}"
-                        itens_rotulados = alertas_service.coletar_itens_equipamento(eqp["id"], equipamento_label=eqp_label)
-                        criticos, sem_pend = alertas_service.priorizar_itens(itens_rotulados)
                         try:
-                            pdf_anexo = relatorio_pdf_service.gerar_pdf_resumo_responsavel(
-                                nome_resp, criticos, sem_pend, 1,
-                                itens_por_equipamento=alertas_service.agrupar_itens_por_equipamento(itens_rotulados),
-                            )
+                            pdf_anexo = _gerar_pdf_resumo_eqp()
+                            st.session_state[pdf_cache_key] = pdf_anexo
                         except Exception:
                             pdf_anexo = None
                         anexos = [(pdf_anexo, f"resumo_{eqp.get('codigo')}.pdf")] if pdf_anexo else None
@@ -879,6 +885,20 @@ def _render_resumo_equipamento(mapa_operacionais: dict):
                 st.caption("📧 Sem e-mail cadastrado.")
             else:
                 st.caption("📧 E-mail não configurado no sistema.")
+        with colp:
+            if pdf_cache_key not in st.session_state:
+                if st.button("🖨️ Gerar PDF", use_container_width=True,
+                        key=f"gen_{pdf_cache_key}"):
+                    with st.spinner("Gerando PDF…"):
+                        try:
+                            st.session_state[pdf_cache_key] = _gerar_pdf_resumo_eqp()
+                        except Exception:
+                            st.error("Falha ao gerar o PDF.")
+            if st.session_state.get(pdf_cache_key):
+                st.download_button("⬇️ Baixar/Imprimir PDF", data=st.session_state[pdf_cache_key],
+                    file_name=f"resumo_{eqp.get('codigo')}_{nome_resp}.pdf".replace(" ", "_"),
+                    mime="application/pdf", use_container_width=True,
+                    key=f"dl_{pdf_cache_key}")
 
     st.divider()
     st.markdown("##### Resumos semanais")
@@ -983,7 +1003,15 @@ def _render_resumo_responsavel(mapa_operacionais: dict):
     st.markdown("##### Enviar para")
     mensagem = alertas_service.montar_mensagem_resumo_responsavel(nome_resp, criticos, sem_pendencia, total_eqp)
 
-    colw, cole = st.columns(2)
+    pdf_cache_key = f"pdf_resumo_resp_{resp_id}"
+
+    def _gerar_pdf_resumo_resp():
+        return relatorio_pdf_service.gerar_pdf_resumo_responsavel(
+            nome_resp, criticos, sem_pendencia, total_eqp,
+            itens_por_equipamento=alertas_service.agrupar_itens_por_equipamento(itens_flat),
+        )
+
+    colw, cole, colp = st.columns(3)
     with colw:
         if telefone:
             link = alertas_service.gerar_link_whatsapp(telefone, mensagem)
@@ -1002,10 +1030,8 @@ def _render_resumo_responsavel(mapa_operacionais: dict):
                 assunto = f"Resumo de manutenção — {total_eqp} equipamento(s)"
                 with st.spinner("Gerando resumo em PDF e enviando…"):
                     try:
-                        pdf_anexo = relatorio_pdf_service.gerar_pdf_resumo_responsavel(
-                            nome_resp, criticos, sem_pendencia, total_eqp,
-                            itens_por_equipamento=alertas_service.agrupar_itens_por_equipamento(itens_flat),
-                        )
+                        pdf_anexo = _gerar_pdf_resumo_resp()
+                        st.session_state[pdf_cache_key] = pdf_anexo
                     except Exception:
                         pdf_anexo = None
                     anexos = [(pdf_anexo, "resumo_responsavel.pdf")] if pdf_anexo else None
@@ -1018,6 +1044,20 @@ def _render_resumo_responsavel(mapa_operacionais: dict):
             st.caption("📧 Sem e-mail cadastrado.")
         else:
             st.caption("📧 E-mail não configurado no sistema.")
+    with colp:
+        if pdf_cache_key not in st.session_state:
+            if st.button("🖨️ Gerar PDF", use_container_width=True,
+                    key=f"gen_{pdf_cache_key}"):
+                with st.spinner("Gerando PDF…"):
+                    try:
+                        st.session_state[pdf_cache_key] = _gerar_pdf_resumo_resp()
+                    except Exception:
+                        st.error("Falha ao gerar o PDF.")
+        if st.session_state.get(pdf_cache_key):
+            st.download_button("⬇️ Baixar/Imprimir PDF", data=st.session_state[pdf_cache_key],
+                file_name=f"resumo_{nome_resp}.pdf".replace(" ", "_"),
+                mime="application/pdf", use_container_width=True,
+                key=f"dl_{pdf_cache_key}")
 
 
 def render():
