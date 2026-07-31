@@ -305,7 +305,8 @@ def _tabela_simples(colunas, linhas, P, col_widths, cor_cabecalho=None):
 
 
 def _kpi_bar(items, P, PW):
-    """Linha de KPI cards (fundo suave + borda na cor do indicador)."""
+    """Linha de KPI cards (cantos arredondados, faixa colorida no topo e
+    fundo suave), no mesmo estilo dos cards de status usados no relatório."""
     from reportlab.platypus import Table, TableStyle, Paragraph
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
@@ -322,22 +323,21 @@ def _kpi_bar(items, P, PW):
     }
 
     n = len(items)
-    gap = 2.5
+    gap = 3
     w = (PW - gap * (n - 1)) / n
     hdr = [
         Paragraph(_safe(label).upper(), ParagraphStyle("kh", fontName="Helvetica-Bold",
-            fontSize=6.6, textColor=P["muted"], alignment=TA_CENTER, leading=8))
+            fontSize=6.8, textColor=P["muted"], alignment=TA_CENTER, leading=8.2))
         for label, value, cor in items
     ]
     vals = [
         Paragraph(str(value), ParagraphStyle("kv", fontName="Helvetica-Bold",
-            fontSize=19, textColor=cor, alignment=TA_CENTER, leading=22))
+            fontSize=21, textColor=cor, alignment=TA_CENTER, leading=24))
         for label, value, cor in items
     ]
 
-    rows_flat = []
     col_widths = []
-    for idx, (label, value, cor) in enumerate(items):
+    for idx in range(n):
         col_widths.append(w)
         if idx < n - 1:
             col_widths.append(gap)
@@ -350,18 +350,21 @@ def _kpi_bar(items, P, PW):
             hdr_row.append("")
             val_row.append("")
 
-    t = Table([hdr_row, val_row], colWidths=col_widths, rowHeights=[10, 16])
+    t = Table([hdr_row, val_row], colWidths=col_widths, rowHeights=[12, 19])
     cmds = [
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING",    (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("ROUNDEDCORNERS", [5, 5, 5, 5]),
     ]
     for idx, (label, value, cor) in enumerate(items):
         col = idx * 2
         cor_hex = _hexstr(cor)
         fundo = tons_claros.get(cor_hex, P["gray_lt"])
         cmds.append(("BACKGROUND", (col, 0), (col, 1), fundo))
-        cmds.append(("BOX", (col, 0), (col, 1), 0.8, cor))
+        cmds.append(("BOX", (col, 0), (col, 1), 0.6, cor))
+        # faixa colorida de destaque no topo de cada card
+        cmds.append(("LINEABOVE", (col, 0), (col, 0), 2.4, cor))
     t.setStyle(TableStyle(cmds))
     return t
 
