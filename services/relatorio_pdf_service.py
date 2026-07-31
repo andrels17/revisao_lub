@@ -1165,7 +1165,6 @@ def gerar_pdf_resumo_responsavel(
             venc_txt = f"{vencimento:.0f} {unidade}" if vencimento > 0 else "-"
             atual_txt = f"{atual:.0f} {unidade}" if atual > 0 else "-"
             return [
-                item.get("equipamento", "-"),
                 item.get("nome", "-"),
                 tipo_txt,
                 atual_txt,
@@ -1173,44 +1172,67 @@ def gerar_pdf_resumo_responsavel(
                 (txt, True, cor, TA_LEFT),
             ]
 
-        def _sub_tabela(titulo, cor, itens_grupo):
-            elements.append(Paragraph(
-                f'<font color="{_hexstr(cor)}">▎</font> {titulo} ({len(itens_grupo)})',
-                ParagraphStyle(f"sub_{titulo}", fontName="Helvetica-Bold", fontSize=9,
-                    textColor=P["navy"], leading=11, spaceBefore=8, spaceAfter=3),
-            ))
-            elements.append(_tabela_simples(
-                ["Equipamento", "Item", "Tipo", "Atual", "Próxima", "Faltam"],
-                [_linha(i) for i in itens_grupo], P,
-                [PW * 0.20, PW * 0.24, PW * 0.13, PW * 0.15, PW * 0.15, PW * 0.13],
-                cor_cabecalho=cor,
-            ))
-
         # As revisões já realizadas neste ciclo aparecem na linha do tempo logo
         # abaixo (uma por equipamento) — repeti-las aqui na tabela seria
         # redundante. Lubrificações realizadas não têm linha do tempo própria
-        # no relatório, então continuam aparecendo (bloco "Realizadas").
-        pendentes = [i for i in itens_criticos if not i.get("realizado")]
-        realizadas_tabela = [i for i in itens_criticos if i.get("realizado") and i.get("tipo") != "revisao"]
+        # no relatório, então continuam aparecendo junto dos demais itens
+        # do equipamento.
+        itens_tabela = [i for i in itens_criticos if not (i.get("realizado") and i.get("tipo") == "revisao")]
 
-        vencidos_g = [i for i in pendentes if _status_norm(i) == "VENCIDO"]
-        proximos_g = [i for i in pendentes if _status_norm(i) == "PROXIMO"]
-        sem_base_g = [i for i in pendentes if _status_norm(i) == "SEM_BASE"]
+        # Agrupar por equipamento — cada máquina vira um bloco só seu, com suas
+        # pendências ordenadas por urgência, em vez de uma tabela única com
+        # tudo misturado.
+        PESO_STATUS = {"VENCIDO": 0, "PROXIMO": 1, "SEM_BASE": 2}
+        por_equipamento: dict = {}
+        for item in itens_tabela:
+            por_equipamento.setdefault(item.get("equipamento", "-"), []).append(item)
 
-        if vencidos_g:
-            _sub_tabela("Vencidos", P["red"], vencidos_g)
-        if proximos_g:
-            _sub_tabela("Próximos do vencimento", P["amber"], proximos_g)
-        if sem_base_g:
-            _sub_tabela("Aguardando 1ª execução", P["purple"], sem_base_g)
-        if realizadas_tabela:
-            _sub_tabela("Lubrificações realizadas neste ciclo", P["green"], realizadas_tabela)
+        def _peso_equipamento(itens_eqp):
+            pesos = [PESO_STATUS.get(_status_norm(i), 3) for i in itens_eqp if not i.get("realizado")]
+            return min(pesos, default=3)
 
-        if not (vencidos_g or proximos_g or sem_base_g or realizadas_tabela):
+        CORES_PESO = {0: P["red"], 1: P["amber"], 2: P["purple"]}
+        equipamentos_ordenados = sorted(
+            por_equipamento.keys(),
+            key=lambda eqp: (_peso_equipamento(por_equipamento[eqp]), str(eqp)),
+        )
+
+        col_widths = [PW * 0.32, PW * 0.15, PW * 0.16, PW * 0.16, PW * 0.21]
+
+        if not equipamentos_ordenados:
             elements.append(Paragraph(
                 "Nenhuma pendência em tabela — apenas revisões já concluídas neste ciclo, exibidas na linha do tempo abaixo.",
                 ParagraphStyle("ok3", fontName="Helvetica", fontSize=8.5, textColor=P["muted"], alignment=TA_CENTER),
             ))
+
+        for eqp_label in equipamentos_ordenados:
+            itens_eqp = sorted(
+                por_equipamento[eqp_label],
+                key=lambda i: (bool(i.get("realizado")), PESO_STATUS.get(_status_norm(i), 3)),
+            )
+            peso_eqp = _peso_equipamento(itens_eqp)
+            cor_eqp = CORES_PESO.get(peso_eqp, P["green"])
+            n_pend = sum(1 for i in itens_eqp if not i.get("realizado"))
+            resumo_txt = (
+                f"{n_pend} pendência(s)" if n_pend
+                else "somente lubrificação(ões) realizada(s) neste ciclo"
+            )
+            bloco = [
+                Paragraph(
+                    f'<font color="{_hexstr(cor_eqp)}">▎</font> {_safe(eqp_label)} '
+                    f'<font size="7.5" color="{_hexstr(P["muted"])}">— {resumo_txt}</font>',
+                    ParagraphStyle(f"eqp_{eqp_label}", fontName="Helvetica-Bold", fontSize=9.5,
+                        textColor=P["navy"], leading=12, spaceBefore=7, spaceAfter=2),
+                ),
+                _tabela_simples(
+                    ["Item", "Tipo", "Atual", "Próxima", "Faltam"],
+                    [_linha(i) for i in itens_eqp], P, col_widths,
+                    cor_cabecalho=cor_eqp,
+                ),
+            ]
+            elements.append(KeepTogether(bloco))
+            elements.append(Spacer(1, 2 * mm))
+
 
     # ── Linha do tempo das etapas de revisão, por equipamento ─────────────────
     if itens_por_equipamento:
