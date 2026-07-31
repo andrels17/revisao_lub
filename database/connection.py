@@ -1,16 +1,32 @@
 from __future__ import annotations
 
 import os
+import threading
 from contextlib import contextmanager
 
 import psycopg2
 from psycopg2 import OperationalError
-from psycopg2.pool import SimpleConnectionPool
+from psycopg2.pool import ThreadedConnectionPool
 import streamlit as st
 
 
-_POOL_KEY = "_db_pool"
-_POOL_CONN_IDS_KEY = "_db_pool_conn_ids"
+# ---------------------------------------------------------------------------
+# Pool ÚNICO por processo, compartilhado entre TODAS as sessões do Streamlit.
+#
+# Antes, o pool ficava em st.session_state: cada sessão de usuário abria seu
+# próprio SimpleConnectionPool(maxconn=10). Com poucos usuários simultâneos
+# isso já esgotava o limite de conexões do Neon (N sessões x 10 = N*10
+# conexões possíveis). Agora existe um único pool por processo, guardado via
+# st.cache_resource (mecanismo do próprio Streamlit para recursos
+# compartilhados entre sessões, thread-safe na criação).
+#
+# Como o pool passa a ser acessado por várias sessões/threads ao mesmo tempo,
+# trocamos SimpleConnectionPool (não é thread-safe) por ThreadedConnectionPool.
+# ---------------------------------------------------------------------------
+
+_pool_lock = threading.Lock()
+_conn_ids_lock = threading.Lock()
+_pool_conn_ids: set[int] = set()
 
 
 def _get_dsn() -> str:
@@ -51,22 +67,24 @@ def _safe_rollback(conn) -> None:
 
 def _register_pool_conn(conn) -> None:
     try:
-        ids = st.session_state.setdefault(_POOL_CONN_IDS_KEY, set())
-        ids.add(id(conn))
+        with _conn_ids_lock:
+            _pool_conn_ids.add(id(conn))
     except Exception:
         pass
 
 
 def _is_pool_managed(conn) -> bool:
     try:
-        return id(conn) in st.session_state.get(_POOL_CONN_IDS_KEY, set())
+        with _conn_ids_lock:
+            return id(conn) in _pool_conn_ids
     except Exception:
         return False
 
 
 def _mark_discarded(conn) -> None:
     try:
-        st.session_state.get(_POOL_CONN_IDS_KEY, set()).discard(id(conn))
+        with _conn_ids_lock:
+            _pool_conn_ids.discard(id(conn))
     except Exception:
         pass
 
@@ -89,8 +107,8 @@ def _is_connection_usable(conn) -> bool:
         return False
 
 
-def _create_pool() -> SimpleConnectionPool:
-    return SimpleConnectionPool(
+def _create_pool() -> ThreadedConnectionPool:
+    return ThreadedConnectionPool(
         minconn=1,
         maxconn=10,
         dsn=_get_dsn(),
@@ -99,13 +117,43 @@ def _create_pool() -> SimpleConnectionPool:
     )
 
 
-def _get_pool() -> SimpleConnectionPool:
-    pool = st.session_state.get(_POOL_KEY)
-    if pool is None:
-        pool = _create_pool()
-        st.session_state[_POOL_KEY] = pool
-        st.session_state.setdefault(_POOL_CONN_IDS_KEY, set())
-    return pool
+@st.cache_resource(show_spinner=False)
+def _cached_pool() -> ThreadedConnectionPool:
+    """Recurso compartilhado por todo o processo (todas as sessões).
+
+    st.cache_resource garante que a criação seja feita uma única vez e que
+    o mesmo objeto seja reaproveitado por todas as sessões do app.
+    """
+    return _create_pool()
+
+
+def _get_pool() -> ThreadedConnectionPool:
+    with _pool_lock:
+        return _cached_pool()
+
+
+def _recreate_pool() -> ThreadedConnectionPool:
+    """Descarta o pool atual (e todas as conexões) e cria um novo, do zero."""
+    with _pool_lock:
+        old_pool = None
+        try:
+            # .clear() sem argumentos limpa todas as entradas desta função cacheada
+            old_pool = _cached_pool()
+        except Exception:
+            old_pool = None
+
+        _cached_pool.clear()
+
+        if old_pool is not None:
+            try:
+                old_pool.closeall()
+            except Exception:
+                pass
+
+        with _conn_ids_lock:
+            _pool_conn_ids.clear()
+
+        return _cached_pool()
 
 
 def get_conn():
@@ -132,20 +180,7 @@ def get_conn():
         except Exception:
             _safe_close_raw(conn)
 
-    try:
-        old_pool = st.session_state.pop(_POOL_KEY, None)
-        st.session_state.pop(_POOL_CONN_IDS_KEY, None)
-        if old_pool is not None:
-            try:
-                old_pool.closeall()
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    pool = _create_pool()
-    st.session_state[_POOL_KEY] = pool
-    st.session_state[_POOL_CONN_IDS_KEY] = set()
+    pool = _recreate_pool()
     conn = pool.getconn()
     _register_pool_conn(conn)
 
@@ -168,7 +203,10 @@ def release_conn(conn) -> None:
     if conn is None:
         return
 
-    pool = st.session_state.get(_POOL_KEY)
+    try:
+        pool = _cached_pool()
+    except Exception:
+        pool = None
     pool_managed = _is_pool_managed(conn)
 
     try:
@@ -200,13 +238,23 @@ def release_conn(conn) -> None:
 
 
 def close_all_connections() -> None:
-    pool = st.session_state.pop(_POOL_KEY, None)
-    st.session_state.pop(_POOL_CONN_IDS_KEY, None)
-    if pool is not None:
+    """Fecha o pool compartilhado (afeta TODAS as sessões, use com cuidado)."""
+    with _pool_lock:
         try:
-            pool.closeall()
+            pool = _cached_pool()
         except Exception:
-            pass
+            pool = None
+
+        _cached_pool.clear()
+
+        if pool is not None:
+            try:
+                pool.closeall()
+            except Exception:
+                pass
+
+        with _conn_ids_lock:
+            _pool_conn_ids.clear()
 
 
 @contextmanager
